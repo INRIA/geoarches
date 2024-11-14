@@ -1,0 +1,6 @@
+dataset: 
+  _target_: geoarches.dataloaders.dcpp.DCPPForecast
+  path: data/batch_with_tos/
+  lead_time_months: 1 # mixed
+  norm_scheme: spatial_norm
+  load_prev: True

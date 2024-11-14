@@ -1,0 +1,27 @@
+defaults:
+  - cluster: local
+  - dataloader: era5
+  - module: forecast-geoarchesweather
+  - override hydra/job_logging: none
+  - override hydra/hydra_logging: none
+  - _self_
+
+log: False # wandb logging
+
+entity: phaz
+project: ${module.project}
+name: default
+exp_dir: modelstore/${name}
+
+seed: 0
+max_steps: 300000
+batch_size: ${cluster.batch_size}
+resume: True
+
+save_step_frequency: 50000
+log_freq: 100
+limit_val_batches: null
+accumulate_grad_batches: 1
+debug: False # set to True to debug
+
+mode: train

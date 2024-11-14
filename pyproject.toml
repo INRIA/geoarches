@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoarches"
+version = "20240208"
+dependencies = [
+    "torch",
+    "torchvision",
+    "xarray",
+    "py360convert",
+    "submitit",
+    "diffusers==0.29.2",
+    "apache_beam",
+    "timm",
+    "netCDF4",
+    "wandb",
+    "ipykernel",
+    "tqdm",
+    "ipykernel",
+    "matplotlib",
+    "hydra-core==1.3.2",
+    "axial_attention",
+    "lightning",
+    "zarr",
+    "gcsfs",
+    "pytest",
+    "einops",
+]
+
+[project.optional-dependencies]
+dev = ["ruff"]
+
+[tool.ruff]
+line-length = 99
+target-version = 'py310'
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# isort - I
+# pep8-naming - N
+# Warning - W
+select = ["E4", "E7", "E9", "F", "I", "N", "W"]
+ignore = ["E731", "N804", "N813"]
+
+[tool.setuptools.package-data]
+geoarches = ["**/*.yaml", "**/*.npy", "**/*.pt", "**/*.nc"]
+
+[project.scripts]
+geoarches-main = 'geoarches.main_hydra:main'
+geoarches-submit = 'geoarches.submit:main'
+geoarches-eval = 'geoarches.evaluation.eval_multistep:main'

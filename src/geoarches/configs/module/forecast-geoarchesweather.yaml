@@ -1,0 +1,42 @@
+project: atmo-comp
+module:
+  _target_: geoarches.lightning_modules.forecast.ForecastModuleWithCond
+  name: ${name}
+  cond_dim: 256
+  lr: 3e-4
+  betas: [0.9, 0.98]
+  weight_decay: 0.05
+  num_warmup_steps: 5000
+  num_training_steps: ${max_steps}
+  use_graphcast_coeffs: True
+  use_prev: True
+  loss_delta_normalization: True
+
+backbone:
+  # default backbone
+  _target_: geoarches.backbones.archesweather.ArchesWeatherCondBackbone
+  tensor_size: [8, 60, 120] # after embed
+  emb_dim: 192
+  cond_dim: 256
+  window_size: [1, 6, 10]
+  droppath_coeff: 0.2
+  dropout: 0
+  depth_multiplier: 2
+  use_skip: True
+  first_interaction_layer: linear
+  axis_attn: True
+  mlp_layer: swiglu
+  mlp_ratio: 4.0
+
+embedder: 
+  _target_: geoarches.backbones.archesweather.WeatherEncodeDecodeLayer
+  img_size: [13, 121, 240]
+  emb_dim: 192
+  out_emb_dim: 384
+  patch_size: [2, 2, 2]
+  surface_ch: 4
+  level_ch: 6
+  n_concatenated_states: 1
+  final_interpolation: False
+
+

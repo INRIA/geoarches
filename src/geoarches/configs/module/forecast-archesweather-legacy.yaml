@@ -1,0 +1,34 @@
+name: pg4-baseline
+project: atmo-comp
+module:
+  _target_: geoarches.lightning_modules.forecast.ForecastModuleWithCond
+  cond_dim: 256
+  lr: 3e-4
+  betas: [0.9, 0.98]
+  weight_decay: 1e-2
+  num_warmup_steps: 5000
+  num_training_steps: ${max_steps}
+  use_graphcast_coeffs: True
+  use_prev: True
+
+backbone:
+  # default backbone
+  _target_: geoarches.backbones.archesweather.ArchesWeatherCond
+  lon_resolution: 240
+  lat_resolution: 120
+  two_poles: False
+  emb_dim: 192
+  patch_size: [2, 2, 2]
+  window_size: [1, 6, 10] #120x 240
+  use_skip: True
+  conv_head: True
+  position_embs_dim: 0
+  surface_ch: 11
+  level_ch: 12
+  cond_dim: 256
+  droppath_coeff: 0.2
+  dropout: 0
+  first_interaction_layer: linear
+  depth_multiplier: 2
+  axis_attn: True
+  n_level_variables: 6

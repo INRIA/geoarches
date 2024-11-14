@@ -1,0 +1,7 @@
+wandb_mode: offline
+use_custom_requeue: False
+
+precision: 16-mixed
+batch_size: 1
+gpus: 1
+cpus: 1

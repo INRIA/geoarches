@@ -1,0 +1,12 @@
+dataset: 
+  _target_: geoarches.dataloaders.era5.Era5Forecast
+  path: data/era5_240/full/
+  lead_time_hours: 24 # mixed
+  norm_scheme: pangu
+  load_prev: True
+
+validation_args:
+  multistep: 2
+
+test_args:
+  multistep: 2

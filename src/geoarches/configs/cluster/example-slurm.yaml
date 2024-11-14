@@ -1,0 +1,24 @@
+wandb_mode: offline
+use_custom_requeue: False
+
+precision: 16-mixed
+batch_size: 1
+gpus: 4
+cpus: 3
+
+
+launcher:
+    cpus_per_task: 4
+    gpus_per_node: ${eval:'min(${cluster.gpus}, 8)'}
+    nodes: ${eval:'1 + (${cluster.gpus}-1) // 8'}
+    tasks_per_node: ${eval:'min(${cluster.gpus}, 8)'}
+    mem_gb: ${eval:'32 * min(${cluster.gpus}, 8)'}
+    timeout_min: 1440
+    name: ${name}
+    slurm_constraint: 
+    slurm_account: 
+    slurm_additional_parameters:
+      hint: nomultithread
+    slurm_srun_args:
+      - "--cpu-bind=none"
+      - "--mem-bind=none"
