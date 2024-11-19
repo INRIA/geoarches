@@ -12,6 +12,7 @@ import geoarches.stats as geoarches_stats
 from geoarches.backbones.archesweather_layers import ICNR_init
 
 from .archesweather_layers import (
+    BasicLayer,
     CondBasicLayer,
     DownSample,
     LinVert,
@@ -196,6 +197,7 @@ class ArchesWeatherCondBackbone(nn.Module):
         first_interaction_layer="linear",
         gradient_checkpointing=False,
         mlp_layer="mlp",
+        stack_verts=False,
         **kwargs,
     ):
         super().__init__()
@@ -204,7 +206,8 @@ class ArchesWeatherCondBackbone(nn.Module):
             0, droppath_coeff / depth_multiplier, 8 * depth_multiplier
         ).tolist()
         # In addition, three constant masks(the topography mask, land-sea mask and soil type mask)
-        self.zdim = tensor_size[0]
+        self.stack_verts = stack_verts
+        self.zdim = tensor_size[0] if not self.stack_verts else 1
 
         self.layer1_shape = tensor_size[1:]
 
@@ -213,8 +216,8 @@ class ArchesWeatherCondBackbone(nn.Module):
         if first_interaction_layer == "linear":
             self.interaction_layer = LinVert(in_features=emb_dim)
 
+
         layer_args = dict(
-            cond_dim=cond_dim,
             window_size=window_size,
             act_layer=nn.GELU,
             drop=dropout,
@@ -222,59 +225,80 @@ class ArchesWeatherCondBackbone(nn.Module):
             mlp_ratio=mlp_ratio,
         )
 
+        if cond_dim is not None:
+            layer_args['cond_dim'] = cond_dim
+
+        layer = CondBasicLayer if cond_dim is not None else BasicLayer
+        print(f'Backbone Layer: {layer.__class__.__name__}')
+        print(f'Vertical stacks is {stack_verts}')
+
         if mlp_layer == "swiglu":
             layer_args["mlp_ratio"] = mlp_ratio * 2 / 3
             layer_args["mlp_layer"] = SwiGLU
 
-        self.layer1 = CondBasicLayer(
+        self.layer1 = layer(
             dim=emb_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[0],
             drop_path=drop_path[: 2 * depth_multiplier],
+            stack_verts=stack_verts,
             **layer_args,
             **kwargs,
         )
+
         self.downsample = DownSample(
             in_dim=emb_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
             output_resolution=(self.zdim, *self.layer2_shape),
         )
-        self.layer2 = CondBasicLayer(
+
+        self.layer2 = layer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[1],
             drop_path=drop_path[2 * depth_multiplier :],
+            stack_verts=stack_verts,
             **layer_args,
             **kwargs,
         )
-        self.layer3 = CondBasicLayer(
+
+        self.layer3 = layer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[2],
             drop_path=drop_path[2 * depth_multiplier :],
+            stack_verts=stack_verts,
             **layer_args,
             **kwargs,
         )
+
         self.upsample = UpSample(
             emb_dim * 2, emb_dim, (self.zdim, *self.layer2_shape), (self.zdim, *self.layer1_shape)
         )
+
         out_dim = emb_dim if not self.use_skip else 2 * emb_dim
-        self.layer4 = CondBasicLayer(
+
+        self.layer4 = layer(
             dim=out_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[3],
             drop_path=drop_path[: 2 * depth_multiplier],
+            stack_verts=stack_verts,
             **layer_args,
             **kwargs,
         )
 
     def forward(self, x, cond_emb, **kwargs):
         B, C, Pl, Lat, Lon = x.shape
-        x = x.reshape(B, C, -1).transpose(1, 2)
+
+        if self.stack_verts:
+            x = x.reshape(B, C * Pl, Lat, Lon).movedim(1, 3).reshape(B, Lat * Lon, -1)
+        else:
+            x = x.reshape(B, C, -1).transpose(1, 2)
 
         if self.first_interaction_layer:
             x = self.interaction_layer(x)

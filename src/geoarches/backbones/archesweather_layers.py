@@ -357,10 +357,15 @@ class EarthSpecificBlock(nn.Module):
         act_layer=nn.GELU,
         mlp_layer=Mlp,
         norm_layer=nn.LayerNorm,
+        stack_verts=False, 
     ):
         super().__init__()
+
+        self.stack_verts = stack_verts
+
         window_size = (2, 6, 12) if window_size is None else window_size
         shift_size = (1, 3, 5) if shift_size is None else shift_size
+
         self.dim = dim
         self.input_resolution = input_resolution
         self.num_heads = num_heads
@@ -377,6 +382,9 @@ class EarthSpecificBlock(nn.Module):
         pad_resolution[0] += padding[-1] + padding[-2]
         pad_resolution[1] += padding[2] + padding[3]
         pad_resolution[2] += padding[0] + padding[1]
+
+        if self.stack_verts:
+            pad_resolution[0] = 1
 
         self.attn = EarthAttention3D(
             dim=dim,
@@ -427,7 +435,11 @@ class EarthSpecificBlock(nn.Module):
     def forward(self, x: torch.Tensor, c: torch.Tensor = None, dt=1):
         Pl, Lat, Lon = self.input_resolution
         B, L, C = x.shape
-        assert L == Pl * Lat * Lon, "input feature has wrong size"
+
+        if self.stack_verts:
+            assert L == Lat * Lon, "input feature has wrong size"
+        else:   
+            assert L == Pl * Lat * Lon, "input feature has wrong size"
 
         shortcut = x
         x = self.norm1(x)
@@ -437,7 +449,10 @@ class EarthSpecificBlock(nn.Module):
             shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = c.chunk(6, dim=1)
             x = x * (1 + scale_msa[:, None, :]) + shift_msa[:, None, :]
 
-        x = x.view(B, Pl, Lat, Lon, C)
+        if self.stack_verts:
+            x = x.view(B, 1, Lat, Lon, C)        
+        else:
+            x = x.view(B, Pl, Lat, Lon, C)
 
         # start pad
         x = self.pad(x.permute(0, 4, 1, 2, 3)).permute(0, 2, 3, 4, 1)
@@ -479,7 +494,10 @@ class EarthSpecificBlock(nn.Module):
         # crop, end pad
         x = crop3d(x.permute(0, 4, 1, 2, 3), self.input_resolution).permute(0, 2, 3, 4, 1)
 
-        x = x.reshape(B, Pl * Lat * Lon, C)
+        if self.stack_verts:
+            x = x.reshape(B, Lat * Lon, C)
+        else:
+            x = x.reshape(B, Pl * Lat * Lon, C)
 
         # try axial attention here ?
         if hasattr(self, "axis_attn"):
@@ -503,6 +521,7 @@ class EarthSpecificBlock(nn.Module):
             x = shortcut + gate_msa[:, None, :] * self.drop_path(x)
             mlp_input = self.norm2(x) * (1 + scale_mlp[:, None, :]) + shift_mlp[:, None, :]
             x = x + self.drop_path(gate_mlp[:, None, :] * self.mlp(mlp_input))
+            
         return x
 
 
@@ -540,6 +559,7 @@ class BasicLayer(nn.Module):
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
         mlp_layer=Mlp,
+        stack_verts=False,
         **kwargs,
     ):
         super().__init__()
@@ -565,6 +585,7 @@ class BasicLayer(nn.Module):
                     act_layer=act_layer,
                     mlp_layer=mlp_layer,
                     norm_layer=norm_layer,
+                    stack_verts=stack_verts,
                     **kwargs,
                 )
                 for i in range(depth)

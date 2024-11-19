@@ -119,7 +119,11 @@ class ForecastModule(BaseLightningModule):
     def forward(self, batch, *args, **kwargs):
         x = self.embedder.encode(batch["state"], batch.get("prev_state", None))
 
-        x = self.backbone(x, *args, **kwargs)
+        if len(args) == 0:
+            x = self.backbone(x, None, **kwargs)
+        else:
+            x = self.backbone(x, *args, **kwargs)
+
         out = self.embedder.decode(x)  # we get tdict
 
         if self.add_input_state:
@@ -400,3 +404,6 @@ class ForecastModuleWithCond(ForecastModule):
         cond_emb = month_emb + hour_emb
 
         return super().forward(batch, cond_emb)
+
+
+
