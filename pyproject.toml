@@ -28,6 +28,7 @@ dependencies = [
     "pytest",
     "einops",
     "ruff==0.5.3",
+    "pyshtools",
 ]
 
 [tool.ruff]
