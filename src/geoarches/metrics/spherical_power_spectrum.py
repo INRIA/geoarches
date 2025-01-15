@@ -38,7 +38,7 @@ class PowerSpectrum(Metric):
         """
         Args:
             preprocess: Takes as input targets or predictions and returns processed tensor.
-            compute_target_spectrim: Whether to compute spectrum on groundtruth.
+            compute_target_spectrim: Whether to also compute spectrum on groundtruth.
                 Turn off to save computation.
         """
         Metric.__init__(self)
@@ -107,15 +107,18 @@ class Era5PowerSpectrum(TensorDictMetricBase):
 
     def __init__(
         self,
-        surface_variables=era5.surface_variables,
-        level_variables=era5.level_variables,
-        pressure_levels=era5.pressure_levels,
+        compute_target_spectrum: bool = False,
+        surface_variables: str = era5.surface_variables,
+        level_variables: str = era5.level_variables,
+        pressure_levels: str = era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
         return_raw_dict: bool = False,
     ):
         """
         Args:
+            compute_target_spectrum: Whether to also compute spectrum on groundtruth.
+                Turn off to save computation.
             surface_variables: Names of level variables.
             level_variables: Names of surface variables.
             pressure_levels: pressure levels in data.

@@ -65,19 +65,21 @@ def main():
         "--output_dir",
         type=str,
         required=True,
-        help="Output directory to save the evaluation metrics.",
+        help="Output directory to save the evaluation metrics. "
+        "This script stores separate files per metric requested in --metrics. "
+        "Recommended to make one output directory per model being evaluated.",
     )
     parser.add_argument(
         "--pred_path",
         type=str,
         required=True,
-        help="Directory or path to find model predictions.",
+        help="Directory or file path to find model predictions.",
     )
     parser.add_argument(
         "--groundtruth_path",
         type=str,
         required=True,
-        help="Directory or path to read groundtruth.",
+        help="Directory or file path to read groundtruth.",
     )
     parser.add_argument(
         "--multistep",
@@ -228,7 +230,7 @@ def main():
             pred = next_batch["clim_state"].apply(lambda x: x.unsqueeze(1))  # Add mem dimension.
         else:
             target, (pred, pred_timestamps) = next_batch
-            # Check same timestep.
+            # Check same timestep loaded from groundtruth and prediction.
             torch.testing.assert_close(
                 target["timestamp"],
                 pred_timestamps,
@@ -253,30 +255,37 @@ def main():
             metric.update(target.to(device), pred.to(device))
 
     for metric_name, metric in metrics.items():
-        raw_dict, labelled_dict = metric.compute()
-        labelled_dict = {
-            k: (v.cpu() if hasattr(v, "cpu") else v) for k, v in labelled_dict.items()
-        }
+        raw_dict, labelled_metric_output = metric.compute()
+
         if Path(args.pred_path).is_file():
             output_filename = f"{Path(args.pred_path).stem}-{metric_name}"
         else:
             output_filename = f"test-multistep={args.multistep}-{metric_name}"
 
+        # Get xr dataset.
+        if isinstance(labelled_metric_output, dict):
+            labelled_dict = {
+                k: (v.cpu() if hasattr(v, "cpu") else v) for k, v in labelled_metric_output.items()
+            }
+            extra_dimensions = ["prediction_timedelta"]
+            if "brier" in metric_name:
+                extra_dimensions = ["quantile", "prediction_timedelta"]
+            if "rankhist" in metric_name or "rank_hist" in metric_name:
+                extra_dimensions = ["bins", "prediction_timedelta"]
+            ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
+
+            # Write labeled dict.
+            labelled_dict["groundtruth_path"] = args.groundtruth_path
+            labelled_dict["predictions_path"] = args.pred_path
+            torch.save(labelled_dict, Path(output_dir).joinpath(f"{output_filename}.pt"))
+        else:
+            ds = labelled_metric_output
         # Write xr dataset.
-        extra_dimensions = ["prediction_timedelta"]
-        if "brier" in metric_name:
-            extra_dimensions = ["quantile", "prediction_timedelta"]
-        if "rankhist" in metric_name or "rank_hist" in metric_name:
-            extra_dimensions = ["bins", "prediction_timedelta"]
-        ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
         ds.to_netcdf(Path(output_dir).joinpath(f"{output_filename}.nc"))
 
-        # Write labeled dict.
-        labelled_dict["groundtruth_path"] = args.groundtruth_path
-        labelled_dict["predictions_path"] = args.pred_path
-        torch.save(labelled_dict, Path(output_dir).joinpath(f"{output_filename}.pt"))
-
         # Write raw score dict.
+        raw_dict["groundtruth_path"] = args.groundtruth_path
+        raw_dict["predictions_path"] = args.pred_path
         torch.save(raw_dict, Path(output_dir).joinpath(f"{output_filename}-raw.pt"))
 
 
