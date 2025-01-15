@@ -1,4 +1,4 @@
-.git*
+.git/*
 .vscode
 outputs  
 lightning_logs

@@ -3,11 +3,12 @@ import pandas as pd
 import pytest
 import torch
 import xarray as xr
+
 from geoarches.dataloaders import dcpp
 
 # Dimension sizes.
-LAT, LON = 143,144
-PLEV = 3
+LAT, LON = 143, 144
+PLEV = 4
 
 
 class TestDCPPForecast:
@@ -18,32 +19,39 @@ class TestDCPPForecast:
         self.test_dir = tmp_path_factory.mktemp("data")
         times = pd.date_range("2024-01-01", periods=6, freq="1ME")  # datetime64[ns]
         for i in range(2):
-            file_path = self.test_dir / f"fake_dcpp_{i}_tos_included.nc"
+            file_path = self.test_dir / f"1961_{i}.nc"
             time = times[i * 2 : i * 2 + 2]
 
             # Create some dummy data
-            level_var_data = np.zeros((len(time), PLEV, LAT,LON))
+            level_var_data = np.zeros((len(time), PLEV, LAT, LON))
             surface_var_data = np.zeros((len(time), LAT, LON))
+            level_variables = ['va','ua','zg','wap']
+            surface_variables = ['psl','tos']
             ds = xr.Dataset(
                 data_vars=dict(
                     **{
                         var_name: (["time", "plev", "lat", "lon"], level_var_data)
-                        for var_name in dcpp.level_variables
+                        for var_name in level_variables
                     },
                     **{
                         var_name: (["time", "lat", "lon"], surface_var_data)
-                        for var_name in dcpp.surface_variables
+                        for var_name in surface_variables
                     },
                 ),
-                coords={"time": time, "lat": np.arange(0, LAT),"lon": np.arange(0, LON),'plev':[85000,70000,50000]},
+                coords={
+                    "time": time,
+                    "lat": np.arange(0, LAT),
+                    "lon": np.arange(0, LON),
+                    "plev": [85000, 70000, 50000,25000],
+                },
             )
             ds.to_netcdf(file_path)
 
-        #make fake atmos forcings
-        full_atmos_normal = torch.rand((4,540))
-        torch.save(full_atmos_normal,f'{self.test_dir}/full_atmos_normal.pt')
-        full_solar_normal = torch.rand((340,12,6))
-        torch.save(full_solar_normal,f'{self.test_dir}/full_solar_normal.pt')
+        # make fake atmos forcings
+        full_atmos_normal = torch.rand((540,4))
+        np.save(f"{self.test_dir}/ghg_forcings_normed.npy",full_atmos_normal.numpy())
+        full_solar_normal = torch.rand((804, 6))
+        np.save( f"{self.test_dir}/solar_forcings_normed.npy",full_solar_normal.numpy())
 
     def test_load_current_state(self):
         dcpp_model = dcpp.DCPPForecast(
@@ -54,19 +62,23 @@ class TestDCPPForecast:
             load_prev=False,
             multistep=0,
             load_clim=False,
+            surface_variable_indices=[0,1],
+            level_variable_indices=[0,1,2],
+            surface_variables=['psl','tos'],
+            level_variables=['va','ua','zg']   
         )
         example = next(iter(dcpp_model))
 
-        assert len(dcpp_model) == 2
+        assert len(dcpp_model) == 4
         # Current state
-        assert example["timestamp"] == 1711843200  # 2024-01-01-00-00
-        assert example["state"]["surface"].shape == (10,1, LAT, LON)  #  (var, lat, lon)
-        assert example["state"]["level"].shape == (8, 3, LAT, LON)  #  (var, lev, lat, lon)
+        assert example["timestamp"] == 1706659200  # 2024-01-01-00-00
+        assert example["state"]["surface"].shape == (2, 1, LAT, LON)  #  (var, lat, lon)
+        assert example["state"]["level"].shape == (3, 4, LAT, LON)  #  (var, lev, lat, lon)
         assert example["forcings"].shape == torch.Size([10])  #  (var)
 
     @pytest.mark.parametrize(
         "lead_time_months, expected_len, expected_next_timestamp",
-        [(1, 1, 1704088800), (1, 1, 1704110400)],
+        [(1, 3, 1704088800), (1, 3, 1704110400)],
     )
     def test_load_current_and_next_state(
         self, lead_time_months, expected_len, expected_next_timestamp
@@ -78,17 +90,21 @@ class TestDCPPForecast:
             lead_time_months=lead_time_months,
             load_prev=False,
             load_clim=False,
+            surface_variable_indices=[0,1],
+            level_variable_indices=[0,1,2],
+            surface_variables=['psl','tos'],
+            level_variables=['va','ua','zg']        
         )
         example = ds[0]
 
         assert len(ds) == expected_len
         # Current state
-        assert example["timestamp"] == 1711843200  # 2024-01-01-00-00
-        assert example["state"]["surface"].shape == (10,1, LAT, LON)  #  (var, lat, lon)
-        assert example["state"]["level"].shape == (8, 3, LAT, LON)  #  (var, lev, lat, lon)
+        assert example["timestamp"] == 1706659200  # 2024-01-01-00-00
+        assert example["state"]["surface"].shape == (2, 1, LAT, LON)  #  (var, lat, lon)
+        assert example["state"]["level"].shape == (3, 4, LAT, LON)  #  (var, lev, lat, lon)
         # Next state
-        assert example["next_state"]["surface"].shape == (10,1, LAT, LON)  #  (var, lat, lon)
-        assert example["next_state"]["level"].shape == (8, 3, LAT, LON)  #  (var, lev, lat, lon)
+        assert example["next_state"]["surface"].shape == (2, 1, LAT, LON)  #  (var, lat, lon)
+        assert example["next_state"]["level"].shape == (3, 4, LAT, LON)  #  (var, lev, lat, lon)
         # No multistep
         assert "future_states" not in example
         # No prev state

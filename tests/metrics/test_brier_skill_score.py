@@ -3,6 +3,7 @@ import functools
 import pytest
 import torch
 from einops import rearrange
+
 from geoarches.metrics.brier_skill_score import BrierSkillScore, Era5BrierSkillScore
 
 LAT = 3
@@ -112,7 +113,7 @@ class TestBrierSkillScore:
             target = torch.randint(low=0, high=2, size=(batch_size, *DATA_SHAPE, LAT, LON))
             targets.append(target)
             # Calculate climatological probability (location-independent average).
-            clim_prob += target.mul(lat_coeffs).mean((-2, -1)).sum(0)  # Latitide weighted mean.
+            clim_prob += target.mul(lat_coeffs).mean((-2, -1)).sum(0)  # Latitude weighted mean.
         clim_prob /= nsamples
         clim_prob = clim_prob.reshape(1, *DATA_SHAPE, 1, 1).repeat(batch_size, 1, 1, LAT, LON)
 

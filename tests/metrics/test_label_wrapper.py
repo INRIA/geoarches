@@ -5,12 +5,14 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
+from torchmetrics import Metric
+
 from geoarches.metrics.label_wrapper import (
     LabelDictWrapper,
+    LabelXarrayWrapper,
     add_timedelta_index,
     convert_metric_dict_to_xarray,
 )
-from torchmetrics import Metric
 
 
 @pytest.fixture
@@ -33,7 +35,7 @@ def variable_indices():
     }
 
 
-class TestVarLevLabel:
+class TestVarLevDims:
     def test_convert_to_labeled_dict(self, mock_metric, variable_indices):
         # Test compute method with labeled dict output
         wrapper = LabelDictWrapper(
@@ -48,6 +50,40 @@ class TestVarLevLabel:
         torch.testing.assert_close(output["rmse_var2"], torch.tensor(1.0))
         torch.testing.assert_close(output["mae_var1"], torch.tensor(0.3))
         torch.testing.assert_close(output["mae_var2"], torch.tensor(0.8))
+
+    def test_convert_to_xarray(self, mock_metric):
+        # Test compute method with labeled dict output
+        wrapper = LabelXarrayWrapper(
+            metric=mock_metric,
+            dims=["variable", "level"],
+            coords=[
+                ["var1", "var2"],
+                [1],
+            ],
+        )
+
+        wrapper.update()
+        output = wrapper.compute()
+
+        xr.testing.assert_equal(
+            output,
+            xr.Dataset(
+                data_vars={
+                    "var1": xr.DataArray(
+                        data=np.array([[0.5], [0.3]], dtype=np.float32),
+                        dims=("metric", "level"),
+                    ),
+                    "var2": xr.DataArray(
+                        data=np.array([[1.0], [0.8]], dtype=np.float32),
+                        dims=("metric", "level"),
+                    ),
+                },
+                coords={
+                    "metric": ["rmse", "mae"],
+                    "level": [1],
+                },
+            ),
+        )
 
 
 @pytest.fixture
@@ -72,7 +108,7 @@ def mock_metric_with_timedelta_dimension():
     return mock_metric
 
 
-class TestTimeDeltaLabel:
+class TestTimeDeltaDim:
     def test_convert_to_labeled_dict(self, mock_metric_with_timedelta_dimension, variable_indices):
         # Test compute method with labeled dict output
         wrapper = LabelDictWrapper(
@@ -111,6 +147,52 @@ class TestTimeDeltaLabel:
         torch.testing.assert_close(output["rmse_var2_12h"], torch.tensor(0.7))
         torch.testing.assert_close(output["rmse_var2_18h"], torch.tensor(1.1))
 
+    def test_convert_to_xarray(self, mock_metric_with_timedelta_dimension):
+        # Test compute method with labeled dict output
+        wrapper = LabelXarrayWrapper(
+            metric=mock_metric_with_timedelta_dimension,
+            dims=["prediction_timedelta", "variable", "level"],
+            coords=[
+                [timedelta(hours=6), timedelta(hours=12), timedelta(hours=18)],
+                ["var1", "var2"],
+                [1, 2],
+            ],
+        )
+
+        wrapper.update()
+        output = wrapper.compute()
+
+        xr.testing.assert_equal(
+            output,
+            xr.Dataset(
+                data_vars={
+                    "var1": xr.DataArray(
+                        data=np.array(
+                            [[[0.1, 0.2], [0.5, 0.6], [0.9, 1.0]]],
+                            dtype=np.float32,
+                        ),
+                        dims=("metric", "prediction_timedelta", "level"),
+                    ),
+                    "var2": xr.DataArray(
+                        data=np.array(
+                            [[[0.3, 0.4], [0.7, 0.8], [1.1, 1.2]]],
+                            dtype=np.float32,
+                        ),
+                        dims=("metric", "prediction_timedelta", "level"),
+                    ),
+                },
+                coords={
+                    "metric": ["rmse"],
+                    "level": [1, 2],
+                    "prediction_timedelta": [
+                        timedelta(hours=6),
+                        timedelta(hours=12),
+                        timedelta(hours=18),
+                    ],
+                },
+            ),
+        )
+
 
 def test_convert_metric_dict_to_xarray():
     labeled_dict = {
@@ -134,17 +216,17 @@ def test_convert_metric_dict_to_xarray():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "mse": xr.DataArray(
-                    data=np.array([[1, 2], [5, 6]], dtype=np.float32),
-                    dims=("variable", "prediction_timedelta"),
+                "T2m": xr.DataArray(
+                    data=np.array([[1, 2], [3, 4]], dtype=np.float32),
+                    dims=("metric", "prediction_timedelta"),
                 ),
-                "var": xr.DataArray(
-                    data=np.array([[3, 4], [7, 8]], dtype=np.float32),
-                    dims=("variable", "prediction_timedelta"),
+                "U10": xr.DataArray(
+                    data=np.array([[5, 6], [7, 8]], dtype=np.float32),
+                    dims=("metric", "prediction_timedelta"),
                 ),
             },
             coords={
-                "variable": ["T2m", "U10"],
+                "metric": ["mse", "var"],
                 "prediction_timedelta": [
                     timedelta(hours=24),
                     timedelta(hours=48),
@@ -171,13 +253,13 @@ def test_convert_metric_dict_to_xarray_with_bins_dimension():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "rankhist": xr.DataArray(
+                "T2m": xr.DataArray(
                     data=np.array([[[1, 2], [3, 4]]], dtype=np.float32),
-                    dims=("variable", "bins", "prediction_timedelta"),
+                    dims=("metric", "bins", "prediction_timedelta"),
                 ),
             },
             coords={
-                "variable": ["T2m"],
+                "metric": ["rankhist"],
                 "prediction_timedelta": [timedelta(hours=24), timedelta(hours=48)],
                 "bins": [1, 2],
             },
@@ -201,17 +283,17 @@ def test_convert_metric_dict_to_xarray_without_timedelta_dimension():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "mse": xr.DataArray(
-                    data=np.array([1, 5], dtype=np.float32),
-                    dims=("variable"),
+                "T2m": xr.DataArray(
+                    data=np.array([1, 3], dtype=np.float32),
+                    dims=("metric"),
                 ),
-                "var": xr.DataArray(
-                    data=np.array([3, 7], dtype=np.float32),
-                    dims=("variable"),
+                "U10": xr.DataArray(
+                    data=np.array([5, 7], dtype=np.float32),
+                    dims=("metric"),
                 ),
             },
             coords={
-                "variable": ["T2m", "U10"],
+                "metric": ["mse", "var"],
             },
         ),
     )

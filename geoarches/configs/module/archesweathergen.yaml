@@ -1,0 +1,85 @@
+project: atmo-diffusion
+
+module:
+  _target_: geoarches.lightning_modules.diffusion.DiffusionModule
+  name: ${name}
+  cond_dim: 256
+
+  scheduler: flow
+  prediction_type: sample
+  beta_schedule: squaredcos_cap_v2 # useful only for ddim
+  snr_gamma: 0
+  uncond_proba: 0.0
+
+  # what to learn
+  load_deterministic_model: modelstore/jzh-geoaw-m-seed0 # used to load preds if learn_residual="pred" and not loaded by dataloader from storage.
+  learn_residual: pred  # "default" to just learn [next_state-state], "pred" to learn residual of deterministic model.
+  conditional: prev+det # or prev+det for instance
+
+  # scales
+  loss_delta_normalization: False
+  loss_weighting_strategy: debiased
+  state_normalization: pred
+  pow: 2.0
+
+  use_classifier: False # debug
+  add_input_state: False
+  snr_strategy: None
+
+  # opt
+  lr: 3e-4
+  betas: [0.9, 0.98] # try a 0.999 for betas ? and bigger bs ?
+  weight_decay: 0.01
+  num_warmup_steps: 5000
+  num_training_steps: ${max_steps}
+
+defaults:
+  - metrics:  # Read from module/metrics/ folder.
+    - era5_ensemble
+    - era5_brier
+
+val:
+  num_members: 5
+  rollout_iterations: 2 # number of rollouts/multistep
+  metrics: ${oc.dict.values:module.metrics} # list of default metrics from above.
+  metrics_kwargs:
+    rollout_iterations: 1
+    save_memory: False # Set to True if memory constraints (ie. if num_members is big).
+
+inference:
+  num_steps: 25
+  num_members: 10
+  rollout_iterations: 10 # number of rollouts/multistep
+  cf_guidance: 1
+  s_churn: 0.0
+  save_test_outputs: False
+  metrics: ${module.metrics} # list of default metrics from above.
+  metrics_kwargs:
+    rollout_iterations: ${..rollout_iterations}
+    save_memory: False # Set to True if memory constraints (ie. if num_members is big).
+
+backbone:
+  # default backbone
+  _target_: geoarches.backbones.archesweather.ArchesWeatherCondBackbone
+  tensor_size: [8, 60, 120] # after embed
+  emb_dim: 192
+  cond_dim: 256
+  window_size: [1, 6, 10]
+  droppath_coeff: 0.2
+  dropout: 0
+  depth_multiplier: 1
+  use_skip: True
+  first_interaction_layer: linear
+  axis_attn: True
+  mlp_layer: swiglu
+  mlp_ratio: 4.0
+
+embedder: 
+  _target_: geoarches.backbones.archesweather.WeatherEncodeDecodeLayer
+  img_size: [13, 121, 240]
+  emb_dim: 192
+  out_emb_dim: 384
+  patch_size: [2, 2, 2]
+  surface_ch: 4
+  level_ch: 6
+  n_concatenated_states: 3 # prev and noise and det

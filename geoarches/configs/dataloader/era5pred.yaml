@@ -1,0 +1,16 @@
+dataset: 
+  _target_: dataloaders.era5pred.Era5ForecastWithPrediction
+  path: data/era5_240/full/
+  pred_path: data/outputs/deterministic/jzh-geoaw-m-seed0
+  lead_time_hours: 24 # mixed
+  norm_scheme: pangu
+  load_prev: True
+  load_hard_neg: False
+
+validation_args:
+  multistep: 2
+  domain: val
+
+test_args:
+  multistep: 2
+  domain: test_z0012

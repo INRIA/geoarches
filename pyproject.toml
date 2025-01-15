@@ -1,34 +1,51 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "geoarches"
-version = "20240208"
-dependencies = [
-    "torch",
-    "torchvision",
-    "xarray",
-    "py360convert",
-    "submitit",
-    "diffusers==0.29.2",
-    "apache_beam",
-    "timm",
-    "netCDF4",
-    "wandb",
-    "ipykernel",
-    "tqdm",
-    "ipykernel",
-    "matplotlib",
-    "hydra-core==1.3.2",
-    "axial_attention",
-    "lightning",
-    "zarr",
-    "gcsfs",
-    "pytest",
-    "einops",
-    "ruff==0.5.3",
+version = "0.1.0"
+license = "CC BY-NC-SA 4.0"
+description = "Machine learning package for training, running, and evaluating ML models on geospatial data (specifically climate and weather data)"
+authors = [
+    {name = "ARCHES lab @ INRIA"}
 ]
+readme = "README.md"
+homepage = "https://geoarches.readthedocs.io/en/latest/"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "torch (>=2.5.1,<3.0.0)",
+    "torchvision (>=0.20.1,<0.21.0)",
+    "xarray (>=2025.1.1,<2026.0.0)",
+    "submitit (>=1.5.2,<2.0.0)",
+    "diffusers (==0.29.2)",
+    "netcdf4 (>=1.7.2,<2.0.0)",
+    "wandb (>=0.19.3,<0.20.0)",
+    "tqdm (>=4.67.1,<5.0.0)",
+    "matplotlib (>=3.10.0,<4.0.0)",
+    "hydra-core (==1.3.2)",
+    "axial-attention (>=0.6.1,<0.7.0)",
+    "lightning (>=2.5.0.post0,<3.0.0)",
+    "zarr (>=3.0.0,<4.0.0)",
+    "einops (>=0.8.0,<0.9.0)",
+    "tensordict (>=0.6.2,<0.7.0)",
+    "scipy (>=1.15.1,<2.0.0)",
+    "pyshtools (>=4.13.1,<5.0.0)",
+    "fasteners (>=0.19,<0.20)",
+    "timm (>=1.0.13,<2.0.0)",
+    "dask (>=2024.12.1,<2025.0.0)",
+    "seaborn (>=0.13.2,<0.14.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
 line-length = 99
@@ -48,11 +65,26 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"src/geoarches/backbones/weatherlearn_utils/*" = ["N"]
-"src/geoarches/lightning_modules/__init__.py" = ["F401"]
+"geoarches/backbones/weatherlearn_utils/*" = ["N"]
+"geoarches/lightning_modules/__init__.py" = ["F401"]
 
-[tool.setuptools.package-data]
-geoarches = ["**/*.yaml", "**/*.npy", "**/*.pt", "**/*.nc"]
+[tool.codespell]
+skip = "*.ipynb"
+ignore-words-list = "hist"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+ruff = "*"
+codespell = "*"
+pre-commit = "*"
+
+
+[tool.poetry.group.docs]
+optional = true
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6.1"
+mkdocs-material = "^9.5.50"
+mkdocs-jupyter = "^0.25.1"
 
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'
