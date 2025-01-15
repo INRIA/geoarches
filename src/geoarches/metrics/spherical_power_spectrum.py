@@ -1,9 +1,14 @@
+from datetime import timedelta
 from typing import Callable
 
 import pyshtools as pysh
 import torch
 from einops import rearrange
+from geoarches.dataloaders import era5
+from geoarches.metrics.label_wrapper import LabelXarrayWrapper
 from torchmetrics import Metric
+
+from .metric_base import TensorDictMetricBase
 
 
 def _remove_south_pole_lat(arr: torch.tensor) -> torch.tensor:
@@ -32,7 +37,7 @@ class PowerSpectrum(Metric):
     ):
         """
         Args:
-            preprocess: Takes as input targets and predictions and returns processed tensors.
+            preprocess: Takes as input targets or predictions and returns processed tensor.
             compute_target_spectrim: Whether to compute spectrum on groundtruth.
                 Turn off to save computation.
         """
@@ -61,7 +66,8 @@ class PowerSpectrum(Metric):
         self.nsamples += preds.shape[0]
 
         if self.preprocess:
-            targets, preds = self.preprocess(targets, preds)
+            targets = self.preprocess(targets)
+            preds = self.preprocess(preds)
 
         def _compute_spectrum(grid):
             """Compute power spectrum on lat x lon grid."""
@@ -87,3 +93,65 @@ class PowerSpectrum(Metric):
         if self.compute_target_spectrum:
             output["target_spectrum"] = self.target_spectrum / self.nsamples
         return output
+
+
+class Era5PowerSpectrum(TensorDictMetricBase):
+    """Wrapper class around PowerSpectrum for computing over surface and level variables.
+
+    Handles batches coming from Era5 Dataloader.
+
+    Accepted tensor shapes:
+        targets: (batch, timedelta, var, level, lat, lon)
+        preds: (batch, nmembers, timedelta, var, level, lat, lon)
+    """
+
+    def __init__(
+        self,
+        surface_variables=era5.surface_variables,
+        level_variables=era5.level_variables,
+        pressure_levels=era5.pressure_levels,
+        lead_time_hours: None | int = None,
+        rollout_iterations: None | int = None,
+        return_raw_dict: bool = False,
+    ):
+        """
+        Args:
+            surface_variables: Names of level variables.
+            level_variables: Names of surface variables.
+            pressure_levels: pressure levels in data.
+            lead_time_hours: timdelta (in hours) between prediction times.
+            rollout_iterations: number of multistep rollout for predictions.
+                (ie. lead time of 24 hours for 3 days, lead_time_hours=24, rollout_iterations=3)
+            return_raw_dict: Whether to also return the raw output from the metrics.
+        """
+        # Whether to include prediction_timdelta dimension.
+        if rollout_iterations:
+            surface_coord_names = ["prediction_timedelta", "variable", "degree"]
+            level_coord_names = ["prediction_timedelta", "variable", "level", "degree"]
+
+            timedeltas = [timedelta((i + 1) * lead_time_hours) for i in range(rollout_iterations)]
+            surface_coords = [timedeltas, surface_variables]
+            level_coords = [timedeltas, level_variables, pressure_levels]
+        else:
+            surface_coord_names = ["variable", "degree"]
+            level_coord_names = ["variable", "level", "degree"]
+            surface_coords = [surface_variables]
+            level_coords = [level_variables, pressure_levels]
+
+        # Initialize separate metrics for level vars and surface vars.
+        kwargs = {}
+        if surface_variables:
+            kwargs["surface"] = LabelXarrayWrapper(
+                PowerSpectrum(preprocess=lambda x: _remove_south_pole_lat(x.squeeze(-3))),
+                coord_names=surface_coord_names,
+                coords=surface_coords,
+                return_raw_dict=return_raw_dict,
+            )
+        if level_variables:
+            kwargs["level"] = LabelXarrayWrapper(
+                PowerSpectrum(preprocess=_remove_south_pole_lat),
+                coord_names=level_coord_names,
+                coords=level_coords,
+                return_raw_dict=return_raw_dict,
+            )
+        super().__init__(**kwargs)
