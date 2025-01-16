@@ -32,25 +32,32 @@ Pipeline:
 
 ## Installation
 
+### Install poetry
+
+We use poetry for package dependencies. Use pipx to install poetry:
+
+```sh
+brew install pipx
+pipx install poetry
+```
+
 ### Environment
 
 Create an environment or activate the environment you are already using.
 
 ```sh
-conda create --name weather python=3.10
+conda create --name weather python=3.11
 conda activate weather
 ```
 
-You can install the package in editable mode during development.
-Editable mode allows you to make changes to the geoarches code locally, and these changes will automatically be reflected in your code that depends on it.
-
-Move into this repo and type:
+Move into the git repo and install dependencies:
 ```sh
-pip install -e .
-pip install --no-dependencies tensordict
-pip install --no-dependencies dask
+cd geoarches
+poetry install
 ```
-This also handles installing any dependencies.
+
+Poetry, by default, installs the geoarches package in editable mode.
+Editable mode allows you to make changes to the geoarches code locally, and these changes will automatically be reflected in your code that depends on it.
 
 ### Useful directories
 

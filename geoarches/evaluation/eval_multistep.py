@@ -166,8 +166,7 @@ def main():
     if not args.eval_clim:
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
-            filename_filter=(lambda x: "scale1p05" in x and '.nc' in x and not 'metrics' in x),
-            # filename_filter=(lambda x: True),  # Update filename_filter to filter within pred_path.
+            filename_filter=(lambda x: True),  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
             dimension_indexers=dict(
