@@ -57,6 +57,10 @@ ignore = [
 "src/geoarches/backbones/weatherlearn_utils/*" = ["N"]
 "src/geoarches/lightning_modules/__init__.py" = ["F401"]
 
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.3.4"
+
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'
 geoarches-submit = 'geoarches.submit:main'
