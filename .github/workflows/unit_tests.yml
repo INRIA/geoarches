@@ -1,6 +1,6 @@
 name: Unit tests
 
-# Trigger on push or pull request.
+# Trigger on push or pull request to main branch.
 on: 
   push:
   pull_request:
@@ -50,10 +50,17 @@ jobs:
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
       #----------------------------------------------
-      # install your root project, if required
+      #    install your root project, if required
       #----------------------------------------------
       - name: Install project
         run: poetry install --no-interaction
+      #----------------------------------------------
+      #        download data files for tests
+      #----------------------------------------------
+      - name: Download stats data
+        run: |
+          src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
+          wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
