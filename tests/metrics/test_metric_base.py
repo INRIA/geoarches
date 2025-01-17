@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 import numpy as np
 import torch
 import xarray as xr
-from geoarches.metrics.metric_base import TensorDictMetricBase
 from torchmetrics import Metric
+
+from geoarches.metrics.metric_base import TensorDictMetricBase
 
 
 class TestTensorDictMetricBase:

@@ -3,6 +3,7 @@
 from typing import List, Type
 
 import torchmetrics
+
 from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
 from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
 from geoarches.metrics.rank_histogram import Era5RankHistogram

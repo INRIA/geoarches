@@ -54,8 +54,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"src/geoarches/backbones/weatherlearn_utils/*" = ["N"]
-"src/geoarches/lightning_modules/__init__.py" = ["F401"]
+"geoarches/backbones/weatherlearn_utils/*" = ["N"]
+"geoarches/lightning_modules/__init__.py" = ["F401"]
 
 
 [tool.poetry.group.test.dependencies]

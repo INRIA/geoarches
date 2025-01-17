@@ -5,9 +5,10 @@ from typing import Callable
 import torch
 import xarray as xr
 from einops import rearrange
+from torchmetrics import Metric
+
 from geoarches.dataloaders import era5
 from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
-from torchmetrics import Metric
 
 from .. import stats as geoarches_stats
 from . import metric_base

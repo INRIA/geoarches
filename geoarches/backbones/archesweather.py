@@ -1,14 +1,15 @@
 import importlib
 
-import geoarches.stats as geoarches_stats
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F  # noqa N812
 import torch.utils.checkpoint as gradient_checkpoint
-from geoarches.backbones.archesweather_layers import ICNR_init
 from tensordict.tensordict import TensorDict
 from timm.layers.mlp import SwiGLU
+
+import geoarches.stats as geoarches_stats
+from geoarches.backbones.archesweather_layers import ICNR_init
 
 from .archesweather_layers import (
     CondBasicLayer,

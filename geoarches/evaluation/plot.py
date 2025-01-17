@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import xarray as xr
+
 from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 plot_metric_kwargs = {

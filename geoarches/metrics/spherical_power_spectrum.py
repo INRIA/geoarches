@@ -4,9 +4,10 @@ from typing import Callable
 import pyshtools as pysh
 import torch
 from einops import rearrange
+from torchmetrics import Metric
+
 from geoarches.dataloaders import era5
 from geoarches.metrics.label_wrapper import LabelXarrayWrapper
-from torchmetrics import Metric
 
 from .metric_base import TensorDictMetricBase
 

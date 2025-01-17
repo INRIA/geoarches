@@ -1,5 +1,6 @@
 import pytest
 import torch
+
 from geoarches.metrics.ensemble_metrics import EnsembleMetrics, Era5EnsembleMetrics
 
 LAT = 3

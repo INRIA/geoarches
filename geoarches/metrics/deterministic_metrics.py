@@ -1,9 +1,10 @@
 from typing import Callable, Dict
 
 import torch
+from torchmetrics import Metric
+
 from geoarches.dataloaders import era5
 from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
-from torchmetrics import Metric
 
 from .metric_base import MetricBase, TensorDictMetricBase, compute_lat_weights_weatherbench
 

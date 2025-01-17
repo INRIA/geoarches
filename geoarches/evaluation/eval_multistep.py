@@ -20,11 +20,12 @@ from pathlib import Path
 
 import torch
 from einops import rearrange
-from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 from tensordict.tensordict import TensorDict
 from torch.utils.data import default_collate
 from tqdm import tqdm
+
+from geoarches.dataloaders import era5
+from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 from . import metric_registry
 

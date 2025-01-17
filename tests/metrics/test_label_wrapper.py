@@ -5,13 +5,14 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
+from torchmetrics import Metric
+
 from geoarches.metrics.label_wrapper import (
     LabelDictWrapper,
     LabelXarrayWrapper,
     add_timedelta_index,
     convert_metric_dict_to_xarray,
 )
-from torchmetrics import Metric
 
 
 @pytest.fixture

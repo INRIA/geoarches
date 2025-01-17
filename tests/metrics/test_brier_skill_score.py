@@ -3,6 +3,7 @@ import functools
 import pytest
 import torch
 from einops import rearrange
+
 from geoarches.metrics.brier_skill_score import BrierSkillScore, Era5BrierSkillScore
 
 LAT = 3
