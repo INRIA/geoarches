@@ -119,7 +119,7 @@ def convert_metric_dict_to_xarray(
         ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions=['prediction_timedelta'])
 
     Args:
-        labeled_dict: Mapping to metric tenors. Expects keys to be formated as "<metric>_<var>_<dim1>_<dim2>_..._"
+        labeled_dict: Mapping to metric tenors. Expects keys to be formatted as "<metric>_<var>_<dim1>_<dim2>_..._"
             where the separator between dimensions is an underscore.
         extra_dimensions: list of dimension names, if any extra beyond <metric> and <var>.
     """

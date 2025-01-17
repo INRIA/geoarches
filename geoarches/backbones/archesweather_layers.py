@@ -320,7 +320,7 @@ class EarthSpecificBlock(nn.Module):
     3D Transformer Block
     Args:
         dim (int): Number of input channels.
-        input_resolution (tuple[int]): Input resulotion.
+        input_resolution (tuple[int]): Input resolution.
         num_heads (int): Number of attention heads.
         window_size (tuple[int]): Window size [pressure levels, latitude, longitude].
         shift_size (tuple[int]): Shift size for SW-MSA [pressure levels, latitude, longitude].

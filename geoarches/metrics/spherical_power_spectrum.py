@@ -123,7 +123,7 @@ class Era5PowerSpectrum(TensorDictMetricBase):
             surface_variables: Names of level variables.
             level_variables: Names of surface variables.
             pressure_levels: pressure levels in data.
-            lead_time_hours: timdelta (in hours) between prediction times.
+            lead_time_hours: timedelta (in hours) between prediction times.
             rollout_iterations: number of multistep rollout for predictions.
                 (ie. lead time of 24 hours for 3 days, lead_time_hours=24, rollout_iterations=3)
             return_raw_dict: Whether to also return the raw output from the metrics.

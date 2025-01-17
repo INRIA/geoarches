@@ -1,4 +1,4 @@
-"""Main script to run pipeline for training or inferrence (specify `mode` arg as "train" or "test").
+"""Main script to run pipeline for training or inference (specify `mode` arg as "train" or "test").
 
 Arguments are configured with hydra (which reads the `configs/` folder to compose the config).
 You can change arguments either by modifying the config files or through commandline.

@@ -1,6 +1,6 @@
 # geoarches
 
-geoarches is a machine learning package for training, running and evaluating ML models on weather and climate data, developped by Guillaume Couairon and Renu Singh in the ARCHES team at INRIA (Paris, France).
+geoarches is a machine learning package for training, running and evaluating ML models on weather and climate data, developed by Guillaume Couairon and Renu Singh in the ARCHES team at INRIA (Paris, France).
 
 geoarches's building blocks can be easily integrated into research ML pipelines.
 It can also be used to run the ArchesWeather and ArchesWeatherGen weather models.
@@ -20,15 +20,15 @@ Data:
 
 Model training:
 - `backbones/`: network architecture that can be plugged into lightning modules.
-- `lightning_modules/`: wrapper around backbone modules to handle loss computation, optimizer, etc for training and inferrence (agnostic to backbone but specific to ML task).
+- `lightning_modules/`: wrapper around backbone modules to handle loss computation, optimizer, etc for training and inference (agnostic to backbone but specific to ML task).
 
 Evaluation:
 - `metrics/`: tested suite of iterative metrics (memory efficient) for deterministic and generative models.
 - `evaluation/`: scripts for running metrics over model predictions and plotting.
 
 Pipeline:
-- `main_hydra.py`: script to run training or inferrence with hydra configuration.
-- `documentation/`: quickstart code for training and inferrence from a notebook.
+- `main_hydra.py`: script to run training or inference with hydra configuration.
+- `documentation/`: quickstart code for training and inference from a notebook.
 
 ## Installation
 
@@ -85,7 +85,7 @@ done
 You can follow instructions in [`documentation/archesweather-tutorial.ipynb`](documentation/archesweather-tutorial.ipynb) to load the models and run inference with them. See [`documentation/archesweathergen_pipeline.md`](documentation/archesweathergen_pipeline.md) to run training.
 
 ### Downloading ERA5 statistics
-To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inferrence or training), you will need to download ERA5 quantiles:
+To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inference or training), you will need to download ERA5 quantiles:
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
 wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc

@@ -1,5 +1,5 @@
 """
-Script to run inferrence made by two or more models and compute average prediction.
+Script to run inference made by two or more models and compute average prediction.
 
 Used to store output of ArchesWeather-Mx4 in order to train ArchesWeatherGen on residuals.
 """

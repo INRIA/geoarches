@@ -27,4 +27,4 @@ limit_val_batches: null
 accumulate_grad_batches: 1
 debug: False # set to True to debug
 
-mode: train  # Specify "train" or "test" to run training or inferrence.
+mode: train  # Specify "train" or "test" to run training or inference.

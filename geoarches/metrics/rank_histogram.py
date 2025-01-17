@@ -13,7 +13,7 @@ from .metric_base import TensorDictMetricBase
 class RankHistogram(Metric):
     """Iterative calculation of rank histogram as defined in the GenCast paper.
 
-    Rank historgram measures reliability of the ensemble distribution or how well the ensemble distribution spread models the observation distribution.
+    Rank histogram measures reliability of the ensemble distribution or how well the ensemble distribution spread models the observation distribution.
     by measuring the frequency of where observations fall (rank) within the spread of sorted ensemble member predictions.
     Expectation is uniform distribution over all possible ranks.
 

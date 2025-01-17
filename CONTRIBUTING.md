@@ -1,7 +1,7 @@
 
 ## Contribute to geoarches
 
-You can make changes on your own `dev` branch(s). This way you are not blocked by development on the `main` branch, but can still contribute to the `main` branch if you want to and can still incoroporate updates from other team members.
+You can make changes on your own `dev` branch(s). This way you are not blocked by development on the `main` branch, but can still contribute to the `main` branch if you want to and can still incorporate updates from other team members.
 
 1. Create a `dev` branch from the `main` branch of geoarches to start making changes.
     ```sh

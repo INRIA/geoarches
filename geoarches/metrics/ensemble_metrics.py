@@ -167,7 +167,7 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
         preds: (batch, nmembers, ..., timedelta, var, level, lat, lon)
 
     Metrics are reduced over batch, lat, lon.
-    Returns a labelled dictionary for each (timdelta, var, lev).
+    Returns a labelled dictionary for each (timedelta, var, lev).
     """
 
     def __init__(

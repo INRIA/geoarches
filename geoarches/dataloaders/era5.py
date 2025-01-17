@@ -258,7 +258,7 @@ class Era5Forecast(Era5Dataset):
             load_clim: Whether to load climatology.
             norm_scheme: Normalization scheme to use. Can be None to perform no normalization.
             timedelta_hours: Time difference (hours) between 2 consecutive timestamps. If not expecified,
-                             default is 6 or 12, depeding on domain.
+                             default is 6 or 12, depending on domain.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).

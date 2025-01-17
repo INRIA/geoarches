@@ -40,7 +40,7 @@ def window_reverse(windows, window_size, Pl, Lat, Lon):
 def get_shift_window_mask(input_resolution, window_size, shift_size):
     """
     Along the longitude dimension, the leftmost and rightmost indices are actually close to each other.
-    If half windows apper at both leftmost and rightmost positions, they are dircetly merged into one window.
+    If half windows apper at both leftmost and rightmost positions, they are directly merged into one window.
     Args:
         input_resolution (tuple[int]): [pressure levels, latitude, longitude]
         window_size (tuple[int]): Window size [pressure levels, latitude, longitude].
