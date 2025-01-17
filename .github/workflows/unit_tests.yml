@@ -3,6 +3,8 @@ name: Unit tests
 # Trigger on push or pull request to main branch.
 on: 
   push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
