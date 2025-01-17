@@ -31,8 +31,7 @@ def instantiate_metric(metric_name: str, **extra_kwargs):
         return class_ref(**kwargs, **extra_kwargs)
     else:
         raise ValueError(
-            f"Metric {metric_name} not found in registry. "
-            f"Available metrics: {available_metrics()}"
+            f"Metric {metric_name} not found in registry. Available metrics: {available_metrics()}"
         )
 
 

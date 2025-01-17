@@ -47,11 +47,9 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
                 year = 2019 if domain == "val" else 2020
                 start_time = np.datetime64(f"{year}-01-01T00:00:00")
                 if self.load_prev:
-                    start_time = start_time - self.lead_time_hours * np.timedelta64(
-                        1, "h"
-                    )
+                    start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
                 end_time = np.datetime64(
-                    f"{year+1}-01-01T00:00:00"
+                    f"{year + 1}-01-01T00:00:00"
                 ) + self.lead_time_hours * np.timedelta64(1, "h")
                 self.pred_ds.set_timestamp_bounds(start_time, end_time)
 
@@ -67,9 +65,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
     def __getitem__(self, i, normalize=True, load_hard_neg=True):
         out = {}
         di = self.lead_time_hours // self.timedelta
-        shift_main = (
-            di if self.domain == "train" else 0
-        )  # because we cannot access first element
+        shift_main = di if self.domain == "train" else 0  # because we cannot access first element
         out = super().__getitem__(
             i + shift_main, normalize=False
         )  # get original data, +di because we need to fetch next one
@@ -81,13 +77,9 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             )
             assert out["timestamp"] == pred_timestamp, (
                 f"badly aligned {i}:"
-                + pd.Timestamp(out["timestamp"].int().item() * 10**9).strftime(
-                    "%Y-%m-%d-%H-%M"
-                )
+                + pd.Timestamp(out["timestamp"].int().item() * 10**9).strftime("%Y-%m-%d-%H-%M")
                 + "/"
-                + pd.Timestamp(pred_timestamp.int().item() * 10**9).strftime(
-                    "%Y-%m-%d-%H-%M"
-                )
+                + pd.Timestamp(pred_timestamp.int().item() * 10**9).strftime("%Y-%m-%d-%H-%M")
             )
 
         if normalize:

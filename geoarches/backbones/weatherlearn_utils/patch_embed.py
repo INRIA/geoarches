@@ -43,9 +43,9 @@ class PatchEmbed2D(nn.Module):
 
     def forward(self, x: torch.Tensor):
         B, C, H, W = x.shape
-        assert (
-            H == self.img_size[0] and W == self.img_size[1]
-        ), f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        assert H == self.img_size[0] and W == self.img_size[1], (
+            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        )
         x = self.pad(x)
         x = self.proj(x)
         if self.norm is not None:
@@ -102,9 +102,9 @@ class PatchEmbed3D(nn.Module):
 
     def forward(self, x: torch.Tensor):
         B, C, L, H, W = x.shape
-        assert (
-            L == self.img_size[0] and H == self.img_size[1] and W == self.img_size[2]
-        ), f"Input image size ({L}*{H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]}*{self.img_size[2]})."
+        assert L == self.img_size[0] and H == self.img_size[1] and W == self.img_size[2], (
+            f"Input image size ({L}*{H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]}*{self.img_size[2]})."
+        )
         x = self.pad(x)
         x = self.proj(x)
         if self.norm:

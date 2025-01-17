@@ -163,7 +163,7 @@ class Era5RankHistogram(TensorDictMetricBase):
             out = {}
             for var, var_lev_idx in variable_indices.items():
                 for bin_idx in range(n_members + 1):
-                    out[f"{var}_{bin_idx+1}"] = (*var_lev_idx, bin_idx)
+                    out[f"{var}_{bin_idx + 1}"] = (*var_lev_idx, bin_idx)
             return out
 
         # Initialize separate metrics for level vars and surface vars.
