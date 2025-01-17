@@ -88,7 +88,7 @@ You can follow instructions in [`documentation/archesweather-tutorial.ipynb`](do
 To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inferrence or training), you will need to download ERA5 quantiles:
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
 ```
 
 ## Using geoarches modules in python
@@ -96,7 +96,7 @@ wget -O src/geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016
 Your directory structure after following [installation](#Installation) should look like this:
 ```
 ├── geoarches
-│   ├── src
+│   ├── geoarches
 │   │   ├── ...
 └── your_own_project
     ├── ...
