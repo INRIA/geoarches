@@ -66,6 +66,12 @@ ruff = "*"
 codespell = "*"
 pre-commit = "*"
 
+
+[tool.poetry.group.docs]
+optional = true
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6.1"
+
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'
 geoarches-submit = 'geoarches.submit:main'

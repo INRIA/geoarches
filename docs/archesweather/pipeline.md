@@ -1,4 +1,4 @@
-# pipeline for training ArchesWeatherGen
+# Pipeline to train ArchesWeather and ArchesWeatherGen
 
 This is the full training pipeline if you want to re-train ArchesWeatherGen from scratch. We assume that you have installed the geoarches package and downloaded the data with the script.
 

@@ -1,0 +1,15 @@
+site_name: geoarches
+
+# Repository
+repo_name: INRIA/geoarches
+repo_url: https://github.com/INRIA/geoarches
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting started: installation.md
+  - User Guide: user_guide.md
+  - Contributing: contributing.md
+  - ArchesWeather: 
+      - Train: archesweather/pipeline.md
+
