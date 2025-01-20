@@ -71,6 +71,7 @@ pre-commit = "*"
 optional = true
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
+mkdocs-material = "^9.5.50"
 
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'

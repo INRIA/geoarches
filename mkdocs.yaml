@@ -4,6 +4,9 @@ site_name: geoarches
 repo_name: INRIA/geoarches
 repo_url: https://github.com/INRIA/geoarches
 
+theme:
+  name: material
+
 # Page tree
 nav:
   - Home: index.md
