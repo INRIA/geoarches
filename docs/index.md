@@ -1,8 +1,9 @@
-# Documentation
+![geoarches](img/logo.png)
+# geoarches
 
-If you are a user, check [Getting Started](installation.md), then [User Guide](user_guide.md) for more information.
+If you are a user, check [Getting Started](getting_started/installation.md), then [User Guide](user_guide.md) for more information.
 
-If you want to contribute to the code, check the [Contributing](contributing.md) section for setup.
+If you want to contribute to the code, check the [Contributing](contributing/contribute.md) section for setup.
 
 ## What is geoarches ?
 
@@ -18,18 +19,18 @@ geoarches is based on pytorch, pytorch-lightning and hydra for configuration. Af
 
 geoarches is meant to jumpstart your ML pipeline with building blocks for data handling, model training, and evaluation. This is an effort to share engineering tools and research knowledge across projects.
 
-### Data:
+### Data
 - `download/`: scripts that parallelize downloads and show how to use chunking to speed up read access.
 - `dataloaders/`: PyTorch datasets that read netcdf data and prepare tensors to feed into model training.
 
-### Model training:
+### Model training
 - `backbones/`: network architecture that can be plugged into lightning modules.
 - `lightning_modules/`: wrapper around backbone modules to handle loss computation, optimizer, etc for training and inference (agnostic to backbone but specific to ML task).
 
-### Evaluation:
+### Evaluation
 - `metrics/`: tested suite of iterative metrics (memory efficient) for deterministic and generative models.
 - `evaluation/`: scripts for running metrics over model predictions and plotting.
 
-### Pipeline:
+### Pipeline
 - `main_hydra.py`: script to run training or inference with hydra configuration.
 - `docs/archesweather/`: quickstart code for training and inference from a notebook.
