@@ -21,7 +21,9 @@ nav:
       - Installation: getting_started/installation.md
       - Using geoarches modules: getting_started/using_geoarches.md
   - User Guide: user_guide.md
-  - Contributing: contributing.md
+  - Contributing:
+      - Contribute to project: contributing/contribute.md
+      - Report bug or feature request: bug.md
   - ArchesWeather: 
       - Run: archesweather/run.ipynb
       - Train: archesweather/train.md

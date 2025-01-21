@@ -21,4 +21,4 @@ repos:
   rev: v2.1.0
   hooks:
     - id: codespell
-      args: ["--skip=*.ipynb", "--ignore-words-list=hist"]
+      args: ["--skip=*.ipynb", "--ignore-words-list=hist", "-w"]
