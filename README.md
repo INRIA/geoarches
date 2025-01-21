@@ -82,7 +82,7 @@ for MOD in $MODELS; do
     wget -O modelstore/$MOD/config.yaml $src/${MOD}_config.yaml 
 done
 ```
-You can follow instructions in [`documentation/archesweather-tutorial.ipynb`](documentation/archesweather-tutorial.ipynb) to load the models and run inference with them. See [`documentation/archesweathergen_pipeline.md`](documentation/archesweathergen_pipeline.md) to run training.
+You can follow instructions in [`docs/archesweather/run.ipynb`](docs/archesweather/run.ipynb) to load the models and run inference with them. See [`docs/archesweather/train.md`](docs/archesweather/train.md) to run training.
 
 ### Downloading ERA5 statistics
 To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inference or training), you will need to download ERA5 quantiles:
