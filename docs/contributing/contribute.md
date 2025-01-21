@@ -14,6 +14,16 @@ We welcome contributions to the codebase such as adding:
 
 ## Setup
 
+We suggest you [create a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) of the [geoarches repo](https://github.com/INRIA/geoarches).
+
+Then clone your fork from GitHub:
+
+```
+git clone git@github.com:<username>/geoarches.git
+```
+
+Follow [installation](../getting_started/installation.md) to install dependencies.
+
 You can make changes on your own `dev` branch(s). This way you are not blocked by development on the `main` branch, but can still contribute to the `main` branch and can still incorporate updates from other team members.
 
 Create a `dev` branch from the `main` branch of geoarches to start making changes.
