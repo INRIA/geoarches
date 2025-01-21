@@ -12,6 +12,8 @@ theme:
     - navigation.tracking
   logo: img/logo.png
   favicon: 'img/logo.png'
+  icon:
+    repo: fontawesome/brands/github
 
 plugins:
     - mkdocs-jupyter
