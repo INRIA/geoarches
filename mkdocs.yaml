@@ -6,6 +6,10 @@ repo_url: https://github.com/INRIA/geoarches
 
 theme:
   name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.tracking
 
 # Page tree
 nav:
