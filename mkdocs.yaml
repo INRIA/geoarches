@@ -18,6 +18,11 @@ theme:
 plugins:
     - mkdocs-jupyter
 
+markdown_extensions:
+  - def_list   # bullet points
+  - attr_list  # add HTML attributes to Markdown elements (align and style images)
+  - md_in_html # parse Markdown in HTML blocks
+
 # Page tree
 nav:
   - Home: index.md

@@ -1,16 +1,19 @@
-![geoarches](img/logo.png)
-# geoarches
+<div style="display: flex; align-items: flex-start;">
+<img src="img/logo.png" style="height: 150px; width: 150px; margin-right: 20px;" alt="Logo">
 
-If you are a user, check [Getting Started](getting_started/installation.md), then [User Guide](user_guide.md) for more information.
-
-If you want to contribute to the code, check the [Contributing](contributing/contribute.md) section for setup.
+<div>
+    <h1>Geoarches Documentation</h1>
+    <p>If you are a user, check <a href="getting_started/installation">Getting Started</a>, then <a href="user_guide">User Guide</a> for more information.</p>
+    <p>If you want to contribute to the codebase, check the <a href="contributing/contribute">Contributing</a> section for developer setup and instructions.</p>
+</div>
+</div>
 
 ## What is geoarches ?
 
 **geoarches** is a machine learning package for training, running and evaluating ML models on geospatial data, mainly weather and climate data.
 
 geoarches's building blocks can be easily integrated into research ML pipelines.
-It can also be used to run the ArchesWeather and ArchesWeatherGen weather models.
+It can also be used to run the **ArchesWeather** and **ArchesWeatherGen** weather models.
 
 geoarches is based on pytorch, pytorch-lightning and hydra for configuration. After the package is installed, you can use its modules in python code, but you can also call the main training and evaluating scripts of geoarches.
 
