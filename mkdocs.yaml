@@ -23,7 +23,7 @@ nav:
   - User Guide: user_guide.md
   - Contributing:
       - Contribute to project: contributing/contribute.md
-      - Report bug or feature request: bug.md
+      - Report bug or feature request: contributing/bug.md
   - ArchesWeather: 
       - Run: archesweather/run.ipynb
       - Train: archesweather/train.md
