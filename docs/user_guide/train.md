@@ -21,6 +21,8 @@ python -m geoarches.main_hydra \
 ++max_steps=300000 \ # maximum number of steps for training, but it's good to leave this at 300k for era5 trainings
 ++save_step_frequency=50000 \ # if you need to save checkpoints at a higher frequency
 ```
+
+See [Pipeline API](args.md) for full list of arguments.
 ## Run on SLURM
 
 To run on a SLURM cluster, you can create a `configs/cluster` folder inside your working directory and put a ``custom_slurm.yaml`` configuration file in it with custom arguments. Then you call tell geoarches to use this configuration file with

@@ -19,9 +19,6 @@ python -m geoarches.main_hydra ++mode=test ++name=$MODEL \
 ++limit_test_batches=0.1 \ # run test on only a fraction of test set for debugging
 ++module.module.rollout_iterations=10 \ # autoregressive rollout horizon, in which case the line below is also needed
 ++dataloader.test_args.multistep=10 \ # allow the dataloader to load trajectories of size 10
-
-++dataloader.test_args.
-
 ```
 
 For testing the generative models, you can also use the following options:
@@ -30,6 +27,8 @@ For testing the generative models, you can also use the following options:
 ++module.inference.num_members=50 \ # num members in ensemble
 ++module.inference.rollout_iterations=10 \ # number of auto-regressive steps, 10 days by default.
 ```
+
+See [Pipeline API](args.md) for full list of arguments.
 
 ## Compute model outputs and metrics separately
 

@@ -14,7 +14,7 @@ The main python script (`main_hydra.py` that runs a model pipeline), is pointed 
 
 The config is constructed from the base config `configs/config.yaml` and is extended with configs under each folder such as `config/module/` and `config/dataloader/`.
 
-You can also override arguments by CLI (see [Arguments]() for useful arguments).
+You can also override arguments by CLI (see [Pipeline API](args.md) for full list of arguments).
 
 Example:
 ```sh

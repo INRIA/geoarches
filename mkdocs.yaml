@@ -39,6 +39,7 @@ nav:
       - Train: user_guide/train.md
       - Run and evaluate: user_guide/evaluate.md
       - Custom models: user_guide/custom_models.md
+      - Pipeline API: user_guide/args.md
   - Contributing:
       - Contribute to project: contributing/contribute.md
       - Report bug or feature request: contributing/bug.md
