@@ -22,6 +22,8 @@ markdown_extensions:
   - def_list   # bullet points
   - attr_list  # add HTML attributes to Markdown elements (align and style images)
   - md_in_html # parse Markdown in HTML blocks
+  - pymdownx.highlight # highlight code blocks, used by SuperFences
+  - pymdownx.superfences # nesting code/content blocks, also to highlight code blocks
 
 # Page tree
 nav:
