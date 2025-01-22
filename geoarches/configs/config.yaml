@@ -2,7 +2,7 @@
 defaults:
   - cluster: local  # Tells hydra to use cluster/local.yaml when composing the cfg object.
   - dataloader: era5
-  - module: forecast-geoarchesweather
+  - module: archesweather
   - override hydra/job_logging: none
   - override hydra/hydra_logging: none
   - _self_
