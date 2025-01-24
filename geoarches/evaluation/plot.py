@@ -24,7 +24,9 @@ plot_metric_kwargs = {
     "fcrps": dict(y_label="Fair CRPS"),
     "spskr": dict(y_label="Spread/skill", horizontal_reference=1),
     "brierskillscore": dict(y_label="Brier skill score", horizontal_reference=0),
-    "rankhist": dict(y_label="Frequency", horizontal_reference=1),
+    "rankhist": dict(
+        y_label="log(Frequency)", x_label="Rank (normalized)", horizontal_reference=0
+    ),
 }
 
 HIGH_QUANTILES = ["99.0%", "99.9%", "99.99%"]
@@ -36,6 +38,7 @@ def plot_metric(
     vars: list[str],
     metric_name: str,
     y_label: str | None = None,
+    x_label: str | None = None,
     horizontal_reference: float | None = None,
     figsize=(10, 4),
     debug: bool = False,
@@ -50,6 +53,7 @@ def plot_metric(
         vars: list of variables to read from dimension `variable` in xarray dataset.
         metric_name: Name of metric to read from dataset variables.
         y_label: (Optional) to label y axis of the figure.
+        x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
         figsize: Figure size.
         debug: Whether to print debug statements.
@@ -61,6 +65,8 @@ def plot_metric(
 
     if y_label:
         fig.supylabel(y_label)
+    if x_label:
+        fig.supxlabel(x_label)
 
     for i, var in enumerate(vars):
         if debug:
@@ -100,6 +106,7 @@ def plot_brier_metric(
     quantile_levels: list[str],  # high or low
     metric_name: str,
     y_label: str | None = None,
+    x_label: str | None = None,
     horizontal_reference: float | None = None,
     figsize=(10, 5),
     debug: bool = False,
@@ -115,6 +122,7 @@ def plot_brier_metric(
             Same length as `vars` list arg.
         metric_name: Name of metric to read from dataset variables.
         y_label: (Optional) to label y axis of the figure.
+        x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
         figsize: Figure size.
         debug: Whether to print debug statements.
@@ -123,9 +131,12 @@ def plot_brier_metric(
 
     # Create a grid of subplots: quantile vs. variable.
     fig, axs = plt.subplots(len(HIGH_QUANTILES), len(vars), figsize=figsize)
-    # y labels.
+    # Axis labels.
     if y_label:
         fig.supylabel(y_label)
+    if x_label:
+        fig.supxlabel(x_label)
+
     for q in range(3):
         axs[q, 0].set_ylabel(f"{10**-q}% extremes")
 
@@ -161,6 +172,7 @@ def plot_rankhist(
     prediction_timedeltas_days: list[int],
     metric_name: str = "rankhist",
     y_label: str | None = None,
+    x_label: str | None = None,
     horizontal_reference: float | None = None,
     figsize=(10, 5),
     debug: bool = False,
@@ -175,15 +187,18 @@ def plot_rankhist(
         prediction_timedeltas_days: List of lead times (in days) to plot.
         metric_name: Name of metric to read from dataset variables.
         y_label: (Optional) to label y axis of the figure.
+        x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
         figsize: Figure size.
         debug: Whether to print debug statements.
     """
     # Create a grid of subplots: vars vs. lead time.
     fig, axs = plt.subplots(len(prediction_timedeltas_days), len(vars), figsize=figsize)
-    # y labels.
+    # Axis labels.
     if y_label:
         fig.supylabel(y_label)
+    if x_label:
+        fig.supxlabel(x_label)
     for i, days in enumerate(prediction_timedeltas_days):
         axs[i, 0].set_ylabel(f"{days} days")
 
@@ -192,8 +207,12 @@ def plot_rankhist(
             axs[0, col].set_title(var)
             for row, days in enumerate(prediction_timedeltas_days):
                 scores = ds[var].sel(metric=metric_name, prediction_timedelta=timedelta(days=days))
-                axs[row, col].plot(scores, label=model)
+                axs[row, col].plot(np.log(scores), label=model)
                 axs[row, col].grid(True)
+                # Normalize rank.
+                num_ranks = len(scores)
+                xticks = np.array([0, num_ranks / 2, num_ranks])
+                axs[row, col].set_xticks(xticks, xticks / num_ranks)
                 if horizontal_reference is not None:
                     axs[row, col].axhline(
                         y=horizontal_reference, color="gray", linestyle="--", linewidth=1
@@ -204,7 +223,7 @@ def plot_rankhist(
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
         "--output_dir",
@@ -303,7 +322,7 @@ def main():
             extra_dimensions = ["prediction_timedelta"]
             if "brier" in metric_path:
                 extra_dimensions = ["quantile", "prediction_timedelta"]
-            if "rankhist" in metric_path:
+            if "rankhist" or "rank_hist" in metric_path:
                 extra_dimensions = ["bins", "prediction_timedelta"]
             ds = convert_metric_dict_to_xarray(labeled_dict, extra_dimensions)
 
@@ -312,11 +331,14 @@ def main():
     for model, ds_list in data.items():
         merged_ds = xr.merge(ds_list)
         data[model] = merged_ds
-        vars = ds.variable.values
-        metrics = list(merged_ds.data_vars)
+        metrics = ds.metric.values
+        vars = list(merged_ds.data_vars)
 
         if args.save_xr_dataset:
             save_file = Path(output_dir).joinpath(f"{model}_metrics.nc")
+            if save_file.exists():
+                raise ValueError(f"File {save_file} already exists. Did not save xr dataset.")
+            merged_ds.to_netcdf(save_file)
 
     vars = args.vars or vars
     metrics = args.metrics or metrics
@@ -355,7 +377,9 @@ def main():
         save_file = Path(output_dir).joinpath(f"{metric_name}.png")
         if save_file.exists():
             if not args.force:
-                raise ValueError(f"File {save_file} already exists. Did not save plot.")
+                raise ValueError(
+                    f"File {save_file} already exists. Did not save plot. Use --force to overwrite."
+                )
 
         plt.savefig(save_file, bbox_inches="tight")
 
