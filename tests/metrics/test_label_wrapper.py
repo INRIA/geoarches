@@ -216,17 +216,17 @@ def test_convert_metric_dict_to_xarray():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "mse": xr.DataArray(
-                    data=np.array([[1, 2], [5, 6]], dtype=np.float32),
-                    dims=("variable", "prediction_timedelta"),
+                "T2m": xr.DataArray(
+                    data=np.array([[1, 2], [3, 4]], dtype=np.float32),
+                    dims=("metric", "prediction_timedelta"),
                 ),
-                "var": xr.DataArray(
-                    data=np.array([[3, 4], [7, 8]], dtype=np.float32),
-                    dims=("variable", "prediction_timedelta"),
+                "U10": xr.DataArray(
+                    data=np.array([[5, 6], [7, 8]], dtype=np.float32),
+                    dims=("metric", "prediction_timedelta"),
                 ),
             },
             coords={
-                "variable": ["T2m", "U10"],
+                "metric": ["mse", "var"],
                 "prediction_timedelta": [
                     timedelta(hours=24),
                     timedelta(hours=48),
@@ -253,13 +253,13 @@ def test_convert_metric_dict_to_xarray_with_bins_dimension():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "rankhist": xr.DataArray(
+                "T2m": xr.DataArray(
                     data=np.array([[[1, 2], [3, 4]]], dtype=np.float32),
-                    dims=("variable", "bins", "prediction_timedelta"),
+                    dims=("metric", "bins", "prediction_timedelta"),
                 ),
             },
             coords={
-                "variable": ["T2m"],
+                "metric": ["rankhist"],
                 "prediction_timedelta": [timedelta(hours=24), timedelta(hours=48)],
                 "bins": [1, 2],
             },
@@ -283,17 +283,17 @@ def test_convert_metric_dict_to_xarray_without_timedelta_dimension():
         xr_dataset,
         xr.Dataset(
             data_vars={
-                "mse": xr.DataArray(
-                    data=np.array([1, 5], dtype=np.float32),
-                    dims=("variable"),
+                "T2m": xr.DataArray(
+                    data=np.array([1, 3], dtype=np.float32),
+                    dims=("metric"),
                 ),
-                "var": xr.DataArray(
-                    data=np.array([3, 7], dtype=np.float32),
-                    dims=("variable"),
+                "U10": xr.DataArray(
+                    data=np.array([5, 7], dtype=np.float32),
+                    dims=("metric"),
                 ),
             },
             coords={
-                "variable": ["T2m", "U10"],
+                "metric": ["mse", "var"],
             },
         ),
     )

@@ -147,29 +147,29 @@ def convert_metric_dict_to_xarray(
         for i, dim in enumerate(extra_dimensions):
             coords[dim].add(labels[i + 2])
 
-    dimension_shape = [len(coord) for coord in (variables, *coords.values())]
+    dimension_shape = [len(coord) for coord in (metrics, *coords.values())]
     # Sort coordinates.
-    variables = sorted(list(variables))
+    metrics = sorted(list(metrics))
     for k, coord in coords.items():
         coords[k] = sorted(list(coord), key=lambda x: _convert_coord(k, x))
 
     # Aggregate data arrays by variable.
-    dimensions = ["variable"] + extra_dimensions
+    dimensions = ["metric"] + extra_dimensions
     data_arrays = {}
-    for metric in metrics:
+    for var in variables:
         data = []
-        for dims in itertools.product(variables, *coords.values()):
-            var, other_dims = dims[0], dims[1:]
+        for dims in itertools.product(metrics, *coords.values()):
+            metric, other_dims = dims[0], dims[1:]
             other_dims = "_" + "_".join(other_dims) if other_dims else ""
             key = f"{metric}_{var}{other_dims}"
             data.append(labeled_dict[key])
         data = np.array(data).reshape(dimension_shape)
-        data_arrays[metric] = (dimensions, data)
+        data_arrays[var] = (dimensions, data)
 
     # Prepare coordinates.
     for k, coord in coords.items():
         coords[k] = [_convert_coord(k, x) for x in coord]
-    coords["variable"] = variables
+    coords["metric"] = metrics
 
     return xr.Dataset(data_vars=data_arrays, coords=coords)
 
