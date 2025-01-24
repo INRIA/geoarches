@@ -75,10 +75,10 @@ def plot_metric(
 
         for model, ds in data_dict.items():
             if metric_name == "rmse":
-                scores = ds["mse"].sel(variable=var)
+                scores = ds[var].sel(metric="mse")
                 scores = np.sqrt(scores)
             else:
-                scores = ds[metric_name].sel(variable=var)
+                scores = ds[var].sel(metric=metric_name)
 
             if debug:
                 print(model, scores)
@@ -138,7 +138,7 @@ def plot_brier_metric(
             axs[2, i].set_xlabel("Lead time (days)")
 
             for q, quantile in enumerate(quantiles):
-                scores = ds[metric_name].sel(variable=var, quantile=quantile)
+                scores = ds[var].sel(metric=metric_name, quantile=quantile)
                 if debug:
                     print(model, scores)
 
@@ -191,9 +191,7 @@ def plot_rankhist(
         for col, var in enumerate(vars):
             axs[0, col].set_title(var)
             for row, days in enumerate(prediction_timedeltas_days):
-                scores = ds[metric_name].sel(
-                    variable=var, prediction_timedelta=timedelta(days=days)
-                )
+                scores = ds[var].sel(metric=metric_name, prediction_timedelta=timedelta(days=days))
                 axs[row, col].plot(scores, label=model)
                 axs[row, col].grid(True)
                 if horizontal_reference is not None:
