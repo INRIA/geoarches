@@ -118,7 +118,31 @@ class TestRankHistogram:
 
 
 class TestEra5RankHistogram:
-    def test_output_keys(self):
+    def test_output_dimensions(self):
+        bs, mem, lev, lat, lon = 2, 3, 3, 121, 240
+        metric = Era5RankHistogram(
+            n_members=mem,
+            level_variables=["geopotential", "temperature"],
+            pressure_levels=[500, 700, 850],
+        )
+        preds = {
+            "surface": torch.randn(bs, mem, 4, 1, lat, lon),
+            "level": torch.randn(bs, mem, 2, lev, lat, lon),
+        }
+        targets = {
+            "surface": torch.randn(bs, 4, 1, lat, lon),
+            "level": torch.randn(bs, 2, lev, lat, lon),
+        }
+
+        metric.update(targets, preds)
+        metric.update(targets, preds)
+
+        output_xarray = metric.compute()
+
+        for coord in ["metric", "level", "rank"]:
+            assert coord in output_xarray.coords
+
+    def test_output_dimensions_with_timdelta_dimension(self):
         bs, mem, timedelta, lev, lat, lon = 2, 3, 5, 3, 121, 240
         metric = Era5RankHistogram(
             n_members=mem,
@@ -139,29 +163,7 @@ class TestEra5RankHistogram:
         metric.update(targets, preds)
         metric.update(targets, preds)
 
-        output = metric.compute()
-        expected_metric_keys = [  # All expected keys for final metric for one variable.
-            "rankhist_U10m_1_6h",
-            "rankhist_U10m_1_12h",
-            "rankhist_U10m_1_18h",
-            "rankhist_U10m_1_24h",
-            "rankhist_U10m_1_30h",
-            "rankhist_U10m_2_6h",
-            "rankhist_U10m_2_12h",
-            "rankhist_U10m_2_18h",
-            "rankhist_U10m_2_24h",
-            "rankhist_U10m_2_30h",
-            "rankhist_U10m_3_6h",
-            "rankhist_U10m_3_12h",
-            "rankhist_U10m_3_18h",
-            "rankhist_U10m_3_24h",
-            "rankhist_U10m_3_30h",
-            "rankhist_U10m_4_6h",
-            "rankhist_U10m_4_12h",
-            "rankhist_U10m_4_18h",
-            "rankhist_U10m_4_24h",
-            "rankhist_U10m_4_30h",
-        ]
-        for expected_metric_key in expected_metric_keys:
-            assert expected_metric_key in output
-            assert output[expected_metric_key].numel() == 1
+        output_xarray = metric.compute()
+
+        for coord in ["metric", "level", "prediction_timedelta", "rank"]:
+            assert coord in output_xarray.coords

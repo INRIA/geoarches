@@ -1,3 +1,6 @@
+from datetime import timedelta
+from typing import Callable
+
 import numpy as np
 import torch
 from einops import rearrange
@@ -5,7 +8,7 @@ from scipy.stats import rankdata
 from torchmetrics import Metric
 
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
+from geoarches.metrics.label_wrapper import LabelXarrayWrapper
 
 from .metric_base import TensorDictMetricBase
 
@@ -28,13 +31,16 @@ class RankHistogram(Metric):
         targets: (batch, ..., lat, lon)
         preds: (batch, nmembers, ..., lat, lon)
 
-    Return dictionary of metrics reduced over batch, lat, lon.
+    Return:
+        dictionary of metrics reduced over batch, lat, lon.
+        metric will have shape (..., rank) where rank = n_members + 1.
     """
 
     def __init__(
         self,
         n_members: int,
         data_shape: tuple = (4, 1),
+        preprocess: Callable | None = None,
     ):
         """
         Args:
@@ -42,8 +48,10 @@ class RankHistogram(Metric):
             data_shape: Shape of tensor to hold computed metric.
                 e.g. if targets are shape (batch, timedelta, var, lev, lat, lon) then data_shape = (timedelta, var, lev).
                 This class computes metric across batch, lat, lon dimensions.
+            preprocess: Takes as input targets or predictions and returns processed tensor.
         """
         Metric.__init__(self)
+        self.preprocess = preprocess
         self.n_members = n_members
         self.data_shape = data_shape
 
@@ -70,6 +78,10 @@ class RankHistogram(Metric):
 
         n_members = preds.shape[1]
 
+        if self.preprocess:
+            targets = self.preprocess(targets)
+            preds = self.preprocess(preds)
+
         # Compute ranks of the targets with respect to ensemble predictions.
         # only works on cpu
         device = targets.device
@@ -88,7 +100,7 @@ class RankHistogram(Metric):
 
         # Count frequency of ranks across lat, lon, batch.
         # (Might have smarter ways at the expense of memory: https://stackoverflow.com/questions/69429586/how-to-get-a-histogram-of-pytorch-tensors-in-batches)
-        assert self.data_shape == ranks.shape[1:-2]
+        assert self.data_shape == ranks.shape[1:-2], f"{self.data_shape} != {ranks.shape[1:-2]}"
         ranks = rearrange(ranks, "b ... lat lon -> (b lat lon) (...)")
         bins = n_members + 1
         num_histograms = ranks.shape[-1]
@@ -148,42 +160,43 @@ class Era5RankHistogram(TensorDictMetricBase):
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
         """
+        ranks = list(range(1, n_members + 2))
+        # Whether to include prediction_timdelta dimension.
         if rollout_iterations:
-            surface_data_shape = (rollout_iterations, len(surface_variables), 1)
+            surface_data_shape = (rollout_iterations, len(surface_variables))
             level_data_shape = (rollout_iterations, len(level_variables), len(pressure_levels))
+
+            surface_dims = ["prediction_timedelta", "variable", "rank"]
+            level_dims = ["prediction_timedelta", "variable", "level", "rank"]
+
+            timedeltas = [timedelta((i + 1) * lead_time_hours) for i in range(rollout_iterations)]
+            surface_coords = [timedeltas, surface_variables, ranks]
+            level_coords = [timedeltas, level_variables, pressure_levels, ranks]
         else:
-            surface_data_shape = (len(surface_variables), 1)
+            surface_data_shape = (len(surface_variables),)
             level_data_shape = (len(level_variables), len(pressure_levels))
 
-        # Variable indices include quantile (var, lev) --> (var, lev, histogram bin number).
-        # Enable LabelDictWrapper to extract metrics properly from RankHistogram output.
-        def _add_bin_index(variable_indices):
-            out = {}
-            for var, var_lev_idx in variable_indices.items():
-                for bin_idx in range(n_members + 1):
-                    out[f"{var}_{bin_idx + 1}"] = (*var_lev_idx, bin_idx)
-            return out
+            surface_dims = ["variable", "rank"]
+            level_dims = ["variable", "level", "rank"]
+            surface_coords = [surface_variables, ranks]
+            level_coords = [level_variables, pressure_levels, ranks]
 
         # Initialize separate metrics for level vars and surface vars.
         kwargs = {}
         if surface_variables:
-            kwargs["surface"] = LabelDictWrapper(
-                RankHistogram(data_shape=surface_data_shape, n_members=n_members),
-                variable_indices=add_timedelta_index(
-                    _add_bin_index(era5.get_surface_variable_indices(surface_variables)),
-                    lead_time_hours=lead_time_hours,
-                    rollout_iterations=rollout_iterations,
+            kwargs["surface"] = LabelXarrayWrapper(
+                RankHistogram(
+                    data_shape=surface_data_shape,
+                    n_members=n_members,
+                    preprocess=lambda x: x.squeeze(-3),
                 ),
+                dims=surface_dims,
+                coords=surface_coords,
             )
         if level_variables:
-            kwargs["level"] = LabelDictWrapper(
+            kwargs["level"] = LabelXarrayWrapper(
                 RankHistogram(data_shape=level_data_shape, n_members=n_members),
-                variable_indices=add_timedelta_index(
-                    _add_bin_index(
-                        era5.get_headline_level_variable_indices(pressure_levels, level_variables)
-                    ),
-                    lead_time_hours=lead_time_hours,
-                    rollout_iterations=rollout_iterations,
-                ),
+                dims=level_dims,
+                coords=level_coords,
             )
         super().__init__(**kwargs)
