@@ -130,15 +130,15 @@ class Era5PowerSpectrum(TensorDictMetricBase):
         """
         # Whether to include prediction_timdelta dimension.
         if rollout_iterations:
-            surface_coord_names = ["prediction_timedelta", "variable", "degree"]
-            level_coord_names = ["prediction_timedelta", "variable", "level", "degree"]
+            surface_dims = ["prediction_timedelta", "variable", "degree"]
+            level_dims = ["prediction_timedelta", "variable", "level", "degree"]
 
             timedeltas = [timedelta((i + 1) * lead_time_hours) for i in range(rollout_iterations)]
             surface_coords = [timedeltas, surface_variables]
             level_coords = [timedeltas, level_variables, pressure_levels]
         else:
-            surface_coord_names = ["variable", "degree"]
-            level_coord_names = ["variable", "level", "degree"]
+            surface_dims = ["variable", "degree"]
+            level_dims = ["variable", "level", "degree"]
             surface_coords = [surface_variables]
             level_coords = [level_variables, pressure_levels]
 
@@ -147,14 +147,14 @@ class Era5PowerSpectrum(TensorDictMetricBase):
         if surface_variables:
             kwargs["surface"] = LabelXarrayWrapper(
                 PowerSpectrum(preprocess=lambda x: _remove_south_pole_lat(x.squeeze(-3))),
-                coord_names=surface_coord_names,
+                dims=surface_dims,
                 coords=surface_coords,
                 return_raw_dict=return_raw_dict,
             )
         if level_variables:
             kwargs["level"] = LabelXarrayWrapper(
                 PowerSpectrum(preprocess=_remove_south_pole_lat),
-                coord_names=level_coord_names,
+                dims=level_dims,
                 coords=level_coords,
                 return_raw_dict=return_raw_dict,
             )

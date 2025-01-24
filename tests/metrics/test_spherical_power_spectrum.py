@@ -38,7 +38,7 @@ class TestEra5PowerSpectrum:
 
         output_xarray = metric.compute()
 
-        for coord in ["variable", "level"]:
+        for coord in ["metric", "level"]:
             assert coord in output_xarray.coords
 
     def test_output_dimensions_with_timdelta_dimension(self):
@@ -63,5 +63,5 @@ class TestEra5PowerSpectrum:
 
         output_xarray = metric.compute()
 
-        for coord in ["prediction_timedelta", "variable", "level"]:
+        for coord in ["prediction_timedelta", "metric", "level"]:
             assert coord in output_xarray.coords
