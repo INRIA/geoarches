@@ -115,6 +115,8 @@ def convert_metric_dict_to_xarray(
             where the separator between dimensions is an underscore.
         extra_dimensions: list of dimension names, if any extra beyond <metric> and <var>.
     """
+    if "metadata" in labeled_dict:
+        del labeled_dict["metadata"]
 
     def _convert_coord(name, value):
         if "timedelta" in name:

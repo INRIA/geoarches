@@ -275,8 +275,9 @@ def main():
             ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
 
             # Write labeled dict.
-            labelled_dict["groundtruth_path"] = args.groundtruth_path
-            labelled_dict["predictions_path"] = args.pred_path
+            labelled_dict["metadata"] = dict(
+                groundtruth_path=args.groundtruth_path, predictions_path=args.pred_path
+            )
             torch.save(labelled_dict, Path(output_dir).joinpath(f"{output_filename}.pt"))
         else:
             ds = labelled_metric_output
