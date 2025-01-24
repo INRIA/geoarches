@@ -114,7 +114,6 @@ class Era5PowerSpectrum(TensorDictMetricBase):
         pressure_levels: str = era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
-        return_raw_dict: bool = False,
     ):
         """
         Args:
@@ -126,7 +125,6 @@ class Era5PowerSpectrum(TensorDictMetricBase):
             lead_time_hours: timedelta (in hours) between prediction times.
             rollout_iterations: number of multistep rollout for predictions.
                 (ie. lead time of 24 hours for 3 days, lead_time_hours=24, rollout_iterations=3)
-            return_raw_dict: Whether to also return the raw output from the metrics.
         """
         # Whether to include prediction_timdelta dimension.
         if rollout_iterations:
@@ -149,13 +147,11 @@ class Era5PowerSpectrum(TensorDictMetricBase):
                 PowerSpectrum(preprocess=lambda x: _remove_south_pole_lat(x.squeeze(-3))),
                 dims=surface_dims,
                 coords=surface_coords,
-                return_raw_dict=return_raw_dict,
             )
         if level_variables:
             kwargs["level"] = LabelXarrayWrapper(
                 PowerSpectrum(preprocess=_remove_south_pole_lat),
                 dims=level_dims,
                 coords=level_coords,
-                return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)

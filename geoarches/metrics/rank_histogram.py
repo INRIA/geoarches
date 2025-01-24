@@ -132,7 +132,6 @@ class Era5RankHistogram(TensorDictMetricBase):
         pressure_levels=era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
-        return_raw_dict: bool = False,
     ):
         """
         Args:
@@ -148,7 +147,6 @@ class Era5RankHistogram(TensorDictMetricBase):
             rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
-            return_raw_dict: Whether to also return the raw output from the metrics.
         """
         if rollout_iterations:
             surface_data_shape = (rollout_iterations, len(surface_variables), 1)
@@ -176,7 +174,6 @@ class Era5RankHistogram(TensorDictMetricBase):
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
-                return_raw_dict=return_raw_dict,
             )
         if level_variables:
             kwargs["level"] = LabelDictWrapper(
@@ -188,6 +185,5 @@ class Era5RankHistogram(TensorDictMetricBase):
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
-                return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)

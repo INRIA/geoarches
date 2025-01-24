@@ -39,14 +39,12 @@ class LabelDictWrapper(Metric):
             dict mapping metric name to tensors that have shape (..., *(variable_index)).
         variable_indices: Mapping from variable name to index (ie. var, lev) into tensor holding computed metric.
                 ie. dict(T2m=(2, 0), U10=(0, 0), V10=(1, 0), SP=(3, 0)).
-        return_raw_dict: Whether to also return the raw output from the metrics (along with the labelled dict).
     """
 
     def __init__(
         self,
         metric: Metric,
         variable_indices: Dict[str, tuple],
-        return_raw_dict: bool = False,
     ):
         super().__init__()
         if not isinstance(metric, Metric):
@@ -55,8 +53,6 @@ class LabelDictWrapper(Metric):
             )
         self.metric = metric
         self.variable_indices = variable_indices
-
-        self.return_raw_dict = return_raw_dict
 
     def _convert(self, raw_metric_dict: Dict[str, Tensor]):
         # Label metrics.
@@ -70,11 +66,7 @@ class LabelDictWrapper(Metric):
         self.metric.update(*args, **kwargs)
 
     def compute(self) -> Dict[str, Tensor]:
-        raw_metric_dict = self.metric.compute()
-        if self.return_raw_dict:
-            return raw_metric_dict, self._convert(raw_metric_dict)
-        else:
-            return self._convert(raw_metric_dict)
+        return self._convert(self.metric.compute())
 
     def reset(self) -> None:
         """Reset metric."""
@@ -201,7 +193,6 @@ class LabelXarrayWrapper(Metric):
             dict mapping metric name to tensors that have shape (dim1, dim2, ...).
         dims: Names of the dimensions returned by metric (same order as tensor shape and `coords`).
         coords: Values for the dimensions returned by metric (same order as tensor shape and `dims`).
-        return_raw_dict: Whether to also return the raw output from the metrics (along with the labelled dict).
     """
 
     def __init__(
@@ -209,7 +200,6 @@ class LabelXarrayWrapper(Metric):
         metric: Metric,
         dims: Sequence[str],
         coords: Sequence[Sequence],
-        return_raw_dict: bool = False,
     ):
         super().__init__()
         if not isinstance(metric, Metric):
@@ -224,8 +214,6 @@ class LabelXarrayWrapper(Metric):
         self.dims = dims
         self.coords = coords
 
-        self.return_raw_dict = return_raw_dict
-
     def _convert(self, metric_dict: dict[str, torch.tensor]) -> xr.Dataset:
         ds = xr.Dataset(
             data_vars={metric: (self.dims, val) for metric, val in metric_dict.items()},
@@ -239,8 +227,4 @@ class LabelXarrayWrapper(Metric):
         self.metric.update(*args, **kwargs)
 
     def compute(self) -> dict[str, torch.tensor]:
-        metric_dict = self.metric.compute()
-        if self.return_raw_dict:
-            return metric_dict, self._convert(metric_dict)
-        else:
-            return self._convert(metric_dict)
+        return self._convert(self.metric.compute())

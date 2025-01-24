@@ -183,7 +183,6 @@ class Era5BrierSkillScore(TensorDictMetricBase):
         pressure_levels=era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
-        return_raw_dict: bool = False,
         save_memory: bool = False,
     ):
         """
@@ -202,7 +201,6 @@ class Era5BrierSkillScore(TensorDictMetricBase):
             rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
-            return_raw_dict: Whether to also return the raw output from the metrics.
         """
         # Quantiles for each var across gridpoints and times.
         with resources.as_file(resources.files(geoarches_stats).joinpath(quantiles_filepath)) as f:
@@ -258,7 +256,6 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
-                return_raw_dict=return_raw_dict,
             )
         if level_variables:
             kwargs["level"] = LabelDictWrapper(
@@ -275,6 +272,5 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
-                return_raw_dict=return_raw_dict,
             )
         super().__init__(**kwargs)

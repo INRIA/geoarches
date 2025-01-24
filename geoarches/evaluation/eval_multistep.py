@@ -220,7 +220,6 @@ def main():
             pressure_levels=[500, 700, 850],
             lead_time_hours=24 if args.multistep else None,
             rollout_iterations=args.multistep,
-            return_raw_dict=True,
         ).to(device)
     print(f"Computing: {metrics.keys()}")
 
@@ -256,7 +255,7 @@ def main():
             metric.update(target.to(device), pred.to(device))
 
     for metric_name, metric in metrics.items():
-        raw_dict, labelled_metric_output = metric.compute()
+        labelled_metric_output = metric.compute()
 
         if Path(args.pred_path).is_file():
             output_filename = f"{Path(args.pred_path).stem}-{metric_name}"
@@ -283,11 +282,6 @@ def main():
             ds = labelled_metric_output
         # Write xr dataset.
         ds.to_netcdf(Path(output_dir).joinpath(f"{output_filename}.nc"))
-
-        # Write raw score dict.
-        raw_dict["groundtruth_path"] = args.groundtruth_path
-        raw_dict["predictions_path"] = args.pred_path
-        torch.save(raw_dict, Path(output_dir).joinpath(f"{output_filename}-raw.pt"))
 
 
 if __name__ == "__main__":
