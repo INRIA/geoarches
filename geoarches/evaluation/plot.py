@@ -116,7 +116,6 @@ def plot_metric(
             if horizontal_reference is not None:
                 ax.axhline(y=horizontal_reference, color="gray", linestyle="--", linewidth=1)
 
-    plt.tight_layout()  # ensure titles and other plot elements don't overlap.
     plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.5))
 
 
@@ -186,7 +185,6 @@ def plot_brier_metric(
                         y=horizontal_reference, color="gray", linestyle="--", linewidth=1
                     )
 
-    plt.tight_layout()  # ensure titles and other plot elements don't overlap.
     plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.5))
 
 
@@ -227,7 +225,10 @@ def plot_rankhist(
     if x_label:
         fig.supxlabel(x_label)
     for i, days in enumerate(prediction_timedeltas_days):
-        axs[i, 0].set_ylabel(f"{days} days")
+        if days == 1:
+            axs[i, 0].set_ylabel(f"{days} day")
+        else:
+            axs[i, 0].set_ylabel(f"{days} days")
 
     for model, ds in data_dict.items():
         if debug:
@@ -252,8 +253,8 @@ def plot_rankhist(
                         y=horizontal_reference, color="gray", linestyle="--", linewidth=1
                     )
 
-    plt.tight_layout()  # ensure titles and other plot elements don't overlap.
-    plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.5))
+    handles, labels = axs[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.1))
 
 
 def parse_vars(vars):
@@ -399,7 +400,7 @@ def main():
             extra_dimensions = ["prediction_timedelta"]
             if "brier" in metric_path:
                 extra_dimensions = ["quantile", "prediction_timedelta"]
-            if "rankhist" or "rank_hist" in metric_path:
+            if "rankhist" in metric_path or "rank_hist" in metric_path:
                 extra_dimensions = ["bins", "prediction_timedelta"]
             ds = convert_metric_dict_to_xarray(labeled_dict, extra_dimensions)
 
@@ -464,6 +465,9 @@ def main():
                 debug=args.debug,
                 plot_kwargs=plot_kwargs,
             )
+        plt.tight_layout()  # ensure titles and other plot elements don't overlap.
+        plt.style.use("seaborn-v0_8-paper")
+        plt.rcParams["font.family"] = "DejaVu Sans"
 
         save_file = Path(output_dir).joinpath(f"{metric_name}.png")
         if save_file.exists():
