@@ -24,11 +24,15 @@ class PowerSpectrum(Metric):
     """
     Calculate spherical power spectrum on both targets and preds separately.
 
+    Compute power spectrum on each latlon grid.
+    Averages power spectrum over batch and members.
+
     Accepted tensor shapes:
         targets: (batch, ..., lat, lon)
         preds: (batch, nmembers, ..., lat, lon)
 
-    Averages over batch and members.
+    Return:
+        metric will have shape (..., degree) where degree is the spherical harmonic degree l.
     """
 
     def __init__(
@@ -131,7 +135,9 @@ class Era5PowerSpectrum(TensorDictMetricBase):
             surface_dims = ["prediction_timedelta", "variable", "degree"]
             level_dims = ["prediction_timedelta", "variable", "level", "degree"]
 
-            timedeltas = [timedelta((i + 1) * lead_time_hours) for i in range(rollout_iterations)]
+            timedeltas = [
+                timedelta(hours=(i + 1) * lead_time_hours) for i in range(rollout_iterations)
+            ]
             surface_coords = [timedeltas, surface_variables]
             level_coords = [timedeltas, level_variables, pressure_levels]
         else:
@@ -144,13 +150,20 @@ class Era5PowerSpectrum(TensorDictMetricBase):
         kwargs = {}
         if surface_variables:
             kwargs["surface"] = LabelXarrayWrapper(
-                PowerSpectrum(preprocess=lambda x: _remove_south_pole_lat(x.squeeze(-3))),
+                PowerSpectrum(
+                    # Remove level dim and remove south pole latitude.
+                    preprocess=lambda x: _remove_south_pole_lat(x.squeeze(-3)),
+                    compute_target_spectrum=compute_target_spectrum,
+                ),
                 dims=surface_dims,
                 coords=surface_coords,
             )
         if level_variables:
             kwargs["level"] = LabelXarrayWrapper(
-                PowerSpectrum(preprocess=_remove_south_pole_lat),
+                PowerSpectrum(
+                    preprocess=_remove_south_pole_lat,
+                    compute_target_spectrum=compute_target_spectrum,
+                ),
                 dims=level_dims,
                 coords=level_coords,
             )

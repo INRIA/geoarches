@@ -169,7 +169,9 @@ class Era5RankHistogram(TensorDictMetricBase):
             surface_dims = ["prediction_timedelta", "variable", "rank"]
             level_dims = ["prediction_timedelta", "variable", "level", "rank"]
 
-            timedeltas = [timedelta((i + 1) * lead_time_hours) for i in range(rollout_iterations)]
+            timedeltas = [
+                timedelta(hours=(i + 1) * lead_time_hours) for i in range(rollout_iterations)
+            ]
             surface_coords = [timedeltas, surface_variables, ranks]
             level_coords = [timedeltas, level_variables, pressure_levels, ranks]
         else:
