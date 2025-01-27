@@ -88,7 +88,7 @@ def plot_metric(
         fig.supxlabel(x_label)
 
     for i, var in enumerate(vars):
-        var, extra_dims = var
+        alias, var, extra_dims = var
         if debug:
             print(var)
 
@@ -96,7 +96,7 @@ def plot_metric(
         if len(vars) % 2 == 1:
             col += row  # offset bottom row.
         ax = fig.add_subplot(gs[row, col : col + 2])
-        ax.set_title(var)
+        ax.set_title(alias)
         ax.set_xlabel("Lead time (days)")
 
         for model, ds in data_dict.items():
@@ -165,11 +165,11 @@ def plot_brier_metric(
 
     for model, ds in data_dict.items():
         for i, (var, quantiles) in enumerate(zip(vars, quantiles_per_var)):
-            var, extra_dims = var
+            alias, var, extra_dims = var
             if debug:
                 print(var, quantiles)
 
-            axs[0, i].set_title(f"{var}\nextreme {quantile_levels[i]}")
+            axs[0, i].set_title(f"{alias}\nextreme {quantile_levels[i]}")
             axs[2, i].set_xlabel("Lead time (days)")
 
             for q, quantile in enumerate(quantiles):
@@ -230,10 +230,13 @@ def plot_rankhist(
         axs[i, 0].set_ylabel(f"{days} days")
 
     for model, ds in data_dict.items():
+        if debug:
+            print(model)
         for col, var in enumerate(vars):
-            print(var)
-            var, extra_dims = var
-            axs[0, col].set_title(var)
+            if debug:
+                print(var)
+            alias, var, extra_dims = var
+            axs[0, col].set_title(alias)
             for row, days in enumerate(prediction_timedeltas_days):
                 scores = ds[var].sel(
                     metric=metric_name, prediction_timedelta=timedelta(days=days), **extra_dims
@@ -270,16 +273,16 @@ def parse_vars(vars):
     parsed_vars = []
     for var in vars:
         if ":" not in var:
-            parsed_vars.append((var, {}))
+            parsed_vars.append((var, var, {}))
             continue
         var_and_dims = var.split(":")
-        var, dims = var_and_dims[0], var_and_dims[1:]
+        alias, var_name, dims = var_and_dims[0], var_and_dims[1], var_and_dims[2:]
         if len(dims) % 2 != 0:
             raise ValueError(
-                f"--vars list requires elements to be in this format '<var>:<dim1_name>:<dim1_value>:<dim2...'. Got: '{var}'."
+                f"--vars list requires elements to be in this format '<alias>:<var>:<dim1_name>:<dim1_value>:<dim2...'. Got: '{var}'."
             )
-        dims = {dims[i]: _cast(dims[i + 1]) for i in range(len(dims), 2)}
-        parsed_vars.append((var, dims))
+        dims = {dims[i]: _cast(dims[i + 1]) for i in range(0, len(dims), 2)}
+        parsed_vars.append((alias, var_name, dims))
     return parsed_vars
 
 
@@ -331,10 +334,11 @@ def main():
         nargs="*",  # Accepts 0 or more arguments as a list.
         type=str,
         help="List of variables to plot. If None, plots all available variables in metric paths."
-        "Can either be a list of variable names in the metric dict or xarray dataset. Example: '--vars Z500 Q700 T2m'.\n"
-        "If reading from xarray and need to select extra dimensions, "
-        "can also be a list of variables and dimensions in this format: '<var>:<dim1_name>:<dim1_value>:<...'. "
-        "Example: '--vars geopotential:level:500 specific_humidity:level:700 2m_temperature",
+        "Can be a list of variable names in the metric dict or xarray dataset. Example: '--vars Z500 Q700 T2m'.\n"
+        "OR if need to rename variable for plotting or need to select extra dimensions from xarray, "
+        "can also be a list of variables and dimensions in this format: '<alias>:<var>:<dim1_name>:<dim1_value>:<...'."
+        "where alias is the name for the plot, var is the name of the dict/xarray variable and dim1,dim2 are extra dimensions to select with ds.sel()."
+        "Example: '--vars Z500:geopotential:level:500 Q700:specific_humidity:level:700 T2m:2m_temperature",
     )
     parser.add_argument(
         "--figsize",
@@ -417,7 +421,7 @@ def main():
                 raise ValueError(f"File {save_file} already exists. Did not save xr dataset.")
             merged_ds.to_netcdf(save_file)
 
-    vars = parse_vars(args.vars) or vars
+    vars = parse_vars(args.vars or vars)
     metrics = args.metrics or metrics
     for metric_name in metrics:
         if args.debug:
