@@ -39,6 +39,7 @@ class ForecastModule(BaseLightningModule):
         add_input_state=False,
         save_test_outputs=False,
         use_weatherbench_lat_coeffs=True,
+        lead_time_hours=24,
         rollout_iterations=1,
         test_filename_suffix="",
         **kwargs,
@@ -96,7 +97,7 @@ class ForecastModule(BaseLightningModule):
             compute_lat_weights_fn=compute_lat_weights_weatherbench
             if use_weatherbench_lat_coeffs
             else compute_lat_weights,
-            lead_time_hours=24,
+            lead_time_hours=lead_time_hours,
             rollout_iterations=rollout_iterations,
         )
 

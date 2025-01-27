@@ -11,6 +11,14 @@ module:
   use_graphcast_coeffs: True
   use_prev: True
   loss_delta_normalization: True
+  lead_time_hours: ${dataloader.dataset.lead_time_hours}
+  rollout_iterations: 1
+
+validation:
+  rollout_iterations: 1 # number of rollouts/multistep
+
+inference:
+  rollout_iterations: 1 # number of rollouts/multistep
 
 backbone:
   # default backbone

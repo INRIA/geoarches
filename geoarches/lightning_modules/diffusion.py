@@ -53,6 +53,7 @@ class DiffusionModule(BaseLightningModule):
         num_cycles=0.5,
         learn_residual=False,
         sd3_timestep_sampling=True,
+        lead_time_hours=24,
         **kwargs,
     ):
         """
@@ -93,9 +94,11 @@ class DiffusionModule(BaseLightningModule):
 
         # set up metrics
         save_memory = cfg.inference.num_members > 10
-        val_kwargs = dict(lead_time_hours=24, rollout_iterations=1, save_memory=save_memory)
+        val_kwargs = dict(
+            lead_time_hours=lead_time_hours, rollout_iterations=1, save_memory=save_memory
+        )
         test_kwargs = dict(
-            lead_time_hours=24,
+            lead_time_hours=lead_time_hours,
             rollout_iterations=cfg.inference.rollout_iterations,
             save_memory=save_memory,
         )
@@ -380,8 +383,8 @@ class DiffusionModule(BaseLightningModule):
 
     def validation_step(self, batch, batch_nb):
         # for the validation, we make some generations and log them
-        val_num_members = 5
-        val_rollout_iterations = 2
+        val_num_members = self.cfg.validation.num_steps
+        val_rollout_iterations = self.cfg.validation.rollout_iterations
         samples = [
             self.sample_rollout(
                 batch,

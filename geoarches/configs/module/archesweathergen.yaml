@@ -33,10 +33,18 @@ module:
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
 
+  # for logging metrics
+  lead_time_hours: ${dataloader.dataset.lead_time_hours}
+  rollout_iterations: 1 # For training, number of rollouts
+
+validation:
+  num_members: 5
+  rollout_iterations: 1 # number of rollouts/multistep
+
 inference:
   num_steps: 25
   num_members: 10
-  rollout_iterations: 10 # number of rollouts
+  rollout_iterations: 10 # number of rollouts/multistep
   cf_guidance: 1
   s_churn: 0.0
   save_test_outputs: False
