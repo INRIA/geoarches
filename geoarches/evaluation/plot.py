@@ -35,7 +35,7 @@ LOW_QUANTILES = ["1.0%", "0.1%", "0.01%"]
 
 def plot_metric(
     data_dict: dict[str, xr.Dataset],
-    vars: list[str],
+    vars: list[tuple],
     metric_name: str,
     y_label: str | None = None,
     x_label: str | None = None,
@@ -50,7 +50,8 @@ def plot_metric(
         data_dict: Mapping from model name to xarray dataset holding metrics.
             Dataset variables are metric
             Dataset dimensions include `variable` and `prediction_timedelta`.
-        vars: list of variables to read from dimension `variable` in xarray dataset.
+        vars: list of variables and optional extra dimensions to read from xarray dataset.
+            Each elemnent is a tuple (var, {dim_name:dim_value,...}). If no extra dimensions, (var, {}).
         metric_name: Name of metric to read from dataset variables.
         y_label: (Optional) to label y axis of the figure.
         x_label: (Optional) to label x axis of the figure.
@@ -69,6 +70,7 @@ def plot_metric(
         fig.supxlabel(x_label)
 
     for i, var in enumerate(vars):
+        var, extra_dims = var
         if debug:
             print(var)
 
@@ -81,7 +83,7 @@ def plot_metric(
 
         for model, ds in data_dict.items():
             if metric_name == "rmse":
-                scores = ds[var].sel(metric="mse")
+                scores = ds[var].sel(metric="mse", **extra_dims)
                 scores = np.sqrt(scores)
             else:
                 scores = ds[var].sel(metric=metric_name)
@@ -102,7 +104,7 @@ def plot_metric(
 
 def plot_brier_metric(
     data_dict: dict[str, xr.Dataset],
-    vars: list[str],
+    vars: list[tuple],
     quantile_levels: list[str],  # high or low
     metric_name: str,
     y_label: str | None = None,
@@ -117,7 +119,8 @@ def plot_brier_metric(
         data_dict: Mapping from model name to xarray dataset holding metrics.
             Dataset variables are metric
             Dataset dimensions include `variable` and `prediction_timedelta`.
-        vars: list of variables to read from dimension `variable` in xarray dataset.
+        vars: list of variables and optional extra dimensions to read from xarray dataset.
+            Each elemnent is a tuple (var, {dim_name:dim_value,...}). If no extra dimensions, (var, {}).
         quantile_levels: Whether to plot high quantiles (ie. 99%, 99.9%, 99.99% levels) or low for each variable.
             Same length as `vars` list arg.
         metric_name: Name of metric to read from dataset variables.
@@ -142,6 +145,7 @@ def plot_brier_metric(
 
     for model, ds in data_dict.items():
         for i, (var, quantiles) in enumerate(zip(vars, quantiles_per_var)):
+            var, extra_dims = var
             if debug:
                 print(var, quantiles)
 
@@ -149,7 +153,7 @@ def plot_brier_metric(
             axs[2, i].set_xlabel("Lead time (days)")
 
             for q, quantile in enumerate(quantiles):
-                scores = ds[var].sel(metric=metric_name, quantile=quantile)
+                scores = ds[var].sel(metric=metric_name, quantile=quantile, **extra_dims)
                 if debug:
                     print(model, scores)
 
@@ -168,7 +172,7 @@ def plot_brier_metric(
 
 def plot_rankhist(
     data_dict: dict[str, xr.Dataset],
-    vars: list[str],
+    vars: list[tuple],
     prediction_timedeltas_days: list[int],
     metric_name: str = "rankhist",
     y_label: str | None = None,
@@ -183,7 +187,8 @@ def plot_rankhist(
         data_dict: Mapping from model name to xarray dataset holding metrics.
             Dataset variables are metric
             Dataset dimensions include `variable` and `prediction_timedelta`.
-        vars: list of variables to read from dimension `variable` in xarray dataset.
+        vars: list of variables and optional extra dimensions to read from xarray dataset.
+            Each elemnent is a tuple (var, {dim_name:dim_value,...}). If no extra dimensions, (var, {}).
         prediction_timedeltas_days: List of lead times (in days) to plot.
         metric_name: Name of metric to read from dataset variables.
         y_label: (Optional) to label y axis of the figure.
@@ -204,9 +209,13 @@ def plot_rankhist(
 
     for model, ds in data_dict.items():
         for col, var in enumerate(vars):
+            print(var)
+            var, extra_dims = var
             axs[0, col].set_title(var)
             for row, days in enumerate(prediction_timedeltas_days):
-                scores = ds[var].sel(metric=metric_name, prediction_timedelta=timedelta(days=days))
+                scores = ds[var].sel(
+                    metric=metric_name, prediction_timedelta=timedelta(days=days), **extra_dims
+                )
                 axs[row, col].plot(np.log(scores), label=model)
                 axs[row, col].grid(True)
                 # Normalize rank.
@@ -222,8 +231,38 @@ def plot_rankhist(
     plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.5))
 
 
+def parse_vars(vars):
+    """Parse the --vars argument into a list of tuples with 'var' and dictionary with 'dim_name' to 'dim_value'.
+
+    Example input: temperature:level:500, 2m_temperature
+    Example output: (temperature, dict(level=500)), (2m_temperature, {})
+    """
+    if not vars:
+        return None
+
+    def _cast(dim_value):
+        if dim_value.isdigit():
+            return int(dim_value)
+        return dim_value
+
+    parsed_vars = []
+    for var in vars:
+        if ":" not in var:
+            parsed_vars.append((var, {}))
+            continue
+        var_and_dims = var.split(":")
+        var, dims = var_and_dims[0], var_and_dims[1:]
+        if len(dims) % 2 != 0:
+            raise ValueError(
+                f"--vars list requires elements to be in this format '<var>:<dim1_name>:<dim1_value>:<dim2...'. Got: '{var}'."
+            )
+        dims = {dims[i]: _cast(dims[i + 1]) for i in range(len(dims), 2)}
+        parsed_vars.append((var, dims))
+    return parsed_vars
+
+
 def main():
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--output_dir",
@@ -238,7 +277,7 @@ def main():
         required=True,
         help="Paths holding metrics. Expected output from LabelWrapper class:"
         "labelled dict stored as .pt file or xarray dataset. "
-        "Expects `prediction_timedelta` dimension."
+        "Expects `prediction_timedelta` dimension. "
         "Can have multiple metric_paths for the same model.",
     )
     parser.add_argument(
@@ -254,17 +293,18 @@ def main():
         nargs="+",  # Accepts 1 or more arguments as a list.
         type=str,
         required=True,
-        default=["rmse", "crps", "spskr"],
         help="Names of metrics to plot. These match the keys that exist in the labeled dict as <metric>_<var>_..."
-        " or match the name of the `metric` dimension in the xarray dataset.",
+        " or match the name of the `metric` dimension in the xarray dataset. Example: --metrics rmse crps spskr",
     )
     parser.add_argument(
         "--vars",
-        nargs="+",  # Accepts 1 or more arguments as a list.
+        nargs="*",  # Accepts 0 or more arguments as a list.
         type=str,
-        default=["Z500", "Q700", "T850", "U850", "V850", "T2m", "U10m", "V10m", "SP"],
-        # default=["T2m", "T2m", "U10m", "V10m", "SP"],  # For brierskillscore.
-        help="Variables to plot. If None, plots all available ariables in metric paths.",
+        help="List of variables to plot. If None, plots all available variables in metric paths."
+        "Can either be a list of variable names in the metric dict or xarray dataset. Example: '--vars Z500 Q700 T2m'.\n"
+        "If reading from xarray and need to select extra dimensions, "
+        "can also be a list of variables and dimensions in this format: '<var>:<dim1_name>:<dim1_value>:<...'. "
+        "Example: '--vars geopotential:level:500 specific_humidity:level:700 2m_temperature",
     )
     parser.add_argument(
         "--figsize",
@@ -286,7 +326,7 @@ def main():
         nargs="+",  # Accepts 1 or more arguments as a list.
         type=int,
         default=[1, 3, 5, 10, 15],
-        help="Used only for plotting `rankhist` metric. For each variable, which lead times to plot.",
+        help="Used only for plotting `rankhist` metric. For each variable, which lead times to plot. Example: --rankhist_prediction_timedeltas 1 7.",
     )
     parser.add_argument(
         "--force", action="store_true", help="Force save plots if file already exists."
@@ -340,7 +380,7 @@ def main():
                 raise ValueError(f"File {save_file} already exists. Did not save xr dataset.")
             merged_ds.to_netcdf(save_file)
 
-    vars = args.vars or vars
+    vars = parse_vars(args.vars) or vars
     metrics = args.metrics or metrics
     for metric_name in metrics:
         if args.debug:
