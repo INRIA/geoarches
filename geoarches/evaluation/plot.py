@@ -13,6 +13,7 @@ from pathlib import Path
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 import torch
 import xarray as xr
 
@@ -32,6 +33,21 @@ plot_metric_kwargs = {
 HIGH_QUANTILES = ["99.0%", "99.9%", "99.99%"]
 LOW_QUANTILES = ["1.0%", "0.1%", "0.01%"]
 
+colors = [
+    "blue",
+    "orange",
+    "green",
+    "red",
+    "purple",
+    "brown",
+    "pink",
+    "grey",
+    "lightgreen",
+    "lightblue",
+]
+COLORS = dict(zip(colors, sns.color_palette()))
+COLORS["black"] = [0, 0, 0]
+
 
 def plot_metric(
     data_dict: dict[str, xr.Dataset],
@@ -40,6 +56,7 @@ def plot_metric(
     y_label: str | None = None,
     x_label: str | None = None,
     horizontal_reference: float | None = None,
+    plot_kwargs={},
     figsize=(10, 4),
     debug: bool = False,
 ):
@@ -56,6 +73,7 @@ def plot_metric(
         y_label: (Optional) to label y axis of the figure.
         x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
+        plot_kwargs: kwargs to pass into plt.plot() such as color.
         figsize: Figure size.
         debug: Whether to print debug statements.
     """
@@ -92,7 +110,7 @@ def plot_metric(
                 print(model, scores)
 
             days = ds.prediction_timedelta.dt.days
-            ax.plot(days, scores, label=model)
+            ax.plot(days, scores, label=model, **plot_kwargs[model])
             ax.grid(True)
 
             if horizontal_reference is not None:
@@ -110,6 +128,7 @@ def plot_brier_metric(
     y_label: str | None = None,
     x_label: str | None = None,
     horizontal_reference: float | None = None,
+    plot_kwargs={},
     figsize=(10, 5),
     debug: bool = False,
 ):
@@ -127,6 +146,7 @@ def plot_brier_metric(
         y_label: (Optional) to label y axis of the figure.
         x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
+        plot_kwargs: kwargs to pass into plt.plot() such as color.
         figsize: Figure size.
         debug: Whether to print debug statements.
     """
@@ -158,7 +178,7 @@ def plot_brier_metric(
                     print(model, scores)
 
                 days = ds.prediction_timedelta.dt.days
-                axs[q, i].plot(days, scores, label=model)
+                axs[q, i].plot(days, scores, label=model, **plot_kwargs[model])
                 axs[q, i].grid(True)
 
                 if horizontal_reference is not None:
@@ -178,6 +198,7 @@ def plot_rankhist(
     y_label: str | None = None,
     x_label: str | None = None,
     horizontal_reference: float | None = None,
+    plot_kwargs={},
     figsize=(10, 5),
     debug: bool = False,
 ):
@@ -194,6 +215,7 @@ def plot_rankhist(
         y_label: (Optional) to label y axis of the figure.
         x_label: (Optional) to label x axis of the figure.
         horizontal_reference: (Optional) y value for horizontal dashed line on the plots.
+        plot_kwargs: kwargs to pass into plt.plot() such as color.
         figsize: Figure size.
         debug: Whether to print debug statements.
     """
@@ -216,7 +238,7 @@ def plot_rankhist(
                 scores = ds[var].sel(
                     metric=metric_name, prediction_timedelta=timedelta(days=days), **extra_dims
                 )
-                axs[row, col].plot(np.log(scores), label=model)
+                axs[row, col].plot(np.log(scores), label=model, **plot_kwargs[model])
                 axs[row, col].grid(True)
                 # Normalize rank.
                 num_ranks = len(scores)
@@ -278,7 +300,7 @@ def main():
         help="Paths holding metrics. Expected output from LabelWrapper class:"
         "labelled dict stored as .pt file or xarray dataset. "
         "Expects `prediction_timedelta` dimension. "
-        "Can have multiple metric_paths for the same model.",
+        "Only one metric_paths per model.",
     )
     parser.add_argument(
         "--model_names_for_legend",
@@ -286,7 +308,15 @@ def main():
         type=str,
         required=True,
         help="Model name corresponding to each metric_path to use in plot legends."
-        "Expected same length as --metric_paths. Can have multiple entried for the same model_name.",
+        "Expected same length as --metric_paths.",
+    )
+    parser.add_argument(
+        "--model_colors",
+        nargs="+",  # Accepts 1 or more arguments as a list.
+        type=str,
+        required=True,
+        help="Color to use when plotting each model. Options: blue, orange, green, red, purple, brown, pink, grey, lightgreen, lightblue. "
+        "Expected same length as --metric_paths and --model_names_for_legend.",
     )
     parser.add_argument(
         "--metrics",
@@ -345,6 +375,9 @@ def main():
     assert len(args.metric_paths) == len(args.model_names_for_legend), (
         "Len of metric_paths != len of model_names_for_legend."
     )
+    assert len(args.model_colors) == len(args.model_names_for_legend), (
+        "Len of model_colors != len of model_names_for_legend."
+    )
 
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -367,6 +400,10 @@ def main():
             ds = convert_metric_dict_to_xarray(labeled_dict, extra_dimensions)
 
         data[model_name].append(ds)
+
+    plot_kwargs = defaultdict(dict)
+    for model_name, color in zip(args.model_names_for_legend, args.model_colors):
+        plot_kwargs[model_name] = dict(color=color)
 
     for model, ds_list in data.items():
         merged_ds = xr.merge(ds_list)
@@ -400,6 +437,7 @@ def main():
                 **kwargs,
                 figsize=args.figsize,
                 debug=args.debug,
+                plot_kwargs=plot_kwargs,
             )
         elif "rankhist" in metric_name:
             plot_rankhist(
@@ -410,9 +448,18 @@ def main():
                 **kwargs,
                 figsize=args.figsize,
                 debug=args.debug,
+                plot_kwargs=plot_kwargs,
             )
         else:
-            plot_metric(data, vars, metric_name, **kwargs, figsize=args.figsize, debug=args.debug)
+            plot_metric(
+                data,
+                vars,
+                metric_name,
+                **kwargs,
+                figsize=args.figsize,
+                debug=args.debug,
+                plot_kwargs=plot_kwargs,
+            )
 
         save_file = Path(output_dir).joinpath(f"{metric_name}.png")
         if save_file.exists():
