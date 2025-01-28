@@ -134,7 +134,7 @@ def convert_metric_dict_to_xarray(
         labels = label.split("_")
         if len(labels) - 2 != len(extra_dimensions):
             raise ValueError(
-                f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}."
+                f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}. Got extra_dimensions={extra_dimensions}."
             )
         metrics.add(labels[0])
         variables.add(labels[1])
