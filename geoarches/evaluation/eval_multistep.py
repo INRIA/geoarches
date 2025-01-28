@@ -77,6 +77,12 @@ def main():
         help="Directory or file path to find model predictions.",
     )
     parser.add_argument(
+        "--pred_filename_filter",
+        nargs="*",  # Accepts 0 or more arguments as a list.
+        type=str,
+        help="Substring(s) in filenames under --pred_path to keep files to run inference on.",
+    )
+    parser.add_argument(
         "--groundtruth_path",
         type=str,
         required=True,
@@ -129,8 +135,6 @@ def main():
     torch.set_grad_enabled(False)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print("Reading from predictions path:", args.pred_path)
-
     # Output directory to save evaluation.
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -164,10 +168,16 @@ def main():
     print(f"Reading {len(ds_test.files)} files from groundtruth path: {args.groundtruth_path}.")
 
     # Predictions.
+    def _pred_filename_filter(filename):
+        for substring in args.pred_filename_filter:
+            if substring not in filename:
+                return False
+        return True
+
     if not args.eval_clim:
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
-            filename_filter=(lambda x: True),  # Update filename_filter to filter within pred_path.
+            filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
             dimension_indexers=dict(
