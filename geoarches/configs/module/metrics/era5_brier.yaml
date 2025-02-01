@@ -1,0 +1,3 @@
+era5_brier_metric:
+  _target_: geoarches.metrics.brier_skill_score.Era5BrierSkillScore
+  lead_time_hours: ${dataloader.dataset.lead_time_hours}

@@ -2,7 +2,7 @@
 
 Set model run name (used in hydra argument `++name=NAME`): 
 ```sh
-NAME=archesweathergen
+MODEL=archesweathergen
 ```
 
 ## Commands to compute metrics
@@ -10,8 +10,8 @@ NAME=archesweathergen
 ### Rank histogram
 ```sh
 python -m geoarches.evaluation.eval_multistep  \
---pred_path evalstore/${NAME}/ \
---output_dir evalstore/${NAME}_metrics/ \
+--pred_path evalstore/${MODEL}/ \
+--output_dir evalstore/${MODEL}_metrics/ \
 --groundtruth_path data/era5_240/full/ \
 --multistep 10 --num_workers 4 \
 --metrics era5_rank_histogram_50_members
@@ -22,7 +22,7 @@ python -m geoarches.evaluation.eval_multistep  \
 ### Rank histogram
 ```sh
 python -m geoarches.evaluation.plot --output_dir plots/ 
---metric_paths evalstore/${NAME}_metrics/test-multistep=10-era5_rank_histogram_50_members.nc 
+--metric_paths evalstore/${MODEL}_metrics/test-multistep=10-era5_rank_histogram_50_members.nc
 --model_names ArchesWeatherGen \
 --model_colors red \
 --metrics rankhist \

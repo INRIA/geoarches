@@ -185,8 +185,7 @@ def main(cfg: DictConfig):
             f.write(OmegaConf.to_yaml(cfg, resolve=True))
 
     if cfg.mode == "train":
-        val_args = dict(domain="val")
-        val_args.update(getattr(cfg.dataloader, "validation_args", {}))
+        val_args = getattr(cfg.dataloader, "validation_args", {})
         valset = instantiate(cfg.dataloader.dataset, **val_args)
         trainset = instantiate(cfg.dataloader.dataset)  # will automatically pickup cfg split
 
@@ -206,8 +205,7 @@ def main(cfg: DictConfig):
             collate_fn=collate_fn,
         )
     elif cfg.mode == "test":
-        test_args = dict(domain="test_z0012")
-        test_args.update(getattr(cfg.dataloader, "test_args", {}))
+        test_args = getattr(cfg.dataloader, "test_args", {})
         testset = instantiate(cfg.dataloader.dataset, **test_args)
         test_loader = torch.utils.data.DataLoader(
             testset,
@@ -217,6 +215,8 @@ def main(cfg: DictConfig):
             collate_fn=collate_fn,
         )
 
+    # Resolve interpolations in the entire config before passing `cfg.module`
+    OmegaConf.resolve(cfg.module)
     pl_module = instantiate(cfg.module.module, cfg.module)
 
     if hasattr(cfg, "load_ckpt"):

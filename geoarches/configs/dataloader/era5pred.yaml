@@ -9,6 +9,8 @@ dataset:
 
 validation_args:
   multistep: 2
+  domain: val
 
 test_args:
   multistep: 2
+  domain: test_z0012

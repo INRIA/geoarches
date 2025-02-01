@@ -169,6 +169,8 @@ def main():
 
     # Predictions.
     def _pred_filename_filter(filename):
+        if "metric" in filename:
+            return False
         for substring in args.pred_filename_filter:
             if substring not in filename:
                 return False
