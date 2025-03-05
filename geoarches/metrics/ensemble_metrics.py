@@ -1,10 +1,9 @@
 from typing import Callable, Dict, List
 
 import torch
-from torchmetrics import Metric
-
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
+from geoarches.metrics.label_wrapper import LabelWrapper
+from torchmetrics import Metric
 
 from . import metric_base
 from .metric_base import MetricBase, TensorDictMetricBase
@@ -30,11 +29,8 @@ class EnsembleMetrics(Metric, MetricBase):
         data_shape: tuple,
         compute_lat_weights_fn: Callable[
             [int], torch.tensor
-        ] = metric_base.compute_lat_weights_weatherbench,
-        # lead_time_hours: None | int = None,
-        # rollout_iterations: int = 1,
+        ] = metric_base.compute_lat_weights,
         save_memory: bool = False,
-        # variable_indices: Dict[str, tuple] | None = None,
     ):
         """
         Args:
@@ -49,13 +45,7 @@ class EnsembleMetrics(Metric, MetricBase):
                          Recommended when number of ensemble members exceeds 10.
         """
         Metric.__init__(self)
-        MetricBase.__init__(
-            self,
-            compute_lat_weights_fn=compute_lat_weights_fn,
-            # variable_indices=variable_indices,
-            # lead_time_hours=lead_time_hours,
-            # rollout_iterations=rollout_iterations,
-        )
+        MetricBase.__init__(self, compute_lat_weights_fn=compute_lat_weights_fn)
 
         # Call `self.add_state`for every internal state that is needed for the metrics computations.
         # `dist_reduce_fx` indicates the function that should be used to reduce.
@@ -81,6 +71,7 @@ class EnsembleMetrics(Metric, MetricBase):
             None
         """
         if isinstance(preds, list):
+
             preds = torch.stack(preds, dim=1)
 
         self.nsamples += preds.shape[0]
@@ -137,16 +128,14 @@ class EnsembleMetrics(Metric, MetricBase):
         # for frmse see
         # https://github.com/google-research/weatherbench2/blob/main/weatherbench2/metrics.py#L500
 
-        assert self.nsamples > 0, "nsamples is zero, division by zero."
-        assert nmembers > 0, "nmembers is zero, division by zero."
-
         metrics = dict(
             mse=self.mse / self.nsamples,
             frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
+            #rmse=(self.mse  / self.nsamples).sqrt(),
             var=self.var / self.nsamples,
             spskr=spread_skill_ratio_coeff * (self.var / self.mse).sqrt(),  # this is unbiased
             crps=(self.mae - 0.5 * self.dispersion) / self.nsamples,
-            fcrps=(self.mae - 0.5 * self.dispersion * nmembers / (nmembers - 1)) / self.nsamples,
+          #  fcrps=(self.mae - 0.5 * self.dispersion * nmembers / (nmembers - 1)) / self.nsamples,
             energyscore=(self.energy_rmse - 0.5 * self.energy_dispersion) / self.nsamples,
             fenergyscore=(
                 self.energy_rmse - 0.5 * self.energy_dispersion * nmembers / (nmembers - 1)
@@ -166,59 +155,48 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
         targets: (batch, ..., timedelta, var, level, lat, lon)
         preds: (batch, nmembers, ..., timedelta, var, level, lat, lon)
 
-    Metrics are reduced over batch, lat, lon.
-    Returns a labelled dictionary for each (timedelta, var, lev).
+    Return dictionary of metrics reduced over batch, lat, lon.
     """
 
     def __init__(
         self,
-        surface_variables=era5.surface_variables,
-        level_variables=era5.level_variables,
         pressure_levels=era5.pressure_levels,
+        level_variables=era5.level_variables,
         save_memory: bool = False,
         lead_time_hours: None | int = None,
-        rollout_iterations: None | int = None,
+        multistep: None | int = None,
     ):
         """
         Args:
-            surface_variables: Names of surface variables (to select quantiles).
-            level_variables: Names of level variables (used to get `variable_indices`).
             pressure_levels: pressure levels in data (used to get `variable_indices`).
+            level_data_shape: (var, lev) shape for level variables.
+            level_variables: Names of level variables (used to get `variable_indices`).
             save_memory: compute dispersion in memory-concious fashion (avoid broadcasting on added member dimension).
                          Recommended when number of ensemble members exceeds 10.
-            lead_time_hours: Timedelta between timestamps in multistep rollout.
-                Set to explicitly handle predictions from multistep rollout.
-                This option labels each timestep separately in output metric dict.
+            lead_time_hours: set to explicitly handle predictions from multistep rollout.
+                FYI when set to None, EnsembleMetrics still handles natively any extra dimensions in targets/preds.
+                However, this option labels each timestep separately in output metric dict.
                 Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
-                FYI when set to None, Era5EnsembleMetrics still handles natively any extra dimensions in targets/preds.
-            rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
-                Set to explicitly handle metrics computed on predictions from multistep rollout.
-                See param `lead_time_hours`.
+            multistep: set to explicitly handle metrics computed on predictions from multistep rollout.
+                Size of timedelta dimension. See param `lead_time_hours`.
         """
-        # Initialize separate metrics for level vars and surface vars.
-        kwargs = {}
-        if surface_variables:
-            surface_ensemble_metric = EnsembleMetrics(data_shape=(len(surface_variables), 1))
-            # Wrap metric with LabelDictWrapper to return dictionary with labelled metrics (for wandb logging).
-            kwargs["surface"] = LabelDictWrapper(
-                surface_ensemble_metric,
-                variable_indices=add_timedelta_index(
-                    era5.get_surface_variable_indices(surface_variables),
-                    lead_time_hours=lead_time_hours,
-                    rollout_iterations=rollout_iterations,
+        super().__init__(
+            surface=LabelWrapper(
+                EnsembleMetrics(data_shape=(len(era5.surface_variables), 1)),
+                variable_indices=era5.get_surface_variable_indices(),
+                lead_time_hours=lead_time_hours,
+                multistep=multistep,
+            ),
+            level=LabelWrapper(
+                EnsembleMetrics(
+                    data_shape=(len(level_variables), len(pressure_levels)),
+                    save_memory=save_memory,  # Save memory on level vars only.
                 ),
-            )
-        if level_variables:
-            level_ensemble_metric = EnsembleMetrics(
-                data_shape=(len(level_variables), len(pressure_levels)),
-                save_memory=save_memory,  # Save memory on level vars only.
-            )
-            kwargs["level"] = LabelDictWrapper(
-                level_ensemble_metric,
-                variable_indices=add_timedelta_index(
-                    era5.get_headline_level_variable_indices(pressure_levels, level_variables),
-                    lead_time_hours=lead_time_hours,
-                    rollout_iterations=rollout_iterations,
+                variable_indices=era5.get_headline_level_variable_indices(
+                    pressure_levels, level_variables
                 ),
-            )
-        super().__init__(**kwargs)
+                lead_time_hours=lead_time_hours,
+                multistep=multistep,
+            ),
+        )
+

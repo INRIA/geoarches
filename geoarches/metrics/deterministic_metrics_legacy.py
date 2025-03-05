@@ -1,10 +1,12 @@
 import torch
 
-lat_coeffs_equi = torch.tensor(
-    [torch.cos(x) for x in torch.arange(-torch.pi / 2, torch.pi / 2, torch.pi / 120)]
-)
-lat_coeffs_equi = (lat_coeffs_equi / lat_coeffs_equi.mean())[None, None, :, None]
 
+def compute_lat_coeffs(lat_size):
+    lat_coeffs_equi = torch.tensor(
+        [torch.cos(x) for x in torch.arange(-torch.pi / 2, torch.pi / 2, torch.pi / lat_size)]
+    )
+    lat_coeffs_equi = (lat_coeffs_equi / lat_coeffs_equi.mean())[None, None, :, None]
+    return lat_coeffs_equi
 
 def acc(x, y, z=0):
     """Anomaly correlation coefficient.
@@ -16,13 +18,13 @@ def acc(x, y, z=0):
         y: targets
         z: climatology
     """
-    assert x.shape[-2] == 120, "Wrong shape for ACC computation"
+    lat_coeffs_equi = compute_lat_coeffs(x.shape[-2])
     coeffs = lat_coeffs_equi.to(x.device)[None]
     x = x - z
     y = y - z
-    norm1 = (x * x).mul(coeffs).mean((-2, -1)) ** 0.5
-    norm2 = (y * y).mul(coeffs).mean((-2, -1)) ** 0.5
-    mean_acc = (x * y).mul(coeffs).mean((-2, -1)) / norm1 / norm2
+    norm1 = (x * x).mul(coeffs).nanmean((-2, -1)) ** 0.5
+    norm2 = (y * y).mul(coeffs).nanmean((-2, -1)) ** 0.5
+    mean_acc = (x * y).mul(coeffs).nanmean((-2, -1)) / norm1 / norm2
     return mean_acc
 
 
@@ -35,9 +37,9 @@ def wrmse(x, y):
         x: predictions
         y: targets
     """
-    assert x.shape[-2] == 120, "Wrong shape for WRMSE computation"
+    lat_coeffs_equi = compute_lat_coeffs(x.shape[-2])
     coeffs = lat_coeffs_equi.to(x.device)
-    err = (x - y).pow(2).mul(coeffs).mean((-2, -1)).sqrt()
+    err = (x - y).pow(2).mul(coeffs).nanmean((-2, -1)).sqrt()
     return err
 
 
