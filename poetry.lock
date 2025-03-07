@@ -5127,7 +5127,7 @@ description = "A language and compiler for custom Deep Learning operations"
 optional = false
 python-versions = "*"
 groups = ["main"]
-markers = "platform_system == \"Linux\" and platform_machine == \"x86_64\" and python_version < \"3.13\" and (python_version == \"3.11\" or python_version >= \"3.12\")"
+markers = "platform_system == \"Linux\" and platform_machine == \"x86_64\" and (python_version == \"3.11\" or python_version >= \"3.12\")"
 files = [
     {file = "triton-3.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6b0dd10a925263abbe9fa37dcde67a5e9b2383fc269fdf59f5657cac38c5d1d8"},
     {file = "triton-3.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0f34f6e7885d1bf0eaaf7ba875a5f0ce6f3c13ba98f9503651c1e6dc6757ed5c"},
@@ -5155,7 +5155,7 @@ files = [
     {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
     {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
 ]
-markers = {main = "python_version == \"3.11\" or python_version >= \"3.12\"", docs = "python_version >= \"3.12\" and python_version < \"3.13\" or python_version == \"3.11\""}
+markers = {main = "python_version == \"3.11\" or python_version >= \"3.12\"", docs = "python_version >= \"3.12\" or python_version == \"3.11\""}
 
 [[package]]
 name = "tzdata"
@@ -5506,5 +5506,5 @@ type = ["pytest-mypy"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.11"
-content-hash = "b4138a1a32cb328ad7e1c2fe2811315ccae282e8c357665726c1f0379530f67b"
+python-versions = ">=3.11,<3.13"
+content-hash = "5bb14052977a88e8b3d4e62bb758fbaadff1802ee24dbcff16b91d531f97101d"
