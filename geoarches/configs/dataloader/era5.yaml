@@ -1,12 +1,15 @@
 dataset: 
   _target_: geoarches.dataloaders.era5.Era5Forecast
   path: data/era5_240/full/
-  lead_time_hours: 24 # mixed
+  lead_time_hours: 24
+  multistep: ${oc.select:module.train.rollout_iterations,1}
   norm_scheme: pangu
   load_prev: True
 
 validation_args:
-  multistep: 2
+  multistep: ${oc.select:module.val.rollout_iterations,1}
+  domain: val
 
 test_args:
-  multistep: 2
+  multistep: ${oc.select:module.inference.rollout_iterations,1}
+  domain: test_z0012

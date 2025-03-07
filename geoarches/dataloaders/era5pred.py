@@ -22,6 +22,20 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         variables=None,
         **kwargs,
     ):
+        """
+        Args:
+            path: Single filepath or directory holding groundtruth files.
+            domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..).
+            filename_filter: To filter files within `path` based on filename.  If set, does not use `domain` param.
+                If None, filters files based on `domain`.
+            lead_time_hours: Time difference between current state and previous and future states.
+            pred_path: Single filepath or directory holding model prediction files to also load.
+            load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).
+            norm_scheme: Normalization scheme to use. Can be None to perform no normalization.
+            load_hard_neg: Whether to additionallty load hard negative example for contrastive learning.
+            variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
+                e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
+        """
         super().__init__(
             path=path,
             domain=domain,
@@ -35,7 +49,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         self.load_hard_neg = load_hard_neg
         # self.filename_filter is already init
         if pred_path is not None:
-            self.pred_ds = netcdf.NetcdfDataset(
+            self.pred_ds = netcdf.XarrayDataset(
                 path=pred_path,
                 filename_filter=self.filename_filter,
                 variables=self.variables,

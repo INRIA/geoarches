@@ -1,0 +1,3 @@
+era5_ensemble_metrics:
+  _target_: geoarches.metrics.ensemble_metrics.Era5EnsembleMetrics
+  lead_time_hours: ${dataloader.dataset.lead_time_hours}

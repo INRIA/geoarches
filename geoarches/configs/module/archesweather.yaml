@@ -12,6 +12,28 @@ module:
   use_prev: True
   loss_delta_normalization: True
 
+defaults:
+  - metrics:  # Read from module/metrics/ folder.
+    - era5_deterministic
+
+train:
+  rollout_iterations: 1 # number of rollouts to compute loss on
+  metrics: ${oc.dict.values:module.metrics}  # list of default metrics from above.
+  metrics_kwargs:
+    rollout_iterations: 1 # number of rollouts to compute metrics on
+
+val:
+  rollout_iterations: 1 # number of rollouts to compute loss on
+  metrics: ${oc.dict.values:module.metrics}
+  metrics_kwargs:
+    rollout_iterations: 1 # number of rollouts to compute metrics on
+
+inference:
+  rollout_iterations: 2  # number of rollouts to run inference on.
+  metrics: ${module.metrics}
+  metrics_kwargs:
+    rollout_iterations: ${..rollout_iterations}
+
 backbone:
   # default backbone
   _target_: geoarches.backbones.archesweather.ArchesWeatherCondBackbone

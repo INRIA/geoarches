@@ -11,7 +11,6 @@ from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 
 from geoarches.dataloaders import era5, zarr
-from geoarches.metrics.deterministic_metrics import Era5DeterministicMetrics
 from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
 
 from .. import stats as geoarches_stats
@@ -39,6 +38,7 @@ class ForecastModule(BaseLightningModule):
         add_input_state=False,
         save_test_outputs=False,
         use_weatherbench_lat_coeffs=True,
+        lead_time_hours=24,
         rollout_iterations=1,
         test_filename_suffix="",
         **kwargs,
@@ -92,15 +92,23 @@ class ForecastModule(BaseLightningModule):
             )
             self.loss_coeffs = self.loss_coeffs * self.loss_delta_scaler.pow(self.pow)
 
-        self.metrics = Era5DeterministicMetrics(
-            compute_lat_weights_fn=compute_lat_weights_weatherbench
+        compute_lat_weights_fn = (
+            compute_lat_weights_weatherbench
             if use_weatherbench_lat_coeffs
-            else compute_lat_weights,
-            lead_time_hours=24,
-            rollout_iterations=rollout_iterations,
+            else compute_lat_weights
         )
-
-        # self.test_outputs = []
+        self.train_metrics = nn.ModuleList(
+            [instantiate(metric, **cfg.train.metrics_kwargs) for metric in cfg.train.metrics]
+        )
+        self.val_metrics = nn.ModuleList(
+            [instantiate(metric, **cfg.val.metrics_kwargs) for metric in cfg.val.metrics]
+        )
+        self.test_metrics = nn.ModuleDict(
+            {
+                metric_name: instantiate(metric, **cfg.inference.metrics_kwargs)
+                for metric_name, metric in cfg.inference.metrics.items()
+            }
+        )
 
     def forward(self, batch, *args, **kwargs):
         x = self.embedder.encode(batch["state"], batch.get("prev_state", None))
@@ -165,7 +173,8 @@ class ForecastModule(BaseLightningModule):
 
     def training_step(self, batch, batch_nb):
         denormalize = self.trainer.train_dataloader.dataset.denormalize
-        self.metrics.reset()
+        for metric in self.train_metrics:
+            metric.reset()
 
         if "future_states" not in batch:
             # standard prediction
@@ -173,12 +182,12 @@ class ForecastModule(BaseLightningModule):
             loss = self.loss(pred, batch["next_state"])
             self.mylog(loss=loss)
 
-            self.metrics.update(
-                denormalize(batch["next_state"])[:, None], denormalize(pred)[:, None]
-            )
-            outputs = self.metrics.compute()
-
-            self.mylog(**outputs)
+            for metric in self.train_metrics:
+                metric.update(
+                    denormalize(batch["next_state"])[:, None], denormalize(pred)[:, None]
+                )
+                outputs = metric.compute()
+                self.mylog(**outputs)
 
         else:
             # multistep prediction
@@ -188,43 +197,69 @@ class ForecastModule(BaseLightningModule):
 
             self.mylog(lead_iter=lead_iter)
             self.mylog(loss=loss)
-            # metrics for next state
-            self.metrics.update(
-                denormalize(batch["future_states"][:, :1]), denormalize(pred_future_states[:, :1])
-            )
-            outputs = self.metrics.compute()
-            self.mylog(**outputs)
+            # metrics
+            rollout_iterations = self.cfg.train.metrics_kwargs.rollout_iterations
+            for metric in self.train_metrics:
+                metric.update(
+                    denormalize(batch["future_states"][:, :rollout_iterations]),
+                    denormalize(pred_future_states[:, :rollout_iterations]),
+                )
+                outputs = metric.compute()
+                self.mylog(**outputs)
 
         return loss
 
     def on_validation_epoch_start(self):
-        self.metrics.reset()
+        for metric in self.val_metrics:
+            metric.reset()
 
     def validation_step(self, batch, batch_nb):
-        dataset = self.trainer.val_dataloaders.dataset
-        pred = self.forward(batch)
-        loss = self.loss(pred, batch["next_state"])
-        self.mylog(loss=loss)
+        denormalize = self.trainer.val_dataloaders.dataset.denormalize
 
-        self.metrics.update(
-            dataset.denormalize(batch["next_state"])[:, None], dataset.denormalize(pred)[:, None]
-        )
+        if "future_states" not in batch:
+            # standard prediction
+            pred = self.forward(batch)
+            loss = self.loss(pred, batch["next_state"])
+            self.mylog(loss=loss)
+
+            for metric in self.val_metrics:
+                metric.update(
+                    denormalize(batch["next_state"])[:, None], denormalize(pred)[:, None]
+                )
+
+        else:
+            # multistep prediction
+            lead_iter = batch["future_states"].shape[1]
+            pred_future_states = self.forward_multistep(batch, iters=lead_iter)
+            loss = self.loss(pred_future_states, batch["future_states"], multistep=True)
+
+            self.mylog(lead_iter=lead_iter)
+            self.mylog(loss=loss)
+            # metrics
+            rollout_iterations = self.cfg.val.metrics_kwargs.rollout_iterations
+            for metric in self.val_metrics:
+                metric.update(
+                    denormalize(batch["future_states"][:, :rollout_iterations]),
+                    denormalize(pred_future_states[:, :rollout_iterations]),
+                )
+                outputs = metric.compute()
+                self.mylog(**outputs)
 
         return loss
 
     def on_validation_epoch_end(self):
-        outputs = self.metrics.compute()
-        self.mylog(**outputs, mode="val_")
-        self.metrics.reset()
+        for metric in self.val_metrics:
+            outputs = metric.compute()
+            self.mylog(**outputs, mode="val_")
+            metric.reset()
 
     def on_test_epoch_start(self):
         dataset = self.trainer.test_dataloaders.dataset
-        self.metrics.reset()
+        for metric in self.test_metrics.values():
+            metric.reset()
         Path("evalstore").joinpath(self.name).mkdir(exist_ok=True, parents=True)
         self.test_filename = (
-            Path("evalstore")
-            / self.name
-            / f"{dataset.domain}{self.test_filename_suffix}_metrics.pt"
+            Path("evalstore") / self.name / f"{dataset.domain}{self.test_filename_suffix}"
         )
         if self.save_test_outputs:
             self.zarr_writer = zarr.ZarrIterativeWriter(
@@ -242,10 +277,11 @@ class ForecastModule(BaseLightningModule):
             ref_state = batch["future_states"]
         else:
             ref_state = batch["next_state"][:, None]
-        self.metrics.update(
-            dataset.denormalize(ref_state),
-            dataset.denormalize(preds_future),
-        )
+        for metric in self.test_metrics.values():
+            metric.update(
+                dataset.denormalize(ref_state),
+                dataset.denormalize(preds_future),
+            )
 
         if self.save_test_outputs:
             xr_dataset = dataset.convert_trajectory_to_xarray(
@@ -260,13 +296,17 @@ class ForecastModule(BaseLightningModule):
             self.zarr_writer.to_netcdf(dump_id=batch_nb)
 
     def on_test_epoch_end(self):
-        outputs = self.metrics.compute()
-        torch.save(outputs, self.test_filename)
+        outputs = {}
+        for metric_name, metric in self.test_metrics.items():
+            output = metric.compute()
+            torch.save(output, f"{self.test_filename}_{metric_name}.pt")
+            outputs.update(output)
 
         if self.save_test_outputs:
             self.zarr_writer.to_netcdf(dump_id="final")
 
-        self.metrics.reset()
+        for metric in self.test_metrics.values():
+            metric.reset()
         return outputs
 
     def on_train_epoch_start(self, *args, **kwargs):

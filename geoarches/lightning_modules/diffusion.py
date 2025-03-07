@@ -16,8 +16,6 @@ import geoarches.stats as geoarches_stats
 from geoarches.backbones.dit import TimestepEmbedder
 from geoarches.dataloaders import era5, zarr
 from geoarches.lightning_modules import BaseLightningModule
-from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
-from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
 geoarches_stats_path = importlib.resources.files(geoarches_stats)
@@ -92,19 +90,14 @@ class DiffusionModule(BaseLightningModule):
         area_weights = (area_weights / area_weights.mean())[:, None]
 
         # set up metrics
-        save_memory = cfg.inference.num_members > 10
-        val_kwargs = dict(lead_time_hours=24, rollout_iterations=1, save_memory=save_memory)
-        test_kwargs = dict(
-            lead_time_hours=24,
-            rollout_iterations=cfg.inference.rollout_iterations,
-            save_memory=save_memory,
-        )
-
         self.val_metrics = nn.ModuleList(
-            [Era5EnsembleMetrics(**val_kwargs), Era5BrierSkillScore(**val_kwargs)]
+            [instantiate(metric, **cfg.val.metrics_kwargs) for metric in cfg.val.metrics]
         )
-        self.test_metrics = nn.ModuleList(
-            [Era5EnsembleMetrics(**test_kwargs), Era5BrierSkillScore(**test_kwargs)]
+        self.test_metrics = nn.ModuleDict(
+            {
+                metric_name: instantiate(metric, **cfg.inference.metrics_kwargs)
+                for metric_name, metric in cfg.inference.metrics.items()
+            }
         )
         # define coeffs for loss
 
@@ -380,8 +373,8 @@ class DiffusionModule(BaseLightningModule):
 
     def validation_step(self, batch, batch_nb):
         # for the validation, we make some generations and log them
-        val_num_members = 5
-        val_rollout_iterations = 2
+        val_num_members = self.cfg.val.num_members
+        val_rollout_iterations = self.cfg.val.metrics_kwargs.rollout_iterations
         samples = [
             self.sample_rollout(
                 batch,
@@ -429,7 +422,7 @@ class DiffusionModule(BaseLightningModule):
             self.sample_rollout(
                 batch,
                 batch_nb=batch_nb,
-                iterations=self.cfg.inference.rollout_iterations,
+                iterations=self.cfg.inference.metrics_kwargs.rollout_iterations,
                 member=j,
                 disable_tqdm=True,
             )

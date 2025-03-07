@@ -105,10 +105,10 @@ class Era5Dataset(XarrayDataset):
         """
         Args:
             path: Single filepath or directory holding files.
-            domain: Specify data split for the filename filters (eg. train, val, test, testz0012..).
+            domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..).
                 Used if `filename_filter` is None.
-            filename_filter: To filter files within `path` based on filename.
-                By default, filters files based on `domain`.
+            filename_filter: To filter files within `path` based on filename.  If set, does not use `domain` param.
+                If None, filters files based on `domain`.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...]}. By default uses standard 6 level and 4 surface vars.
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
@@ -249,9 +249,9 @@ class Era5Forecast(Era5Dataset):
         """
         Args:
             path: Single filepath or directory holding files.
-            domain: Specify data split for the filename filters (eg. train, val, test, testz0012..)
-            filename_filter: To filter files within `path` based on filename.
-                By default, filters files based on `domain`.
+            domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..)
+            filename_filter: To filter files within `path` based on filename. If set, does not use `domain` param.
+                If None, filters files based on `domain`.
             lead_time_hours: Time difference between current state and previous and future states.
             multistep: Number of future states to load. By default, loads next state only (current time + lead_time_hours).
             load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).

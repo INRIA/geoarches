@@ -1,0 +1,3 @@
+era5_deterministic_metrics:
+  _target_: geoarches.metrics.deterministic_metrics.Era5DeterministicMetrics
+  lead_time_hours: ${dataloader.dataset.lead_time_hours}

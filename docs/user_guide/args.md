@@ -22,7 +22,6 @@ The two arguments you absolutely should know are:
 | `limit_train_batches`<br/>`limit_val_batches`<br/>`limit_test_batches` | Optional. | Limit batches loaded in dataloaders in [Lightning API](https://lightning.ai/docs/pytorch/stable/common/trainer.html#limit-train-batches). |
 | `log_freq`                     | 100                  | Frequency to log metrics. |
 | `max_steps`                    | 300000               | Max steps to run training. |
-| `save_step_frequency`          | 50000                | Save checkpoint every N steps. |
 | `seed`                         | 0                    | Seed lightning with `L.seed_everything(cfg.seed)` |
 
 ## Args to save and load checkpoints
@@ -34,7 +33,7 @@ The two arguments you absolutely should know are:
 | `resume`                       | `True`               | Set `True` to resume training from a checkpoint when mode=`train`. |
 | `ckpt_filename_match`          | Optional             | Set to substring to match checkpoints files under `exp_dir`/checkpoints/ if resuming checkpoint to train or running evaluation. Pipeline will choose latest checkpoint under `exp_dir/checkpoints/` that contains the substring `ckpt_filename_match`. |
 | `load_ckpt`                    | Optional             | Path to load Pytorch lightning module checkpoint from but not resume run. Not compatible with `ckpt_filename_match`. Will load checkpoint, but not resume training. |
-
+| `save_step_frequency`          | 50000                | Save checkpoint every N steps. |
 ## Logging args
 
 Currently only supports logging to WandB. See [User Guide](../user_guide/index.md#weights-and-biases-wandb) for more info.
