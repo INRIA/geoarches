@@ -2,7 +2,7 @@
 
 ### 1. Install package
 
-Follow [installation](../getting_started/installation.md) instructions to install the package and its dependencies. 
+Follow [installation](../getting_started/installation.md) instructions to install the package and its dependencies.
 
 ???+ tip
 
