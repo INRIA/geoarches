@@ -77,19 +77,18 @@ class ForecastModule(BaseLightningModule):
         if loss_delta_normalization:
             # assumes include vertical wind component
 
-            pangu_stats = torch.load(
-                geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
+            surface_stats = torch.load(
+                geoarches_stats_path / "surface_delta_std", weights_only=True
             )
-
-            # mul by first to remove norm, div by second to apply fake delta normalization
+            level_stats = torch.load(
+                geoarches_stats_path / "plev_delta_std", weights_only=True
+            )
+            # # mul by first to remove norm, div by second to apply fake delta normalization
             self.loss_delta_scaler = TensorDict(
-                level=pangu_stats["level_std"]
-                / torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=pangu_stats["surface_std"]
-                / torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
+                level=level_stats,
+                surface=surface_stats
             )
+            
             self.loss_coeffs = self.loss_coeffs * self.loss_delta_scaler.pow(self.pow)
 
         compute_lat_weights_fn = (

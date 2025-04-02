@@ -1,4 +1,4 @@
-# Base class for metrics.
+    # Base class for metrics.
 from typing import Callable, Dict, List
 
 import torch

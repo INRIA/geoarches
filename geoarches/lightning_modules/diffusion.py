@@ -17,8 +17,9 @@ from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
 geoarches_stats_path = importlib.resources.files(geoarches_stats)
-
-from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+import lovely_tensors as lt
+lt.monkey_patch()
+from diffusers.schedulers import FlowMatchEulerDiscreteScheduler,FlowMatchHeunDiscreteScheduler
 
 from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
 
@@ -63,6 +64,8 @@ class DiffusionModule(BaseLightningModule):
         num_cycles=0.5,
         learn_residual=False,
         use_fm_sigma_scaling=False,
+        prior='normal',
+        sd3_timestep_sampling=True,
         **kwargs,
         # save_test_outputs=False, now in cfg.inference
     ):
@@ -85,10 +88,12 @@ class DiffusionModule(BaseLightningModule):
 
         if load_deterministic_model:
             # TODO: confirm that it works
-            from geoarches.lightning_modules import load_module
-
-            self.det_model, _ = load_module(load_deterministic_model)
-
+            from geoarches.lightning_modules import AvgModule,load_module
+            if isinstance(load_deterministic_model, str):
+                self.det_model, _ = load_module(load_deterministic_model)
+            else:
+                # load averaging model
+                self.det_model = AvgModule(load_deterministic_model)
         # cond_dim should be given as arg to the backbone
 
         self.month_embedder = TimestepEmbedder(cond_dim)
@@ -116,9 +121,12 @@ class DiffusionModule(BaseLightningModule):
             self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
                 num_train_timesteps=num_train_timesteps
             )
-
+        elif scheduler == "flow_heun":
+            self.noise_scheduler = FlowMatchHeunDiscreteScheduler(
+                num_train_timesteps=num_train_timesteps
+            )                
         self.inference_scheduler = deepcopy(self.noise_scheduler)
-
+        
         if ckpt_path is not None:
             print(next(self.backbone.named_parameters()))
             print("init from ckpt", ckpt_path)
@@ -129,9 +137,9 @@ class DiffusionModule(BaseLightningModule):
         area_weights = (area_weights / area_weights.mean())[:, None]
 
         # set up metrics
-        self.val_ensemble_metrics = Era5EnsembleMetrics()  # only one timestep
+        # self.val_ensemble_metrics = Era5EnsembleMetrics()  # only one timestep
 
-        self.val_metrics = [self.val_ensemble_metrics]
+        # self.val_metrics = [self.val_ensemble_metrics]
         # self.test_metrics = [self.test_ensemble_metrics]
         # define coeffs for loss
 
@@ -166,17 +174,22 @@ class DiffusionModule(BaseLightningModule):
             )
 
         elif loss_delta_normalization == "pred" or state_normalization == "pred":
-            scaler = TensorDict(**torch.load("stats/deltapred_24h_stds.pt", weights_only=False))
+            # scaler = TensorDict(**torch.load("stats/deltapred_24h_stds.pt", weights_only=False))
+            scaler_surface = torch.load(f'{geoarches_stats_path}/surface_delta_std').nanmean(axis=(-1,-2),keepdims=True).unsqueeze(1).unsqueeze(0)
+            scaler_plev = torch.load(f'{geoarches_stats_path}/plev_delta_std').nanmean(axis=(-1,-2),keepdims=True).unsqueeze(0)
+            scaler = TensorDict({'surface':scaler_surface,'level':scaler_plev})
+
             # even if it's not the exact same model, we dont care too much
             # humidity causes problems at high altitude, let's just average it
-            scaler["level"] = scaler["level"].mean(dim=-3, keepdim=True)
-
+            # scaler["level"] = scaler["level"].mean(dim=-3, keepdim=True)
+        else:
+            scaler = 1
         if loss_delta_normalization:
             self.loss_coeffs = tensordict_apply(
                 torch.mul, self.loss_coeffs, (pangu_scaler / scaler).pow(self.pow)
             )
-        elif state_normalization:
-            self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
+        
+        self.state_scaler = scaler   # inverse because we divide by state_scaler
 
         self.test_outputs = []
         self.validation_samples = {}
@@ -235,8 +248,12 @@ class DiffusionModule(BaseLightningModule):
             0, self.noise_scheduler.config.num_train_timesteps, (bs,), device=device
         ).long()
 
-        noise = torch.randn_like(batch["next_state"])  # amazing it works
-
+        if(self.prior == 'student'):
+            from torch.distributions.studentT import StudentT
+            noise = TensorDict({k: StudentT(3, loc=0.0, scale=1.0).rsample(v.shape).to(device) for k,v in batch['next_state'].items()})
+            # noise = StudentT(3, loc=0.0, scale=1.0).rsample(batch["next_state"].shape)
+        else:
+            noise = torch.randn_like(batch["next_state"])  # amazing it works
         # by default
         next_state = batch["next_state"]
 
@@ -248,7 +265,6 @@ class DiffusionModule(BaseLightningModule):
                 with torch.no_grad():
                     batch["pred_state"] = self.det_model(batch).detach()
             next_state = batch["next_state"] - batch["pred_state"]
-
         if self.state_normalization:
             next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
 
@@ -258,6 +274,11 @@ class DiffusionModule(BaseLightningModule):
             u = torch.normal(mean=0, std=1, size=(bs,), device="cpu").sigmoid()
 
             indices = (u * self.noise_scheduler.config.num_train_timesteps).long()
+            if self.sd3_timestep_sampling:
+                u = torch.normal(mean=0, std=1, size=(bs,), device="cpu").sigmoid()
+                indices = (u * self.noise_scheduler.config.num_train_timesteps).long()
+            else:
+                indices = timesteps.cpu()
             timesteps = self.noise_scheduler.timesteps[indices].to(device)
 
             schedule_timesteps = self.noise_scheduler.timesteps.to(device)
@@ -302,13 +323,13 @@ class DiffusionModule(BaseLightningModule):
 
         # create uncond
         use_condition = torch.rand((bs,), device=device) > self.uncond_proba
+
         pred = self.forward(
             batch,
             noisy_next_state,
             timesteps,
-            use_condition.float()[:, None, None, None, None],
+            use_condition.float(),
         )
-
         # compute loss
 
         loss = self.loss(pred, target_state, timesteps)
@@ -459,6 +480,7 @@ class DiffusionModule(BaseLightningModule):
 
         elif self.learn_residual == "pred":
             final_state = batch["pred_state"] + final_state * rescale
+            
 
         return final_state
 

@@ -6,7 +6,7 @@ import torch
 from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
-from .netcdf import NetcdfDataset
+from .netcdf import XarrayDataset
 
 
 def apply_nan_to_num(td):
@@ -51,7 +51,6 @@ filename_filters = dict(
     empty=lambda x: False,
 )
 
-pressure_levels = [85000, 70000, 50000, 25000]
 
 def replace_nans(tensordict, value=0):
     return tensordict.apply(
@@ -59,7 +58,7 @@ def replace_nans(tensordict, value=0):
     )
 
 
-class DCPPForecast(NetcdfDataset):
+class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
 
@@ -83,7 +82,9 @@ class DCPPForecast(NetcdfDataset):
         variables=None,
         surface_variables = None,
         level_variables = None,
-        surface_variable_indices = []
+        surface_variable_indices = [],
+        level_variable_indices = [],
+        pressure_levels = [85000, 70000, 50000, 25000]
     ):
         """
         Args:
@@ -99,9 +100,8 @@ class DCPPForecast(NetcdfDataset):
             mask_value: what value to use as mask for nan values in dataset
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
-
         self.timedelta = 1
-        self.current_multistep = 1
+        # self.multistep=1
         if filename_filter is None:
             filename_filter = filename_filters[domain]
         if variables is None:
@@ -137,21 +137,21 @@ class DCPPForecast(NetcdfDataset):
         elif self.norm_scheme == "spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack([spatial_norm_stats["surface_mean"][i] for i in surface_variable_indices]),
-                level=level_spatial_norm_stats["level_mean"],
+                level=torch.stack([level_spatial_norm_stats["level_mean"][i] for i in level_variable_indices]),
             )
             self.data_std = TensorDict(
                 surface=torch.stack([spatial_norm_stats["surface_std"][i] for i in surface_variable_indices]),
-                level=level_spatial_norm_stats["level_std"],
+                level=torch.stack([level_spatial_norm_stats["level_std"][i] for i in level_variable_indices]),
             )
         elif self.norm_scheme == "mean_only_spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack([spatial_norm_stats["surface_mean"][i] for i in surface_variable_indices]),
-                level=level_spatial_norm_stats["level_mean"],
+                level=torch.stack([level_spatial_norm_stats["level_mean"][i] for i in level_variable_indices]),
             )
 
             self.data_std = TensorDict(
                 surface=torch.stack([spatial_norm_stats["surface_std"][i] for i in surface_variable_indices]).nanmean(axis=(-1,-2),keepdim=True),
-                level=level_spatial_norm_stats["level_std"].nanmean(axis=(-1,-2),keepdim=True),
+                level=torch.stack([level_spatial_norm_stats["level_std"][i] for i in level_variable_indices]).nanmean(axis=(-1,-2),keepdim=True),
             )
         elif self.norm_scheme == "clim_removed":
             self.data_mean = TensorDict(
@@ -167,12 +167,15 @@ class DCPPForecast(NetcdfDataset):
 
         self.surface_variables = surface_variables
         self.level_variables = [
-            a + '_' + str(p)
+            a + ' ' + str(p//100)
             for a in level_variables
             for p in pressure_levels
         ]
+        
         self.atmos_forcings = torch.tensor(np.load(f'{forcings_path}/ghg_forcings_normed.npy'))
         self.solar_forcings = torch.tensor(np.load(f'{forcings_path}/solar_forcings_normed.npy'))
+        times_seconds = [v[2].item() // 10**9 for k,v in self.id2pt.items()]
+        self.next_timestamp_map = {k:v for k,v in list(zip(times_seconds,times_seconds[1:]))}
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
@@ -216,9 +219,15 @@ class DCPPForecast(NetcdfDataset):
             out["future_states"] = torch.stack(future_states, dim=0)
 
         if self.load_prev:
-            out["prev_state"] = super().__getitem__(i - self.lead_time_months // self.timedelta)
-            prev_timestamp = self.id2pt[i - self.lead_time_months // self.timedelta][2].item() // 10**9
-            times = pd.to_datetime(prev_timestamp,unit='s').tz_localize(None)
+            if(self.load_prev > 1):
+                prev_states = []
+                for k in range(0,self.load_prev):
+                    prev_states.append(super().__getitem__(i - (self.lead_time_months*k+1) // self.timedelta))
+                out["prev_state"] = torch.stack(prev_states, dim=0)
+            else:
+                out["prev_state"] = super().__getitem__(i - self.lead_time_months // self.timedelta)
+                prev_timestamp = self.id2pt[i - self.lead_time_months // self.timedelta][2].item() // 10**9
+                times = pd.to_datetime(prev_timestamp,unit='s').tz_localize(None)
         if normalize:
             out = self.normalize(out,month=current_month)
     

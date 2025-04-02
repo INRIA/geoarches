@@ -260,7 +260,6 @@ class ArchesWeatherCondBackbone(nn.Module):
             x = self.interaction_layer(x)
 
         x = self.layer1(x, cond_emb)
-
         skip = x
         x = self.downsample(x)
 
@@ -270,7 +269,6 @@ class ArchesWeatherCondBackbone(nn.Module):
             x = gradient_checkpoint.checkpoint(self.layer3, x, cond_emb, use_reentrant=False)
         else:
             x = self.layer3(x, cond_emb)
-
         x = self.upsample(x)
         if self.use_skip and skip is not None:
             x = torch.concat([x, skip], dim=-1)
@@ -278,5 +276,4 @@ class ArchesWeatherCondBackbone(nn.Module):
 
         output = x
         output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
-
         return output
