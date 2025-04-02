@@ -2,7 +2,7 @@ from typing import Callable, Dict, List
 
 import torch
 from geoarches.dataloaders import era5
-from geoarches.metrics.label_wrapper import LabelWrapper
+from geoarches.metrics.label_wrapper import LabelDictWrapper
 from torchmetrics import Metric
 
 from . import metric_base
@@ -130,8 +130,8 @@ class EnsembleMetrics(Metric, MetricBase):
 
         metrics = dict(
             mse=self.mse / self.nsamples,
-            frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
-            #rmse=(self.mse  / self.nsamples).sqrt(),
+            #frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
+            rmse=(self.mse  / self.nsamples).sqrt(),
             var=self.var / self.nsamples,
             spskr=spread_skill_ratio_coeff * (self.var / self.mse).sqrt(),  # this is unbiased
             crps=(self.mae - 0.5 * self.dispersion) / self.nsamples,
@@ -181,13 +181,13 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
                 Size of timedelta dimension. See param `lead_time_hours`.
         """
         super().__init__(
-            surface=LabelWrapper(
+            surface=LabelDictWrapper(
                 EnsembleMetrics(data_shape=(len(era5.surface_variables), 1)),
                 variable_indices=era5.get_surface_variable_indices(),
                 lead_time_hours=lead_time_hours,
                 multistep=multistep,
             ),
-            level=LabelWrapper(
+            level=LabelDictWrapper(
                 EnsembleMetrics(
                     data_shape=(len(level_variables), len(pressure_levels)),
                     save_memory=save_memory,  # Save memory on level vars only.
