@@ -1,7 +1,6 @@
 # adapted from https://github.com/lizhuoq/WeatherLearn/blob/master/weatherlearn/models/pangu/pangu.py
 
 import torch
-
 from timm.models.layers import DropPath, trunc_normal_
 from torch import nn
 
@@ -66,7 +65,7 @@ class Conv3dSimple(nn.Module):
 #     return sub_kernel.repeat_interleave(upscale_factor_squared, dim=0)
 
 
-def ICNR_init(tensor, initializer, upscale_factor=2, *args, **kwargs):
+def ICNR_init(tensor, initializer, upscale_factor=2, *args, **kwargs):  # noqa N802
     "tensor: the 2-dimensional Tensor or more"
     upscale_factor_squared = upscale_factor * upscale_factor
     assert tensor.shape[0] % upscale_factor_squared == 0, (
@@ -321,7 +320,7 @@ class EarthSpecificBlock(nn.Module):
     3D Transformer Block
     Args:
         dim (int): Number of input channels.
-        input_resolution (tuple[int]): Input resulotion.
+        input_resolution (tuple[int]): Input resolution.
         num_heads (int): Number of attention heads.
         window_size (tuple[int]): Window size [pressure levels, latitude, longitude].
         shift_size (tuple[int]): Shift size for SW-MSA [pressure levels, latitude, longitude].

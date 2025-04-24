@@ -176,6 +176,10 @@ class DCPPForecast(XarrayDataset):
         self.solar_forcings = torch.tensor(np.load(f'{forcings_path}/solar_forcings_normed.npy'))
         times_seconds = [v[2].item() // 10**9 for k,v in self.id2pt.items()]
         self.next_timestamp_map = {k:v for k,v in list(zip(times_seconds,times_seconds[1:]))}
+
+        #override netcdf functionality
+        self.timestamps = sorted(self.timestamps, key=lambda x: (x[0],x[1]))  # sort by timestamp
+
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
@@ -264,7 +268,6 @@ class DCPPForecast(XarrayDataset):
             return batch * stds[month] + means[month]
         elif(self.norm_scheme == 'clim_removed'):
             return {k: (v * stds[month] + means[month] if "state" in k else v) for k, v in batch.items()}
-
         elif(stateless):
             return (batch * stds) + means
         else:

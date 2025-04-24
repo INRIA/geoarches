@@ -84,14 +84,15 @@ class XarrayDataset(torch.utils.data.Dataset):
         for fid, f in tqdm(enumerate(self.files)):
             with xr.open_dataset(f, **self.xr_options) as obs:
                 file_stamps = [(fid, i, t) for (i, t) in enumerate(obs.time.to_numpy())]
-                self.timestamps.extend(file_stamps)        
+                self.timestamps.extend(file_stamps)
             if (
                 limit_examples and len(self.timestamps) > limit_examples
             ):  # get fraction of full dataset
+                print("Limiting number of examples loaded to", limit_examples)
                 self.timestamps = self.timestamps[:limit_examples]
                 break
 
-        self.timestamps = sorted(self.timestamps, key=lambda x: (x[0],x[1]))  # sort by timestamp
+        self.timestamps = sorted(self.timestamps, key=lambda x: x[-1])  # sort by timestamp
         self.id2pt = dict(enumerate(self.timestamps))
 
         self.cached_xrdataset = None

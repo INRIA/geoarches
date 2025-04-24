@@ -1,6 +1,5 @@
 import torch
 
-
 def compute_lat_coeffs(lat_size):
     lat_coeffs_equi = torch.tensor(
         [torch.cos(x) for x in torch.arange(-torch.pi / 2, torch.pi / 2, torch.pi / lat_size)]

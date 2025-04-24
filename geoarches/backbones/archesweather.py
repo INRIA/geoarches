@@ -1,13 +1,15 @@
 import importlib
 
-import geoarches.stats as geoarches_stats
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F  # noqa N812
 import torch.utils.checkpoint as gradient_checkpoint
-from geoarches.backbones.archesweather_layers import ICNR_init
 from tensordict.tensordict import TensorDict
-from timm.layers import  SwiGLU
+from timm.layers.mlp import SwiGLU
+
+import geoarches.stats as geoarches_stats
+from geoarches.backbones.archesweather_layers import ICNR_init
 
 from .archesweather_layers import (
     CondBasicLayer,
@@ -25,13 +27,14 @@ class WeatherEncodeDecodeLayer(nn.Module):
 
     def __init__(
         self,
-        img_size=(13, 120, 240),
+        img_size=(13, 121, 240),
         emb_dim=192,
         out_emb_dim=2 * 192,  # because of skip
         patch_size=(2, 2, 2),
         surface_ch=4,
         level_ch=6,
         n_concatenated_states=0,
+        final_interpolation=False,
     ) -> None:
         super().__init__()
         self.__dict__.update(locals())
@@ -119,6 +122,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         if cond_state is not None:
             cond_surface = cond_state["surface"].squeeze(-3)
             cond_level = cond_state["level"]
+
             if cond_state["surface"].shape[-2] % 2:
                 cond_surface = cond_surface[..., :-1, :]
                 cond_level = cond_level[..., :-1, :]
@@ -149,9 +153,20 @@ class WeatherEncodeDecodeLayer(nn.Module):
             1, -3
         )
 
-        # put back fake south pole
-        output_surface = torch.cat([output_surface, output_surface[..., -1:, :]], dim=-2)
-        output_level = torch.cat([output_level, output_level[..., -1:, :]], dim=-2)
+        if self.final_interpolation:
+            bs = output_surface.shape[0]
+            output_level = F.interpolate(
+                output_level.flatten(0, 1), size=self.img_size[1:], mode="bilinear"
+            )
+            output_level = output_level.reshape(bs, -1, *output_level.shape[1:])
+            output_surface = F.interpolate(
+                output_surface.flatten(0, 1), size=self.img_size[1:], mode="bilinear"
+            )
+            output_surface = output_surface.reshape(bs, -1, *output_surface.shape[1:])
+        else:
+            # put back fake south pole
+            output_surface = torch.cat([output_surface, output_surface[..., -1:, :]], dim=-2)
+            output_level = torch.cat([output_level, output_level[..., -1:, :]], dim=-2)
 
         return TensorDict(
             surface=output_surface,
@@ -260,6 +275,7 @@ class ArchesWeatherCondBackbone(nn.Module):
             x = self.interaction_layer(x)
 
         x = self.layer1(x, cond_emb)
+
         skip = x
         x = self.downsample(x)
 
@@ -269,6 +285,7 @@ class ArchesWeatherCondBackbone(nn.Module):
             x = gradient_checkpoint.checkpoint(self.layer3, x, cond_emb, use_reentrant=False)
         else:
             x = self.layer3(x, cond_emb)
+
         x = self.upsample(x)
         if self.use_skip and skip is not None:
             x = torch.concat([x, skip], dim=-1)
@@ -276,4 +293,5 @@ class ArchesWeatherCondBackbone(nn.Module):
 
         output = x
         output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+
         return output

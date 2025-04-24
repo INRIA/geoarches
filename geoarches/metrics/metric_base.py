@@ -1,4 +1,4 @@
-    # Base class for metrics.
+# Base class for metrics.
 from typing import Callable, Dict, List
 
 import torch
@@ -32,7 +32,7 @@ def compute_lat_weights(latitude_resolution: int) -> torch.tensor:
 
 def compute_lat_weights_weatherbench(latitude_resolution: int) -> torch.tensor:
     """Calculate the area overlap as a function of latitude.
-    The weatherbench version gives slightly different coeffs
+    The weatherbench version gives slightly different coeffs.
     """
     latitudes = torch.linspace(-90, 90, latitude_resolution)
     points = torch.deg2rad(latitudes)
@@ -47,17 +47,20 @@ def compute_lat_weights_weatherbench(latitude_resolution: int) -> torch.tensor:
 
 
 class MetricBase:
+    """Implement latitude-weighted base functions."""
+
     def __init__(
         self,
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
     ):
         """
         Args:
+            variable_indices: dict used to extract indices from output tensor.
             compute_lat_weights_fn: Function to compute latitude weights given latitude shape.
                 Used for error and variance calculations. Expected shape of weights: [..., lat, 1].
         """
-        self.compute_lat_weights_fn = compute_lat_weights_fn
         super().__init__()
+        self.compute_lat_weights_fn = compute_lat_weights_fn
 
     def wmse(self, x: torch.Tensor, y: torch.Tensor | int = 0):
         """Latitude weighted mse error.
@@ -100,10 +103,13 @@ class MetricBase:
 
 
 class TensorDictMetricBase(Metric):
-    """Wrapper around metric that handles targets and preds that are TensorDicts.
+    """Wrapper around metric to enable handling of and preds that are TensorDicts.
 
-    Keeps track of a metric per item in the TensorDict.
-    Warning: not compatible with metric.forward() - only used update() and compute().
+    Assumes metric should accept tensor target and pred.
+    Keeps track of a metric instantiation per item in the TensorDict.
+
+    Warning: not compatible with metric.forward() - only use update() and compute().
+    See https://github.com/Lightning-AI/torchmetrics/issues/987#issuecomment-2419846736.
     """
 
     def __init__(self, **kwargs):
@@ -132,39 +138,44 @@ class TensorDictMetricBase(Metric):
             preds = torch.stack(preds, dim=1)
 
         for key, metric in self.metrics.items():
-            metric.update(targets[key], preds[key])
+            metric.update(targets=targets[key], preds=preds[key])
 
     def compute(self) -> Dict[str, torch.Tensor]:
         """Return aggregated collections of the computed metrics.
 
-        If metrics return dictionary: returns one aggregated dict.
-        If metrics return xarray: returns metrged xarray dataset.
+        Elements from each metric are aggregated. Handles multiple return values per metric.
+        Assumes all metrics return the same number of outputs.
         """
-        out_dict = dict()
-        out_xarrays = []
+        aggregated_outputs = []
 
-        for metric in self.metrics.values():
+        for key, metric in self.metrics.items():
             # Collect returned values from each metric.
-            return_values = metric.compute()
-            if not isinstance(return_values, tuple):
-                return_values = [return_values]
-            for return_value in return_values:
+            outputs = metric.compute()
+            if not isinstance(outputs, tuple):
+                outputs = [outputs]
+            for i, output in enumerate(outputs):
                 # Handle returned dictionary.
-                if isinstance(return_value, dict):
-                    out_dict.update(return_value)
+                if isinstance(output, dict):
+                    if len(aggregated_outputs) - 1 < i:
+                        aggregated_outputs.append({})
+                    if aggregated_outputs[i].keys().isdisjoint(output.keys()):
+                        aggregated_outputs[i].update(output)
+                    else:
+                        aggregated_outputs[i].update({f"{k}_{key}": v for k, v in output.items()})
                 # Handle returned xarray dataset.
-                elif isinstance(return_value, xr.Dataset):
-                    out_xarrays.append(return_value)
-                else:
-                    raise ValueError(
-                        f"TensorDictMetricBase cannot handle metric return type: {type(return_value)}"
-                    )
-        if out_xarrays:
-            out_xarray = xr.merge(out_xarrays)
-            if out_dict:
-                return out_dict, out_xarray
-            return out_xarray
-        return out_dict
+                elif isinstance(output, xr.Dataset):
+                    if len(aggregated_outputs) - 1 < i:
+                        aggregated_outputs.append([])
+                    aggregated_outputs[i].append(output)
+
+        for output in aggregated_outputs:
+            if isinstance(output, list):
+                merged_dataset = xr.merge(output)
+                aggregated_outputs[i] = merged_dataset
+
+        if len(aggregated_outputs) == 1:
+            return aggregated_outputs[0]
+        return aggregated_outputs
 
     def reset(self):
         """
