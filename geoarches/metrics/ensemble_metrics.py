@@ -130,12 +130,12 @@ class EnsembleMetrics(Metric, MetricBase):
 
         metrics = dict(
             mse=self.mse / self.nsamples,
-            #frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
+            frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
             rmse=(self.mse  / self.nsamples).sqrt(),
             var=self.var / self.nsamples,
             spskr=spread_skill_ratio_coeff * (self.var / self.mse).sqrt(),  # this is unbiased
             crps=(self.mae - 0.5 * self.dispersion) / self.nsamples,
-          #  fcrps=(self.mae - 0.5 * self.dispersion * nmembers / (nmembers - 1)) / self.nsamples,
+            fcrps=(self.mae - 0.5 * self.dispersion * nmembers / (nmembers - 1)) / self.nsamples,
             energyscore=(self.energy_rmse - 0.5 * self.energy_dispersion) / self.nsamples,
             fenergyscore=(
                 self.energy_rmse - 0.5 * self.energy_dispersion * nmembers / (nmembers - 1)

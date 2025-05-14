@@ -17,7 +17,8 @@ from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
 geoarches_stats_path = importlib.resources.files(geoarches_stats)
-
+import lovely_tensors as lt
+lt.monkey_patch()
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler,FlowMatchHeunDiscreteScheduler
 
 from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
@@ -64,7 +65,7 @@ class DiffusionModule(BaseLightningModule):
         learn_residual=False,
         use_fm_sigma_scaling=False,
         prior='normal',
-        degrees_of_freedom=1,
+        sd3_timestep_sampling=True,
         **kwargs,
         # save_test_outputs=False, now in cfg.inference
     ):
@@ -87,10 +88,12 @@ class DiffusionModule(BaseLightningModule):
 
         if load_deterministic_model:
             # TODO: confirm that it works
-            from geoarches.lightning_modules import load_module
-
-            self.det_model, _ = load_module(load_deterministic_model)
-
+            from geoarches.lightning_modules import AvgModule,load_module
+            if isinstance(load_deterministic_model, str):
+                self.det_model, _ = load_module(load_deterministic_model)
+            else:
+                # load averaging model
+                self.det_model = AvgModule(load_deterministic_model)
         # cond_dim should be given as arg to the backbone
 
         self.month_embedder = TimestepEmbedder(cond_dim)
@@ -247,11 +250,10 @@ class DiffusionModule(BaseLightningModule):
 
         if(self.prior == 'student'):
             from torch.distributions.studentT import StudentT
-            noise = TensorDict({k: StudentT(self.degrees_of_freedom, loc=0.0, scale=1.0).rsample(v.shape).to(device) for k,v in batch['next_state'].items()})
+            noise = TensorDict({k: StudentT(3, loc=0.0, scale=1.0).rsample(v.shape).to(device) for k,v in batch['next_state'].items()})
             # noise = StudentT(3, loc=0.0, scale=1.0).rsample(batch["next_state"].shape)
         else:
             noise = torch.randn_like(batch["next_state"])  # amazing it works
-
         # by default
         next_state = batch["next_state"]
 
@@ -272,6 +274,11 @@ class DiffusionModule(BaseLightningModule):
             u = torch.normal(mean=0, std=1, size=(bs,), device="cpu").sigmoid()
 
             indices = (u * self.noise_scheduler.config.num_train_timesteps).long()
+            if self.sd3_timestep_sampling:
+                u = torch.normal(mean=0, std=1, size=(bs,), device="cpu").sigmoid()
+                indices = (u * self.noise_scheduler.config.num_train_timesteps).long()
+            else:
+                indices = timesteps.cpu()
             timesteps = self.noise_scheduler.timesteps[indices].to(device)
 
             schedule_timesteps = self.noise_scheduler.timesteps.to(device)
@@ -316,13 +323,13 @@ class DiffusionModule(BaseLightningModule):
 
         # create uncond
         use_condition = torch.rand((bs,), device=device) > self.uncond_proba
+
         pred = self.forward(
             batch,
             noisy_next_state,
             timesteps,
             use_condition.float(),
         )
-
         # compute loss
 
         loss = self.loss(pred, target_state, timesteps)

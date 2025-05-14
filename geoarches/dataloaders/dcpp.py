@@ -100,9 +100,8 @@ class DCPPForecast(XarrayDataset):
             mask_value: what value to use as mask for nan values in dataset
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
-
         self.timedelta = 1
-        self.current_multistep = 1
+        # self.multistep=1
         if filename_filter is None:
             filename_filter = filename_filters[domain]
         if variables is None:
@@ -168,12 +167,15 @@ class DCPPForecast(XarrayDataset):
 
         self.surface_variables = surface_variables
         self.level_variables = [
-            a + '_' + str(p)
+            a + ' ' + str(p//100)
             for a in level_variables
             for p in pressure_levels
         ]
+        
         self.atmos_forcings = torch.tensor(np.load(f'{forcings_path}/ghg_forcings_normed.npy'))
         self.solar_forcings = torch.tensor(np.load(f'{forcings_path}/solar_forcings_normed.npy'))
+        times_seconds = [v[2].item() // 10**9 for k,v in self.id2pt.items()]
+        self.next_timestamp_map = {k:v for k,v in list(zip(times_seconds,times_seconds[1:]))}
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
