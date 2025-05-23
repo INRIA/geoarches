@@ -70,7 +70,7 @@ class MetricBase:
             y: targets with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).pow(2).mul(lat_coeffs).mean((-2, -1))
+        return (x - y).pow(2).mul(lat_coeffs).nanmean((-2, -1))
 
     def wmae(self, x: torch.Tensor, y: torch.Tensor | int = 0):
         """Latitude weighted mae error.
@@ -80,7 +80,7 @@ class MetricBase:
             y: targets with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).abs().mul(lat_coeffs).mean((-2, -1))
+        return (x - y).abs().mul(lat_coeffs).nanmean((-2, -1))
 
     def wvar(self, x: torch.Tensor, dim: int = 1):
         """Latitude weighted variance along axis.
@@ -90,7 +90,7 @@ class MetricBase:
             dim: over which dimension to compute variance.
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.var(dim).mul(lat_coeffs).mean((-2, -1))
+        return x.var(dim).mul(lat_coeffs).nanmean((-2, -1))
 
     def weighted_mean(self, x: torch.Tensor):
         """Latitude weighted mean over grid.
@@ -99,11 +99,11 @@ class MetricBase:
             x: preds with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.mul(lat_coeffs).mean((-2, -1))
+        return x.mul(lat_coeffs).nanmean((-2, -1))
 
 
 class TensorDictMetricBase(Metric):
-    """Wrapper around metric to enable handling of targets and preds that are TensorDicts.
+    """Wrapper around metric to enable handling of and preds that are TensorDicts.
 
     Assumes metric should accept tensor target and pred.
     Keeps track of a metric instantiation per item in the TensorDict.
