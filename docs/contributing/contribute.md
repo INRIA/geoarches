@@ -1,148 +1,207 @@
-
 # Contribute to geoarches
-We welcome contributions to the codebase such as adding:
-
-- Data
-    - geospatial datasets beyond ERA5 and DCPP (both download and dataloaders)
-    - formats beyond xarray (netcdf, zarr, etc) such as csv
-    - other storage stypes such as cloud storage
-- Modeling
-    - model architecture backbones
-    - training schemes beyond diffusion ddpm and flow-matching
-- Visualization
-    - better support for plotting metrics
-    - tools for visualization of geospatial data
-
 ## Setup
 
-We suggest you [create a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) of the [geoarches repo](https://github.com/INRIA/geoarches).
+To contribute to `geoarches`, we recommend working from your own fork of the repository.
 
-Then clone your fork from GitHub:
+### 1. Fork and clone
+
+First, [fork the official repo](https://github.com/INRIA/geoarches) to your own GitHub account.
+
+Then clone your fork locally:
 
 ```sh
 git clone git@github.com:<your_username>/geoarches.git
 ```
 
-Add the original remote repo to track changes:
+Next, add the original (upstream) repository as a remote, so you can pull updates from the main repo:
 
 ```sh
+cd geoarches
 git remote add upstream git@github.com:INRIA/geoarches.git
 ```
 
-Follow [installation](../getting_started/installation.md) to install dependencies.
+### 2. Install dependencies
 
-You can make changes on your forked repository. This way you are not blocked by development on geoarches. You will be able to contribute to the `main` branch (see [Code reviews](#code-reviews)) and incorporate updates from others (see [Pull code updates](#pull-code-updates)).
+Follow the [installation instructions](../getting_started/installation.md) to set up your environment and install required packages.
 
-Create a `dev` branch from the `main` branch of your forked repo to start making changes.
+### 3. Work from a development branch
 
-```shell
-cd geoarches
+Before making changes, create a development branch off of `main`. For example:
+
+```sh
 git checkout main
-git checkout -b dev_<name>
+git pull upstream main  # Just in case
+git checkout -b dev_<your_name_or_feature>
 ```
+
+You can now safely make changes on your fork. This avoids interfering with the main `geoarches` development, and keeps your work isolated until it's ready to contribute.
+
+This setup also ensures you can:
+
+- Contribute new code via pull requests (see [Code reviews](#code-reviews))
+- Sync easily with updates from upstream (see [Pull code updates](#pull-code-updates))
 
 ## Local testing
 
-Every piece of code will need a corresponding test file under `tests/`.
-
-You can make sure tests still pass by running:
+All new code must be covered by tests under the `tests/` directory. To run tests:
 
 ```sh
 pytest tests/
 ```
 
-## Code format
+## Code formatting
 
-We recommend reading [Google Style Python Guide](https://google.github.io/styleguide/pyguide.html) for tips of writing readable code.
+We recommend reading [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for tips of writing readable code.
 
-We also require you to run these commands before committing:
+Before committing, run:
+
 ```sh
 ruff check --fix
 ruff format
 codespell -w
 ```
 
-### Optional: Automatically check format on commit
+### Optional: Pre-commit hooks
 
-You can set up automatic checks on ready-to-commit code using `pre-commit`.
+You can run these checks automatically before each commit using [`pre-commit`](https://pre-commit.com/). Run the following command in the root of your cloned repository to set it up:
 
-Run in the `geoarches/` repo:
-```
+```sh
 pre-commit install
 ```
 
-Now, pre-commit will run automatically on `git commit`!
+!!! success "Now, these tools will run automatically on `git commit`!"
 
 ## Code reviews
 
-You've pushed your changes to a branch and your code is ready to be incorporated into geoarches.
+Once your code is ready and pushed to a branch, you can prepare it to be reviewed and merged into the main `geoarches` codebase.
 
-You can either use your local branch as is (make sure it's synced with the upstream repo by following [Pull code updates](#pull-code-updates)), or make a clean branch from `upstream/main` and add just the necessary commits there.
+You have two options:
+
+- Use your current local branch directly (make sure it's up to date with `upstream/main`, see [Pull code updates](#pull-code-updates)),
+- Or create a clean branch based on `upstream/main` and apply just your relevant commits on top of it.
+
+To create a clean branch from `upstream/main`:
 
 ```sh
-# Update remote branches.
+# Make sure your local copy of upstream is up to date
 git fetch upstream main
-# Make clean branch.
-git checkout -b <feature> -t upstream/main
-# Move commits between older commit A (included) and B (included).
-git cherry-pick git cherry-pick A^..B
+
+# Create a new branch based on upstream/main
+git checkout -b <feature_branch_name> -t upstream/main
 ```
 
-You can make sure all tests pass by pushing to your forked repo and making a fake pull request on your own forked repo. This should trigger test checks (implemented as Github Actions).
+Then use `git cherry-pick` to apply a specific range of commits (from commit A to B):
+
 ```sh
-git push origin <feature>
+git cherry-pick A^..B
 ```
 
-When your code is ready, push the clean branch to the `upstream` repo.
+This allows you to transfer only the changes you want, without dragging along unrelated commit history.
+
+---
+
+To check that your code passes tests before submitting a PR, push the branch to **your fork** (not upstream yet):
+
 ```sh
-git push upstream <feature>
+git push origin <feature_branch_name>
 ```
 
-Make a [pull request](https://github.com/INRIA/geoarches/pulls) on Github. You will only be able to merge with the `main` branch, once all tests pass and you receive approval from a maintainer.
+Then open a **fake pull request on your own fork**. This triggers GitHub Actions and runs the test suite, just like it would on a real PR to geoarches.
+
+---
+
+Once you're confident everything works and tests pass, push the clean feature branch to the upstream repository:
+
+```sh
+git push upstream <feature_branch_name>
+```
+
+Then open a new [pull request](https://github.com/INRIA/geoarches/pulls) on GitHub which will target the `main` branch of geoarches. It will only be eligible to merge once:
+
+- All CI tests pass
+- You’ve received approval from a project maintainer
 
 ## Pull code updates
 
-When the `main` branch of geoarches gets updated, and you want to incorporate changes.
-This is important for both:
-- Allowing you to take advantage of new code.
-- Preemptively resolving any merge conflicts before merge requests.
+When the `main` branch of `geoarches` gets updated and you want to bring those changes into your branch, follow these steps. This is important for:
 
-If you have not already done so, configure a remote that points to the upstream repository (you can check the current configured remote repos with `git remote -v`.)
+- Taking advantage of the latest code
+- Avoiding merge conflicts before opening a PR
+
+If you haven’t yet, set up a remote that tracks the upstream repo. You can check your remotes with:
+
+```sh
+git remote -v
+```
+
+If needed, add the upstream remote:
 
 ```sh
 git remote add upstream git@github.com:INRIA/geoarches.git
 ```
 
-The following steps will help you pull the changes from main and then apply your changes on top. See Github's [Syncing a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork) for explanations for each command.
+### 1. Stash or commit your changes
 
-1. Either commit or stash your changes on your dev branch:
-    ```sh
-    git stash push -m "message"
-    ```
+If you have uncommitted work on your branch, stash it:
 
-2. Update remote branches.
-    ```sh
-    git fetch upstream main
-    ```
+```sh
+git stash push -m "WIP before syncing"
+```
 
-3. Checkout the branch you want to sync. And rebase or merge your changes. Prefer to rebase if you are the only user of this branch, otherwise merge.
-    ```sh
-    git checkout <branch>
-    git rebase upstream/main # or git merge upstream/main
-    ```
+Or commit it normally.
 
-    Resolve merge conflicts if needed. You can always decide to abort to undo the rebase completely:
-    ```sh
-    git rebase –abort # or git merge --abort
-    ```
+### 2. Fetch upstream changes
 
-5. If you ran `git stash` in step 1, you can now apply your stashed changes on top.
-    ```sh
-    git stash pop
-    ```
+Update your local references to the upstream repo:
 
-    Resolve merge conflicts if needed. To undo applying the stash:
-    ```sh
-    git reset --merge
-    ```
-    This will discard stashed changes, but stash contents won't be lost and can be re-applied later.
+```sh
+git fetch upstream main
+```
+
+### 3. Checkout your development branch
+
+Switch to the branch you want to sync (e.g. your dev branch):
+
+```sh
+git checkout dev_<your_name>
+```
+
+Then apply upstream changes. Use `rebase` if you're the only one working on this branch (recommended). Use `merge` if others are working on it too.
+
+```sh
+git rebase upstream/main
+# or
+git merge upstream/main
+```
+
+If there are conflicts, Git will pause and ask you to resolve them. Once resolved:
+
+```sh
+git rebase --continue
+# or
+git merge --continue
+```
+
+If you want to cancel everything and undo:
+
+```sh
+git rebase --abort
+# or
+git merge --abort
+```
+
+### 4. Apply stashed changes (if any)
+
+If you stashed your work earlier, re-apply it now:
+
+```sh
+git stash pop
+```
+
+If there are conflicts during stash pop, resolve them. If you want to undo the stash application:
+
+```sh
+git reset --merge
+```
+
+This will cancel the stash apply, but keep the stash saved so you can re-apply it later if needed.

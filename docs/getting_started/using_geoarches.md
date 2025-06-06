@@ -1,23 +1,40 @@
-# Using geoarches modules in python
+# Using geoarches in your project
 
-Your directory structure should look like this after installation:
+After completing the [installation](./installation.md), your working directory should look like this:
+
 ```
-├── geoarches
-│   ├── geoarches
-│   │   ├── ...
-└── your_own_project
+├── geoarches/       # Cloned repo
+│   ├── geoarches/
+│   ├── ...
+└── my_project/      # Your own scripts, notebooks, experiments...
     ├── ...
 ```
 
-The recommended way to use the package is to depend on the package inside your own working directory, by importing them in your project code e.g.
+## Recommended usage
 
-```python
-from geoarches.dataloaders.era5 import Era5Forecast
-ds = Era5Foreacast(path='data/era5_240/full',
-                   load_prev=True,
-                   norm_scheme='pangu')
-```
+We recommend using `geoarches` as a Python package from your own working directory or scripts, **without modifying the library code directly**. This allows you to cleanly separate your own work from the library itself, and makes it easier to update `geoarches` when new features or bug fixes are released.
 
-Making edits directly in the geoarches package will make updates more difficult, but if you prefer this option, you can create a development branch so as to rebase it on future updates of geoarches. (See [Contributing](contributing.md) section).
+You can import the library modules directly in your scripts or notebooks:
 
-See [User Guide](../user_guide.md) for detailed information.
+!!! example
+
+    Thiw will import the dataset for the ERA5 weather forecast task:
+
+    ```python
+    from geoarches.dataloaders.era5 import Era5Forecast
+
+    ds = Era5Forecast(
+        path='path/to/era5',
+        load_prev=True,
+        norm_scheme='pangu',
+    )
+    ```
+
+## Editing the library
+
+If you do need to modify the library (e.g. to experiment with architectural changes), we recommend working on a **development branch**.
+This makes it easier to rebase or merge when upstream updates are available. See the [Contributing Guide](../contributing/index.md) for details.
+
+---
+
+For more information on how to use the library, explore the [User Guide](../user_guide/index.md).
