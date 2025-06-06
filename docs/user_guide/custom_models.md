@@ -1,29 +1,44 @@
-
 # Implementing your own models
+
+You can easily extend `geoarches` with your own models. Here’s how:
 
 ## Step 1: Implement
 
-Add new lightning modules or architectures in your working directory (we recommend putting lightning modules in a `lightning_modules` folder, and pytorch-only backbone architectures in a `backbones` folder).
+Add your custom modules in your working directory.
+We recommend the following structure:
+
+- `lightning_modules/`: for Lightning modules (training logic, losses, logging, etc.)
+- `backbones/`: for PyTorch-only architecture components (e.g. transformer blocks, CNNs)
 
 ## Step 2: Configure with Hydra
 
-Create a `configs/` folder in your own project folder for your hydra configuration files. In this folder, you can put your own configs, e.g. by copying config files from geoarches and modifying them. Please note the config files should be put in the appropriate folder (`configs/cluster/`, `configs/dataloader/` or `configs/module/`). You will need a base `configs/config.yaml`. See `geoarches/configs/` for an example.
+Create a `configs/` folder in your project to store your custom Hydra configuration files. You can copy and adapt files from `geoarches/configs/` as needed.
 
-Tell hydra to use your custom modules: you can create a module config file `custom_forecast.yaml` under `configs/module/` and point to your new backbone and module classes:
-    ```yaml
-    module:
-    _target_: lightning_modules.custom_module.CustomLightningModule
-    ...
+Organize configs under the appropriate subfolders:
 
-    backbone:
-    _target_: backbones.custom_backbone.CustomBackbone
-    ...
-    ```
-    You can of course mix and match your custom modules and backbones with the ones in geoarches.
+- `configs/cluster/`
+- `configs/dataloader/`
+- `configs/module/`
+
+You’ll also need a base `configs/config.yaml`.
+
+To tell Hydra to use your custom classes, define a module config (e.g. `configs/module/custom_forecast.yaml`) like this:
+
+```yaml
+module:
+  _target_: lightning_modules.custom_module.CustomLightningModule
+  ...
+
+backbone:
+  _target_: backbones.custom_backbone.CustomBackbone
+  ...
+```
+
+You can mix and match your own modules or backbones with those provided in `geoarches`.
 
 ## Step 3: Run
 
-Training models only requires one to tell hydra to use your `configs` folder with
+To train with your custom setup, simply point Hydra to your config directory:
 
 ```sh
 python -m geoarches.main_hydra --config-dir configs

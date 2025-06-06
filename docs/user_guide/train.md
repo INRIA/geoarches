@@ -1,46 +1,75 @@
-# Train models with CLI
+# Train models with the CLI
 
-To train model named `default_run`, you can run
+## Basic usage
+
+To train a model named `default_run`, run:
+
 ```sh
 python -m geoarches.main_hydra \
-module=archesweather \ # Uses module/archesweather.yaml
-dataloader=era5 \ # Uses dataloader/era5.yaml
-++name=default_run \ # Name of run, used for Wandb logging and checkpoint dir
+    module=archesweather \ # (1)!
+    dataloader=era5 \ # (2)!
+    ++name=default_run # (3)!
 ```
-This will start a training for the deterministic model `ArchesWeather` on ERA5 data.
 
-The model config will be saved to `modelstore/default_run/config.yaml` and the model checkpoints will be saved to `modelstore/default_run/checkpoints`.
+1. Loads `configs/module/archesweather.yaml`
+2. Loads `configs/dataloader/era5.yaml`
+3. Unique name of your run, used for checkpointing and W&B logging
 
-Useful training options are 
+This will start training the deterministic model **ArchesWeather** on **ERA5** data.
+
+!!! note
+
+    The configuration file will be saved to: `modelstore/default_run/config.yaml` and model checkpoints to: `modelstore/default_run/checkpoints/`
+
+### Useful training options
+
 ```sh
 python -m geoarches.main_hydra \
-++log=True \ # log metrics on weights and biases (See Wandb section below.)
-++seed=0 \ # set global seed
-++cluster.gpus=4 \ # number of gpus used for distributed training
-++batch_size=1 \ # batch size per gpu
-++max_steps=300000 \ # maximum number of steps for training, but it's good to leave this at 300k for era5 trainings
-++save_step_frequency=50000 \ # if you need to save checkpoints at a higher frequency
+    ++log=True \                  # Log metrics to Weights & Biases
+    ++seed=0 \                    # Set global seed
+    ++cluster.gpus=4 \            # Number of GPUs to use
+    ++batchsize=1 \               # Batch size per GPU
+    ++max_steps=300000 \          # Maximum number of training steps
+    ++save_step_frequency=50000   # Save checkpoints every N steps
 ```
 
-See [Pipeline API](args.md) for full list of arguments.
+Refer to the [Pipeline API](api.md#pipeline) for a full list of arguments.
+
+---
+
 ## Run on SLURM
 
-To run on a SLURM cluster, you can create a `configs/cluster` folder inside your working directory and put a ``custom_slurm.yaml`` configuration file in it with custom arguments. Then you call tell geoarches to use this configuration file with
+To run training on a SLURM cluster:
 
-```sh
-python -m geoarches.submit --config-dir configs cluster=custom_slurm
-```
+1. Create a `configs/cluster/` folder inside your working directory.
+2. Add a `custom_slurm.yaml` file with your cluster-specific settings.
+3. Launch the run using:
+   ```sh
+   python -m geoarches.submit cluster=custom_slurm
+   ```
 
-## Log experiments to Wandb
+Refer to the [Pipeline API](api.md#cluster-arguments) for a full list of arguments.
 
-Find your API key under User settings in your account (https://docs.wandb.ai/support/find_api_key/) and set the Wandb environment variable in your `~/.bashrc`.
-```
-export WANDB_API_KEY="..."
-```
+!!! note
 
-Then tell geoaches to log to Wandb.
-```sh
-python -m geoarches.main_hydra \
-++log=True \ # log metrics on weights and biases
-++cluster.wandb_mode=offline \ # online allows machine with internet connection to log directly to wandb. Otherwise offline mode logs locally and requires a separate step to sync with wandb.
-```
+    Depending on your familiarity with SLURM, you can also create a custom `sbatch` script to run `geoarches.main_hydra` directly, instead of using `geoarches.submit`.
+
+---
+
+## Log experiments to Weights & Biases
+
+1. Find your API key from your W&B account settings ([How do I find my API key?](https://docs.wandb.ai/support/find_api_key/))
+2. Add the key to your shell configuration file, e.g. in `~/.bashrc`:
+   ```sh
+   export WANDB_API_KEY="your-key-here"
+   ```
+3. Enable logging by setting the appropriate flags:
+    ```sh
+    python -m geoarches.main_hydra \
+       ++log=True \
+       ++cluster.wandb_mode=offline # (1)!
+    ```
+    
+    1. If the machines have internet access, you may use `'online'` to live sync the experiment. `'offline'` is useful for running on machines without internet access, where logs will be synced later.
+
+Refer to the [Pipeline API](api.md#logging) for a full list of arguments.
