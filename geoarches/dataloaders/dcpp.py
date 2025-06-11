@@ -7,7 +7,7 @@ from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
-from geoarches.tensordict_utils import apply_nan_to_num, apply_isnan, apply_threshold, replace_nan
+from geoarches.utils.tensordict_utils import apply_nan_to_num, apply_isnan, apply_threshold, replace_nans
 
 
 
@@ -40,7 +40,6 @@ class DCPPForecast(XarrayDataset):
         pressure_levels = [85000, 70000, 50000, 25000],
         filename_filter_type='dcpp',
         forcing_type='dcpp',
-        dimension_indexers='plev'
     ):
         """
         Args:
@@ -64,13 +63,13 @@ class DCPPForecast(XarrayDataset):
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in train_years]
+                    substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 test=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in [2010,2011,2012,2013,2014,2015,2016]]
                 ),
                 val=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in val_years]
+                    substring in x for substring in [f"{str(x)}_" for x in val_filter]
                 ),
                 empty=lambda x: False,
             )
@@ -80,13 +79,13 @@ class DCPPForecast(XarrayDataset):
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in train_years]
+                    substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 val=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in [2010,2011,2012,2013,2014,2015,2016]]
                 ),
                 test=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in test_years]
+                    substring in x for substring in [f"{str(x)}_" for x in test_filter]
                 ),
                 empty=lambda x: False,
             )            
@@ -111,6 +110,13 @@ class DCPPForecast(XarrayDataset):
             filename_filter = filename_filters[domain]
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
+        if(self.filename_filter_type=='cmip'):
+            stats_file_path = 'cmip_stats.pt'
+            dimension_indexers = {"plev": None}
+
+        else:
+            stats_file_path = 'dcpp_stats.pt'
+            dimension_indexers = {"plev": pressure_levels}
         super().__init__(
             path,
             filename_filter=filename_filter,
@@ -119,10 +125,8 @@ class DCPPForecast(XarrayDataset):
             dimension_indexers=dimension_indexers,
         )
 
-        if(self.filename_filter_type=='cmip'):
-            stats_file_path = 'cmip_stats.pt'
-        else:
-            stats_file_path = 'dcpp_stats.pt'
+
+
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         norm_file_path = geoarches_stats_path / stats_file_path
         level_norm_file_path = geoarches_stats_path / stats_file_path
