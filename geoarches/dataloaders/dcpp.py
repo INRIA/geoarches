@@ -183,7 +183,6 @@ class DCPPForecast(XarrayDataset):
             for a in level_variables
             for p in pressure_levels
         ]
-
         self.atmos_forcings = torch.tensor(np.load(f'{forcings_path}/ghg_forcings_normed.npy'))
         self.solar_forcings = torch.tensor(np.load(f'{forcings_path}/solar_forcings_normed.npy'))
         times_seconds = [v[2].item() // 10**9 for k,v in self.id2pt.items()]
