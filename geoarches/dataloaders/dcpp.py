@@ -64,13 +64,13 @@ class DCPPForecast(XarrayDataset):
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in train_years]
+                    substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 test=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in [2010,2011,2012,2013,2014,2015,2016]]
                 ),
                 val=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in val_years]
+                    substring in x for substring in [f"{str(x)}_" for x in val_filter]
                 ),
                 empty=lambda x: False,
             )
@@ -80,13 +80,13 @@ class DCPPForecast(XarrayDataset):
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in train_years]
+                    substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 val=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in [2010,2011,2012,2013,2014,2015,2016]]
                 ),
                 test=lambda x: any(
-                    substring in x for substring in [f"{str(x)}_" for x in test_years]
+                    substring in x for substring in [f"{str(x)}_" for x in test_filter]
                 ),
                 empty=lambda x: False,
             )            
