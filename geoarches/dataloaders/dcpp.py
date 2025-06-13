@@ -40,7 +40,6 @@ class DCPPForecast(XarrayDataset):
         pressure_levels = [85000, 70000, 50000, 25000],
         filename_filter_type='dcpp',
         forcing_type='dcpp',
-        dimension_indexers='plev'
     ):
         """
         Args:
@@ -111,6 +110,13 @@ class DCPPForecast(XarrayDataset):
             filename_filter = filename_filters[domain]
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
+        if(self.filename_filter_type=='cmip'):
+            stats_file_path = 'cmip_stats.pt'
+            dimension_indexers = {"plev": None}
+
+        else:
+            stats_file_path = 'dcpp_stats.pt'
+            dimension_indexers = {"plev": pressure_levels}
         super().__init__(
             path,
             filename_filter=filename_filter,
@@ -119,10 +125,8 @@ class DCPPForecast(XarrayDataset):
             dimension_indexers=dimension_indexers,
         )
 
-        if(self.filename_filter_type=='cmip'):
-            stats_file_path = 'cmip_stats.pt'
-        else:
-            stats_file_path = 'dcpp_stats.pt'
+
+
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         norm_file_path = geoarches_stats_path / stats_file_path
         level_norm_file_path = geoarches_stats_path / stats_file_path
