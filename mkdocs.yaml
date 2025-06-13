@@ -7,46 +7,75 @@ repo_url: https://github.com/INRIA/geoarches
 theme:
   name: material
   features:
-    - navigation.tabs  # Put sections as tabs on navigation bar.
-    - navigation.tabs.sticky  # Keep navigation bar when scrolling.
-    - navigation.tracking  # The url evolves with scrolling.
-    - navigation.indexes  # Can add index.md as homepage each section.
-  logo: img/logo.png
-  favicon: 'img/logo.png'
+    - navigation.tabs # Put sections as tabs on navigation bar.
+    - navigation.tabs.sticky # Keep navigation bar when scrolling.
+    - navigation.tracking # The url evolves with scrolling.
+    - navigation.indexes # Can add index.md as homepage each section.
+    - navigation.top # Back to top button.
+    - content.code.copy # Copy code blocks to clipboard.
+    - content.code.annotate # Annotate code blocks.
+  logo: assets/logo.png
+  favicon: assets/logo.png
   icon:
     repo: fontawesome/brands/github
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      primary: custom
+      toggle:
+        icon: material/theme-light-dark
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      primary: custom
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark moded
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: custom
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+
+extra_css:
+  - assets/extra.css
 
 plugins:
-    - mkdocs-jupyter
+  - mkdocs-jupyter
+  - search
 
 markdown_extensions:
-  - def_list   # bullet points
-  - attr_list  # add HTML attributes to Markdown elements (align and style images)
+  - def_list # bullet points
+  - attr_list # add HTML attributes to Markdown elements (align and style images)
   - md_in_html # parse Markdown in HTML blocks
   - pymdownx.highlight # highlight code blocks, used by SuperFences
   - pymdownx.superfences # nesting code/content blocks, also to highlight code blocks
-  - admonition # admonitions ie. 'tip' and 'note'
+  - admonition # admonitions i.e. 'tip' and 'note'
   - pymdownx.details # collapsible admonition
+  - tables
 
 # Page tree
 nav:
-  - Home: index.md
-  - Getting started: 
+  - index.md
+  - Getting Started:
       - Installation: getting_started/installation.md
-      - Using geoarches modules: getting_started/using_geoarches.md
+      - Using geoarches: getting_started/using_geoarches.md
   - User Guide:
       - user_guide/index.md
       - Train: user_guide/train.md
       - Run and evaluate: user_guide/evaluate.md
       - Custom models: user_guide/custom_models.md
-      - Pipeline API: user_guide/args.md
+      - Pipeline API: user_guide/api.md
   - Contributing:
+      - contributing/index.md
       - Contribute to project: contributing/contribute.md
-      - Report bug or feature request: contributing/bug.md
+      - Bug reporting and feature requests: contributing/bug.md
   - ArchesWeather:
       - archesweather/index.md
       - Setup: archesweather/setup.md
-      - Run: archesweather/run.ipynb
       - Train: archesweather/train.md
-      - Evaluate: archesweather/eval.md
-
+      - Evaluate: archesweather/evaluate.md
+      - Run: archesweather/run.ipynb
