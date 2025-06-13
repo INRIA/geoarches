@@ -16,6 +16,7 @@ def load_module(
     dotlist: list = [],
     return_config: bool = True,
     ckpt_fname: str | None = None,
+    cfg = None,
     **kwargs,
 ):
     """
@@ -29,8 +30,9 @@ def load_module(
         path = Path("modelstore").joinpath(path)
     else:
         path = Path(path)
-    cfg = OmegaConf.load(path / "config.yaml")
-    cfg.merge_with_dotlist(dotlist)
+    if(cfg == None):
+        cfg = OmegaConf.load(path / "config.yaml")
+        cfg.merge_with_dotlist(dotlist)
     module = instantiate(cfg.module.module, cfg.module, **kwargs)
     module.init_from_ckpt(path, ckpt_fname=ckpt_fname, missing_warning=False)
     if device == "auto":

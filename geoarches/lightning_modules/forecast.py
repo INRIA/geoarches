@@ -63,11 +63,11 @@ class ForecastModule(BaseLightningModule):
         vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
 
         # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
+        total_coeff = 1
+        # surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
+        #     -1, 1, 1, 1
+        # )  # graphcast, mul 4 because we do a mean
+        # level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
 
         self.loss_coeffs = TensorDict(
             surface=area_weights * surface_coeffs / total_coeff,
