@@ -120,10 +120,10 @@ class DCPPForecast(XarrayDataset):
 
         spatial_norm_stats = torch.load(norm_file_path)
         level_spatial_norm_stats = torch.load(level_norm_file_path)
-        
+
         clim_removed_file_path = geoarches_stats_path / "dcpp_clim_removed_norm_stats.pt"
         clim_removed_norm_stats = torch.load(clim_removed_file_path)
-        
+
         if self.norm_scheme is None:
             self.data_mean = TensorDict(
                 surface=torch.tensor(0),
@@ -171,7 +171,7 @@ class DCPPForecast(XarrayDataset):
             for a in level_variables
             for p in pressure_levels
         ]
-        
+
         self.atmos_forcings = torch.tensor(np.load(f'{forcings_path}/ghg_forcings_normed.npy'))
         self.solar_forcings = torch.tensor(np.load(f'{forcings_path}/solar_forcings_normed.npy'))
         times_seconds = [v[2].item() // 10**9 for k,v in self.id2pt.items()]
@@ -234,7 +234,7 @@ class DCPPForecast(XarrayDataset):
                 times = pd.to_datetime(prev_timestamp,unit='s').tz_localize(None)
         if normalize:
             out = self.normalize(out,month=current_month)
-    
+
         # need to replace nans with mask_value
         mask = {k: (apply_isnan(v) if "state" in k else v) for k, v in out.items()}
 
