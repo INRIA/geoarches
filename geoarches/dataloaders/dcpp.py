@@ -7,7 +7,7 @@ from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
-from geoarches.utils.tensordict_utils import apply_nan_to_num, apply_isnan, apply_threshold, replace_nan
+from geoarches.utils.tensordict_utils import apply_nan_to_num, apply_isnan, apply_threshold, replace_nans
 
 
 
