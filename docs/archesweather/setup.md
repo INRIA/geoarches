@@ -1,33 +1,34 @@
 # Setup
 
-### 1. Install package
+### 1. Install the package
 
-Follow [installation](../getting_started/installation.md) instructions to install the package and its dependencies.
+To get started, follow the [installation guide](../getting_started/installation.md) to install the package and all required dependencies.
 
-???+ tip
+!!! tip
 
-    If you want to make modifications on top, you can fork the repo (follow setup in the [contributing](../contributing/contribute.md#setup) section)
+    If you plan to modify the codebase, it's recommended to fork the repository first. You’ll find relevant setup steps in the [contributing section](../contributing/index.md).
 
-### 2. Download saved models 
+### 2. Download pretrained models
 
-Use following the script to download the 4 deterministic models (archesweather-m-...) and generative model (archesweathergen).
-
-Use following the script to download the 4 deterministic models (archesweather-m-...) and generative model (archesweathergen).
+The following script downloads four deterministic models (`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face:
 
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-MODELS="archesweather-m-seed0 archesweather-m-seed1 archesweather-m-skip-seed0 archesweather-m-skip-seed1 archesweathergen"
-for MOD in $MODELS; do
-    mkdir -p modelstore/$MOD/checkpoints
-    wget -O modelstore/$MOD/checkpoints/checkpoint.ckpt $src/${MOD}_checkpoint.ckpt
-    wget -O modelstore/$MOD/config.yaml $src/${MOD}_config.yaml 
+MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
+
+for MOD in "${MODELS[@]}"; do
+    mkdir -p "modelstore/$MOD/checkpoints"
+    wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
+    wget -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
 done
 ```
-You can follow instructions in [`archesweather/tutorial.ipynb`](archesweather/tutorial.ipynb) to load the models and run inference with them. See [`archesweathergen/pipeline.md`](archesweather/pipeline.md) to run training.
 
-### 3. Download ERA5 statistics
+You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. For training, refer to the [train section](./train.md).
 
-To compute brier score on ERA5 (needed to instantiate ArchesWeather models for inference or training), you will need to download ERA5 quantiles:
+### 3. Download ERA5 quantile statistics
+
+ERA5 quantiles are required to compute Brier scores and are used during both inference and training. Download them with:
+
 ```sh
 src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
 wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc

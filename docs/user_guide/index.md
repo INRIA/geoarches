@@ -1,39 +1,47 @@
 # User Guide
 
-Detailed documentation for using geoarches. Check [Getting Started](../getting_started/) for installation and basic usage.
+This section provides detailed guidance for using `geoarches`.
+If you’re just getting started, begin with the [Getting Started](../getting_started/installation.md) section for installation and basic usage.
 
 ## Prerequisites
 
-The package takes advantage of several tools. It might be helpful to become familiar with these tools first.
+`geoarches` builds on top of several open-source tools. While not strictly required, familiarity with the following tools will help you get the most out of the library.
 
 ### Hydra
 
-We use [Hydra](https://hydra.cc/docs/intro/) to easily configure training experiments.
+We use [Hydra](https://hydra.cc/docs/intro/) for flexible and modular configuration of training experiments.
 
-The main python script (`main_hydra.py` that runs a model pipeline), is pointed to the `configs/` folder which tells geoarches which dataloader, lightning module, backbone, and their arguments to run. 
+The main entry point is `main_hydra.py`, which builds the full configuration from components located under the `configs/` directory. This includes:
 
-The config is constructed from the base config `configs/config.yaml` and is extended with configs under each folder such as `config/module/` and `config/dataloader/`.
+- The base config: `configs/config.yaml`
+- Module-specific configs: e.g. `configs/module/archesweather.yaml`
+- Dataloader configs: e.g. `configs/dataloader/era5.yaml`
 
-You can also override arguments by CLI (see [Pipeline API](args.md) for full list of arguments).
+You can override any argument via the command line (see [Pipeline API](api.md) for the full list).
 
-Example:
-```sh
-python -m geoarches.main_hydra \
-module=archesweather \ # Uses module/archesweather.yaml
-dataloader=era5 \      # Uses dataloader/era5.yaml
-++name=default_run \   # Name of run: used to name checkpoint dir and Wandb logging
-```
+!!! example
 
-### PyTorch and PyTorch Lightning
+    ```sh
+    python -m geoarches.main_hydra \
+        module=archesweather \ # (1)!
+        dataloader=era5 \ # (2)!
+        ++name=default_run # (3)!
+    ```
 
-[PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) is a wrapper around PyTorch and allows us to run training and inference loops without boilerplate code.
+    1. Loads `configs/module/archesweather.yaml`
+    2. Loads `configs/dataloader/era5.yaml`
+    3. Unique name of your run, used for checkpointing and W&B logging
 
-We mainly take advantage of the [LightningModule](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html) API.
+### PyTorch & PyTorch Lightning
+
+We rely on [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) to simplify training and evaluation, removing much of the boilerplate around training loops.
+
+In particular, we use the [`LightningModule`](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html) abstraction to wrap backbone models, handle loss computation, optimizer setup, logging, and more.
 
 !!! note
 
-    To just take advantage of data and evaluation modules, you do not need to use lightning in your project.
+    If you're only interested in the data or evaluation utilities provided by `geoarches`, you **do not need** to use Lightning.
 
-### Weights and Biases (WandB)
+### Weights & Biases (W&B)
 
-The training pipeline optionally uses [WandB](https://wandb.ai/site/) to log and track experiment metrics for your projects. You can create an account and project on the website.
+Optionally, you can log training metrics with [Weights & Biases](https://docs.wandb.ai). It provides experiment tracking for your runs.

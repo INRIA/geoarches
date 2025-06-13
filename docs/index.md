@@ -1,39 +1,54 @@
-<div style="display: flex; align-items: flex-start;">
-<img src="img/logo.png" style="height: 150px; width: 150px; margin-right: 20px;" alt="Logo">
+---
+title: Home
+hide:
+  - navigation
+---
 
-<div>
-    <h1>Geoarches Documentation</h1>
-    <p>If you are a user, check <a href="getting_started/installation">Getting Started</a>, then <a href="user_guide">User Guide</a> for more information.</p>
-    <p>If you want to contribute to the codebase, check the <a href="contributing/contribute">Contributing</a> section for developer setup and instructions.</p>
+<div style="display: flex; align-items: center;">
+  <img src="assets/logo.png" style="height: 150px; width: 150px; margin-left: 1em, margin-right: 1em" alt="Logo">
+  <div style="margin-left: 1em">
+    <h1 style="margin-bottom: 0.8em;">geoarches documentation</h1>
+    <p>If you're a user, start with the <a href="getting_started/installation">Getting Started</a> guide, then explore the <a href="user_guide">User Guide</a> for more detailed instructions and tips.<br>
+    If you're interested in contributing to the project, check out the <a href="contributing">Contributing</a> for developer setup and guidelines.</p>
+  </div>
 </div>
-</div>
 
-## What is geoarches ?
+## What is geoarches?
 
-**geoarches** is a machine learning package for training, running and evaluating ML models on geospatial data, mainly weather and climate data.
+**geoarches** is a research-friendly machine learning library for training, running, and evaluating models on **geospatial data**, mainly weather and climate data.
 
-geoarches's building blocks can be easily integrated into research ML pipelines.
-It can also be used to run the **ArchesWeather** and **ArchesWeatherGen** weather models.
+Built on [PyTorch](https://pytorch.org), [Pytorch Lightning](https://lightning.ai), and [Hydra](https://hydra.cc), geoarches offers a clean, modular structure for developing and scaling ML pipelines. Once installed, you can use its modules inside your own project, or use the main training and evaluating workflows.
 
-geoarches is based on pytorch, pytorch-lightning and hydra for configuration. After the package is installed, you can use its modules in python code, but you can also call the main training and evaluating scripts of geoarches.
+??? tip "geoarches powers _ArchesWeather_ and _ArchesWeatherGen_ models."
 
+    See [ArchesWeather section](./archesweather/index.md) for more details.
 
 ## Overview
 
-geoarches is meant to jumpstart your ML pipeline with building blocks for data handling, model training, and evaluation. This is an effort to share engineering tools and research knowledge across projects.
+geoarches is meant to jumpstart your ML pipeline with building blocks for data handling, model training, and evaluation. This is an ongoing effort to share engineering tools and research knowledge across projects.
 
 ### Data
-- `download/`: scripts that parallelize downloads and show how to use chunking to speed up read access.
-- `dataloaders/`: PyTorch datasets that read netcdf data and prepare tensors to feed into model training.
+
+- `download/`: Parallelized dataset download scripts with support for chunking to speed up read access.
+- `dataloaders/`: PyTorch datasets for loading and preprocessing NetCDF files into ML-ready tensors.
 
 ### Model training
-- `backbones/`: network architecture that can be plugged into lightning modules.
-- `lightning_modules/`: wrapper around backbone modules to handle loss computation, optimizer, etc for training and inference (agnostic to backbone but specific to ML task).
+
+- `backbones/`: Network architectures that plug into Lightning modules.
+- `lightning_modules/`: Training and inference wrappers that are agnostic to the backbone but specific to the ML task — handle losses, optimizers, and metrics.
 
 ### Evaluation
-- `metrics/`: tested suite of iterative metrics (memory efficient) for deterministic and generative models.
-- `evaluation/`: scripts for running metrics over model predictions and plotting.
+
+- `metrics/`: Tested suite of efficient, memory-friendly metrics.
+- `evaluation/`: End-to-end scripts to benchmark model predictions and generate plots.
 
 ### Pipeline
-- `main_hydra.py`: script to run training or inference with hydra configuration.
-- `docs/archesweather/`: quickstart code for training and inference from a notebook.
+
+- `main_hydra.py`: Entry point for training or inference using Hydra configurations.
+- `docs/archesweather/`: Quickstart code for training and inference.
+
+## Next steps
+
+- **[Install geoarches](./getting_started/installation.md)**
+- **[Explore the User Guide](./user_guide/index.md)**
+- **[Contribute to development](./contributing/index.md)**
