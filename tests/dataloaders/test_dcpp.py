@@ -25,8 +25,8 @@ class TestDCPPForecast:
             # Create some dummy data
             level_var_data = np.zeros((len(time), PLEV, LAT, LON))
             surface_var_data = np.zeros((len(time), LAT, LON))
-            level_variables = ['va','ua','zg','wap']
-            surface_variables = ['psl','tos']
+            level_variables = ["va", "ua", "zg", "wap"]
+            surface_variables = ["psl", "tos"]
             ds = xr.Dataset(
                 data_vars=dict(
                     **{
@@ -42,16 +42,16 @@ class TestDCPPForecast:
                     "time": time,
                     "lat": np.arange(0, LAT),
                     "lon": np.arange(0, LON),
-                    "plev": [85000, 70000, 50000,25000],
+                    "plev": [85000, 70000, 50000, 25000],
                 },
             )
             ds.to_netcdf(file_path)
 
         # make fake atmos forcings
-        full_atmos_normal = torch.rand((540,4))
-        np.save(f"{self.test_dir}/ghg_forcings_normed.npy",full_atmos_normal.numpy())
+        full_atmos_normal = torch.rand((540, 4))
+        np.save(f"{self.test_dir}/ghg_forcings_normed.npy", full_atmos_normal.numpy())
         full_solar_normal = torch.rand((804, 6))
-        np.save( f"{self.test_dir}/solar_forcings_normed.npy",full_solar_normal.numpy())
+        np.save(f"{self.test_dir}/solar_forcings_normed.npy", full_solar_normal.numpy())
 
     def test_load_current_state(self):
         dcpp_model = dcpp.DCPPForecast(
@@ -62,10 +62,10 @@ class TestDCPPForecast:
             load_prev=False,
             multistep=0,
             load_clim=False,
-            surface_variable_indices=[0,1],
-            level_variable_indices=[0,1,2],
-            surface_variables=['psl','tos'],
-            level_variables=['va','ua','zg']   
+            surface_variable_indices=[0, 1],
+            level_variable_indices=[0, 1, 2],
+            surface_variables=["psl", "tos"],
+            level_variables=["va", "ua", "zg"],
         )
         example = next(iter(dcpp_model))
 
@@ -90,10 +90,10 @@ class TestDCPPForecast:
             lead_time_months=lead_time_months,
             load_prev=False,
             load_clim=False,
-            surface_variable_indices=[0,1],
-            level_variable_indices=[0,1,2],
-            surface_variables=['psl','tos'],
-            level_variables=['va','ua','zg']        
+            surface_variable_indices=[0, 1],
+            level_variable_indices=[0, 1, 2],
+            surface_variables=["psl", "tos"],
+            level_variables=["va", "ua", "zg"],
         )
         example = ds[0]
 
