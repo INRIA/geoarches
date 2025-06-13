@@ -5,10 +5,14 @@ import pandas as pd
 import torch
 from tensordict.tensordict import TensorDict
 
+from geoarches.utils.tensordict_utils import (
+    apply_isnan,
+    apply_nan_to_num,
+    apply_threshold,
+)
+
 from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
-from geoarches.utils.tensordict_utils import apply_nan_to_num, apply_isnan, apply_threshold, replace_nans
-
 
 
 class DCPPForecast(XarrayDataset):
@@ -55,7 +59,7 @@ class DCPPForecast(XarrayDataset):
             mask_value: what value to use as mask for nan values in dataset
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
-        self.timedelta = 1        
+        self.timedelta = 1
 
         if(self.filename_filter_type =='dcpp_alt'):
             train_filter = [x for i, x in enumerate(range(1960,2000))]
@@ -88,11 +92,11 @@ class DCPPForecast(XarrayDataset):
                     substring in x for substring in [f"{str(x)}_" for x in test_filter]
                 ),
                 empty=lambda x: False,
-            )            
+            )
         elif(self.filename_filter_type=='cmip'):
             train_filter = ['historical','ssp245']
             test_filter = ['ssp370']
-            val_filter = ['ssp245'] #for accessibility 
+            val_filter = ['ssp245'] #for accessibility
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
@@ -133,10 +137,10 @@ class DCPPForecast(XarrayDataset):
 
         spatial_norm_stats = torch.load(norm_file_path)
         level_spatial_norm_stats = torch.load(level_norm_file_path)
-        
+
         clim_removed_file_path = geoarches_stats_path / "dcpp_clim_removed_norm_stats.pt"
         clim_removed_norm_stats = torch.load(clim_removed_file_path)
-        
+
         if self.norm_scheme is None:
             self.data_mean = TensorDict(
                 surface=torch.tensor(0),
@@ -243,7 +247,7 @@ class DCPPForecast(XarrayDataset):
                 times = pd.to_datetime(prev_timestamp,unit='s').tz_localize(None)
         if normalize:
             out = self.normalize(out,month=current_month)
-    
+
         # need to replace nans with mask_value
         mask = {k: (apply_isnan(v) if "state" in k else v) for k, v in out.items()}
 
