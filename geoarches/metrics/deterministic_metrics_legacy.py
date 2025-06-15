@@ -8,6 +8,7 @@ def compute_lat_coeffs(lat_size):
     lat_coeffs_equi = (lat_coeffs_equi / lat_coeffs_equi.mean())[None, None, :, None]
     return lat_coeffs_equi
 
+
 def acc(x, y, z=0):
     """Anomaly correlation coefficient.
 

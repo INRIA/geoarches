@@ -39,34 +39,27 @@ def tensordict_cat(tdict_list, dim=0, **kwargs):
 
 def apply_nan_to_num(td):
     return TensorDict(
-        {
-            key: torch.nan_to_num(value)
-            for key, value in td.items()
-        },
-        batch_size=td.batch_size
+        {key: torch.nan_to_num(value) for key, value in td.items()}, batch_size=td.batch_size
     )
+
+
 def apply_isnan(td):
     return TensorDict(
-        {
-            key: ~torch.isnan(value)
-            for key, value in td.items()
-        },
-        batch_size=td.batch_size
+        {key: ~torch.isnan(value) for key, value in td.items()}, batch_size=td.batch_size
     )
+
+
 def apply_threshold(td):
     return TensorDict(
         {
-            key: value.masked_fill(torch.isinf(value) | (value > 1e35) , 0)
-
+            key: value.masked_fill(torch.isinf(value) | (value > 1e35), 0)
             for key, value in td.items()
         },
         batch_size=td.batch_size,
     )
 
 
-
 def replace_nans(tensordict, value=0):
     return tensordict.apply(
         lambda x: torch.where(torch.isnan(x), torch.tensor(value, dtype=x.dtype), x)
     )
-

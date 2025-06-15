@@ -16,7 +16,7 @@ def load_module(
     dotlist: list = [],
     return_config: bool = True,
     ckpt_fname: str | None = None,
-    cfg = None,
+    cfg=None,
     **kwargs,
 ):
     """
@@ -30,7 +30,7 @@ def load_module(
         path = Path("modelstore").joinpath(path)
     else:
         path = Path(path)
-    if(cfg == None):
+    if cfg is None:
         cfg = OmegaConf.load(path / "config.yaml")
         cfg.merge_with_dotlist(dotlist)
     module = instantiate(cfg.module.module, cfg.module, **kwargs)
