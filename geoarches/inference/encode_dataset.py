@@ -84,9 +84,10 @@ for i, batch in tqdm(enumerate(dl)):
 
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for (k, v) in batch.items()}
     out = module.forward(batch)
-    denorm_out = ds.denormalize(out)
+    out_denorm = ds.denormalize(out)
 
-    xr_list.append(ds.convert_to_xarray(denorm_out, batch["timestamp"]))
+    out_timestamp = batch["timestamp"] + ds.lead_time_hours * 3600  # we predict at t+1
+    xr_list.append(ds.convert_to_xarray(out_denorm, out_timestamp))
 
     if next_year > current_year:
         print("saving file", current_year)
