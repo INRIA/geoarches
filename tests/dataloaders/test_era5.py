@@ -6,6 +6,16 @@ import xarray as xr
 from geoarches.dataloaders import era5, era5_constants
 from tests.fixtures.era5 import LAT, LEVEL, LON, TestBase, all_levels, cfg
 
+from hydra import compose
+from hydra.utils import initialize
+
+from omegaconf import OmegaConf
+
+with initialize(version_base=None, config_path="../../geoarches/configs", job_name="test"):
+    cfg = compose(config_name="config")
+    print(OmegaConf.to_yaml(cfg))
+
+    OmegaConf.resolve(cfg)
 
 class TestEra5Dataset(TestBase):
     def test_load_current_state(self):
@@ -674,7 +684,7 @@ class TestEra5ForecastWithForcings:
     )
     def test_load_current_and_next_state(self, lead_time_hours, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -709,7 +719,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -746,7 +756,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
