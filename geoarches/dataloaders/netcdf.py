@@ -34,8 +34,9 @@ class XarrayDataset(torch.utils.data.Dataset):
         dimension_indexers: Dict[str, list] | None = None,
         filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
         return_timestamp: bool = False,
-        warning_on_nan: bool = False,
+        warning_on_nan: bool = True,
         limit_examples: int | None = None,
+        interpolate_nans: bool = True,
     ):
         """
         Args:
@@ -51,12 +52,15 @@ class XarrayDataset(torch.utils.data.Dataset):
         """
         self.filename_filter = filename_filter
         self.variables = variables
+        
         self.dimension_indexers = dimension_indexers
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
+        self.interpolate_nans = interpolate_nans
+
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
-
+        
         if not Path(path).exists():
             raise ValueError("Path does not exist:", path)
 
@@ -128,7 +132,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
         return tdict
 
-    def __getitem__(self, i, return_timestamp=False):
+    def __getitem__(self, i, return_timestamp=False, interpolate_nans=False, warning_on_nan=False):
         file_id, line_id, timestamp = self.id2pt[i]
 
         if self.cached_fileid != file_id:
@@ -138,9 +142,19 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
 
         obsi = self.cached_xrdataset.isel(time=line_id)
+
+        if interpolate_nans is None:
+            interpolate_nans = self.interpolate_nans
+
+        if interpolate_nans:
+            obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
+
         tdict = self.convert_to_tensordict(obsi)
 
-        if self.warning_on_nan:
+        if warning_on_nan is None:
+            warning_on_nan = self.warning_on_nan
+            
+        if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):
                 warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
 

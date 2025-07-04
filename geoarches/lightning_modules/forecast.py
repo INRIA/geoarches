@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
-
+from geoarches.utils.tensordict_utils import tensordict_apply
 from geoarches.dataloaders import era5, zarr
 from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
 
@@ -23,6 +23,7 @@ class ForecastModule(BaseLightningModule):
     def __init__(
         self,
         cfg,  # instead of backbone
+        stats_cfg,
         name="forecast",
         dataset=None,
         pow=2,  # 2 is standard mse
@@ -50,53 +51,14 @@ class ForecastModule(BaseLightningModule):
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
 
-        # define coeffs for loss
+        # Instantiate stats module for loss coeffs
+        stats = instantiate(stats_cfg.module)
+        self.variables = stats.variables
+        self.levels = stats.levels
 
-        compute_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
-        area_weights = compute_weights_fn(121)
+        self.loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.loss_coeffs)
 
-        pressure_levels = torch.tensor(era5.pressure_levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
-
-        # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
-
-        self.loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-
-        if loss_delta_normalization:
-            # assumes include vertical wind component
-
-            pangu_stats = torch.load(
-                geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
-            )
-
-            # mul by first to remove norm, div by second to apply fake delta normalization
-            self.loss_delta_scaler = TensorDict(
-                level=pangu_stats["level_std"]
-                / torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=pangu_stats["surface_std"]
-                / torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
-            )
-            self.loss_coeffs = self.loss_coeffs * self.loss_delta_scaler.pow(self.pow)
-
-        compute_lat_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
+        # Instantiate metric modules
         self.train_metrics = nn.ModuleList(
             [instantiate(metric, **cfg.train.metrics_kwargs) for metric in cfg.train.metrics]
         )
@@ -165,10 +127,13 @@ class ForecastModule(BaseLightningModule):
 
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
+        
+        #mask = torch.isnan(gt)
+        #torch.nan_to_num(gt, 0, out=gt)
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+        loss = weighted_error.nanmean(reduce=True)
 
-        loss = sum(weighted_error.mean().values())
-
+          
         return loss
 
     def training_step(self, batch, batch_nb):

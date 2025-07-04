@@ -2,13 +2,19 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-
+from omegaconf import OmegaConf
 from geoarches.dataloaders import era5
+from hydra import compose, initialize
 
 # Dimension sizes.
 LAT, LON = 2, 4
-LEVEL = len(era5.pressure_levels)
+LEVEL = len(era5.arches_default_pressure_levels)
 
+with initialize(version_base=None, config_path="../../geoarches/configs", job_name="test"):
+    cfg = compose(config_name="config")
+    print(OmegaConf.to_yaml(cfg))
+
+    OmegaConf.resolve(cfg)
 
 class TestEra5Forecast:
     @classmethod
@@ -31,11 +37,11 @@ class TestEra5Forecast:
                 data_vars=dict(
                     **{
                         var_name: (["time", "level", "longitude", "latitude"], level_var_data)
-                        for var_name in era5.level_variables
+                        for var_name in era5.arches_default_level_variables
                     },
                     **{
                         var_name: (["time", "latitude", "longitude"], surface_var_data)
-                        for var_name in era5.surface_variables
+                        for var_name in era5.arches_default_surface_variables
                     },
                 ),
                 coords={"time": time, "latitude": np.arange(0, LAT), "level": np.arange(0, LEVEL)},
@@ -75,6 +81,7 @@ class TestEra5Forecast:
         self, lead_time_hours, expected_len, expected_next_timestamp
     ):
         ds = era5.Era5Forecast(
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             domain="all",
             lead_time_hours=lead_time_hours,
@@ -99,6 +106,7 @@ class TestEra5Forecast:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
         ds = era5.Era5Forecast(
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             domain="all",
             lead_time_hours=6,
@@ -125,6 +133,7 @@ class TestEra5Forecast:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
         ds = era5.Era5Forecast(
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             domain="all",
             lead_time_hours=6,
