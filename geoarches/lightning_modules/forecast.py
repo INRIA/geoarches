@@ -128,10 +128,13 @@ class ForecastModule(BaseLightningModule):
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
         
-        #mask = torch.isnan(gt)
-        #torch.nan_to_num(gt, 0, out=gt)
+
+        pred = TensorDict({k: (~torch.isnan(gt[k])).float() * v for k, v in pred.items()}, batch_size=gt.batch_size)
+        gt = TensorDict(
+            {k: torch.nan_to_num(v) * (~torch.isnan(v)).float() for k, v in gt.items()}, batch_size=pred.batch_size
+        )
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        loss = weighted_error.nanmean(reduce=True)
+        loss = sum(weighted_error.mean().values())
 
           
         return loss

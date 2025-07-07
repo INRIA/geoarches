@@ -148,7 +148,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         if interpolate_nans:
             obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
-
+        
         tdict = self.convert_to_tensordict(obsi)
 
         if warning_on_nan is None:

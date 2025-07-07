@@ -182,7 +182,7 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
                 variable_indices=add_timedelta_index(
-                    era5.get_surface_variable_indices(),
+                    era5.get_surface_variable_indices(surface_variables),
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
@@ -193,7 +193,7 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
                 variable_indices=add_timedelta_index(
-                    era5.get_headline_level_variable_indices(pressure_levels),
+                    era5.get_headline_level_variable_indices(pressure_levels, level_variables),
                     lead_time_hours=lead_time_hours,
                     rollout_iterations=rollout_iterations,
                 ),
