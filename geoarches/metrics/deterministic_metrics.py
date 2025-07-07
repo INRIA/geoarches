@@ -160,7 +160,6 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
         level_variables=era5.arches_default_level_variables,
         pressure_levels=era5.arches_default_pressure_levels,
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
-
         lead_time_hours: int = 24,
         rollout_iterations: int = 1,
     ):

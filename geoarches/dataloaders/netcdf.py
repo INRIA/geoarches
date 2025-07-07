@@ -52,7 +52,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         """
         self.filename_filter = filename_filter
         self.variables = variables
-        
+
         self.dimension_indexers = dimension_indexers
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
@@ -60,7 +60,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
-        
+
         if not Path(path).exists():
             raise ValueError("Path does not exist:", path)
 
@@ -148,12 +148,12 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         if interpolate_nans:
             obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
-        
+
         tdict = self.convert_to_tensordict(obsi)
 
         if warning_on_nan is None:
             warning_on_nan = self.warning_on_nan
-            
+
         if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):
                 warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")

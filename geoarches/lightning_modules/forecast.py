@@ -9,9 +9,9 @@ import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
-from geoarches.utils.tensordict_utils import tensordict_apply
-from geoarches.dataloaders import era5, zarr
-from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
+
+from geoarches.dataloaders import zarr
+from geoarches.utils.tensordict_utils import nan_to_zero
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
@@ -136,7 +136,6 @@ class ForecastModule(BaseLightningModule):
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
         loss = sum(weighted_error.mean().values())
 
-          
         return loss
 
     def training_step(self, batch, batch_nb):

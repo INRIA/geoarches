@@ -1,5 +1,5 @@
 module:
-  _target_: geoarches.utils.stats_utils.TensorDictNormalizationStats
+  _target_: geoarches.utils.norm_utils.NormModule
   variables: 
     surface:
         - 10m_u_component_of_wind

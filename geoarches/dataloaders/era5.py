@@ -1,4 +1,3 @@
-import importlib.resources
 from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Dict, List
@@ -7,9 +6,8 @@ import numpy as np
 import pandas as pd
 import torch
 import xarray as xr
-from tensordict.tensordict import TensorDict
 from hydra.utils import instantiate
-from .. import stats as geoarches_stats
+
 from .netcdf import XarrayDataset
 
 filename_filters = dict(
@@ -29,9 +27,45 @@ filename_filters = dict(
 )
 
 # 37 pressure levels available from graphcast stats
-pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150, 175, 200, 225, 250, 300, 350, 
-                   400, 450, 500, 550, 600, 650, 700, 750, 775, 800, 825, 850, 875, 900, 925, 950, 
-                   975, 1000]
+pressure_levels = [
+    1,
+    2,
+    3,
+    5,
+    7,
+    10,
+    20,
+    30,
+    50,
+    70,
+    100,
+    125,
+    150,
+    175,
+    200,
+    225,
+    250,
+    300,
+    350,
+    400,
+    450,
+    500,
+    550,
+    600,
+    650,
+    700,
+    750,
+    775,
+    800,
+    825,
+    850,
+    875,
+    900,
+    925,
+    950,
+    975,
+    1000,
+]
 
 
 # ArchesWeather default settings for ERA5 dataset.
@@ -93,7 +127,6 @@ level_variables_short = {
     "temperature": "T",
     "specific_humidity": "Q",
     "vertical_velocity": "W",
-
 }
 
 
@@ -102,7 +135,9 @@ def get_surface_variable_indices(variables=arches_default_surface_variables):
     return {surface_variables_short[var]: (i, 0) for i, var in enumerate(variables)}
 
 
-def get_level_variable_indices(pressure_levels=arches_default_pressure_levels, variables=arches_default_level_variables):
+def get_level_variable_indices(
+    pressure_levels=arches_default_pressure_levels, variables=arches_default_level_variables
+):
     """Mapping from level variable name to (var, lev) index in ERA5 dataset."""
     out = {}
     for var_idx, var in enumerate(variables):
@@ -154,7 +189,9 @@ class Era5Dataset(XarrayDataset):
             filename_filter = filename_filters[domain]
 
         if variables is None:
-            variables = dict(surface=arches_default_surface_variables, level=arches_default_level_variables)
+            variables = dict(
+                surface=arches_default_surface_variables, level=arches_default_level_variables
+            )
 
         if levels is None:
             self.levels = arches_default_pressure_levels
@@ -344,13 +381,15 @@ class Era5Forecast(Era5Dataset):
         # include vertical component by default
         stats = instantiate(stats_cfg.module)
         self.data_mean, self.data_std = stats.load_normalization_stats()
-      
+
         # variable names
         # TODO: fix this below
-        self.surface_variables = [surface_variables_short[v] for v in self.variables['surface']]
-        
+        self.surface_variables = [surface_variables_short[v] for v in self.variables["surface"]]
+
         self.level_variables = [
-            level_variables_short[l] + str(p) for l in self.variables['level'] for p in self.levels
+            level_variables_short[lvl] + str(p)
+            for lvl in self.variables["level"]
+            for p in self.levels
         ]
 
         # Load climatology.
@@ -381,17 +420,25 @@ class Era5Forecast(Era5Dataset):
         T = self.lead_time_hours  # multistep
 
         if self.multistep > 0:
-            out["next_state"] = super().__getitem__(i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False)
+            out["next_state"] = super().__getitem__(
+                i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+            )
 
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
             future_states = []
             for k in range(1, self.multistep + 1):
-                future_states.append(super().__getitem__(i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False))
+                future_states.append(
+                    super().__getitem__(
+                        i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                    )
+                )
             out["future_states"] = torch.stack(future_states, dim=0)
 
         if self.load_prev:
-            out["prev_state"] = super().__getitem__(i - self.lead_time_hours // self.timedelta, interpolate_nans=True)
+            out["prev_state"] = super().__getitem__(
+                i - self.lead_time_hours // self.timedelta, interpolate_nans=True
+            )
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)

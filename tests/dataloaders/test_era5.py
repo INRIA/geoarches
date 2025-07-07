@@ -2,9 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
-from omegaconf import OmegaConf
-from geoarches.dataloaders import era5
 from hydra import compose, initialize
+from omegaconf import OmegaConf
+
+from geoarches.dataloaders import era5
 
 # Dimension sizes.
 LAT, LON = 2, 4
@@ -15,6 +16,7 @@ with initialize(version_base=None, config_path="../../geoarches/configs", job_na
     print(OmegaConf.to_yaml(cfg))
 
     OmegaConf.resolve(cfg)
+
 
 class TestEra5Forecast:
     @classmethod
