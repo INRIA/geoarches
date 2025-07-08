@@ -11,7 +11,6 @@ from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 
 from geoarches.dataloaders import zarr
-from geoarches.utils.tensordict_utils import nan_to_zero
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
