@@ -268,7 +268,7 @@ class Era5Dataset(XarrayDataset):
                 time=times,
                 latitude=np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
                 longitude=np.arange(0, 360, 360 / 240),
-                level=pressure_levels,
+                level=levels if levels is not None else self.levels,
             ),
         )
         if levels is not None:
