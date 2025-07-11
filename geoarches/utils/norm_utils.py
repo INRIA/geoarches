@@ -37,10 +37,16 @@ default_var_weights = {
 
 class NormModule:
     def __init__(
-        self, variables=None, levels=None, norm_scheme=None, loss_weight_per_variable=None
+        self, 
+        model_type = "det",
+        variables=None, 
+        levels=None, 
+        norm_scheme=None, 
+        loss_weight_per_variable=None
     ):
         print("##### NORM SCHEME: ", norm_scheme, " #####")
 
+        self.model_type = model_type
         if variables is None:
             variables = {
                 "surface": arches_default_surface_variables,
@@ -136,35 +142,57 @@ class NormModule:
         return mean, std
 
     def load_graphcast_timedelta_stats(self):
-        file = geoarches_stats_path / "gc_stats_diffs_stddev_by_level.json"
-        with open(file) as f:
-            diff_stats = json.load(f)
 
-        surface_stds = torch.tensor(
-            [diff_stats["data_vars"][v]["data"] for v in self.variables["surface"]]
-        ).reshape(-1, 1, 1, 1)
-        level_stds = torch.tensor(
-            [
-                [diff_stats["data_vars"][v]["data"][i] for i in self.pl_indices]
-                for v in self.variables["level"]
-            ]
-        ).reshape(-1, len(self.levels), 1, 1)
+        if self.state_normalization == "delta":
+            file = geoarches_stats_path / "gc_stats_diffs_stddev_by_level.json"
+            with open(file) as f:
+                diff_stats = json.load(f)
 
+            surface_stds = torch.tensor(
+                [diff_stats["data_vars"][v]["data"] for v in self.variables["surface"]]
+            ).reshape(-1, 1, 1, 1)
+            level_stds = torch.tensor(
+                [
+                    [diff_stats["data_vars"][v]["data"][i] for i in self.pl_indices]
+                    for v in self.variables["level"]
+                ]
+            ).reshape(-1, len(self.levels), 1, 1)
+        elif self.state_normalization == "pred":
+            assert self.state_diff_file, "File containing time deltas of predictions must be provided for pred normalization"
+
+            self.state_diff_file = geoarches_stats_path / self.state_diff_file
+            with open(self.state_diff_file) as f:
+                diff_stats = json.load(f)
+
+            surface_stds = torch.tensor(
+                [diff_stats["data_vars"][v]["data"] for v in self.variables["surface"]]
+            ).reshape(-1, 1, 1, 1)
+            level_stds = torch.tensor(
+                [
+                    [diff_stats["data_vars"][v]["data"][i] for i in self.pl_indices]
+                    for v in self.variables["level"]
+                ]
+            ).reshape(-1, len(self.levels), 1, 1)
         return surface_stds, level_stds
+    
+    def compute_area_weights(self, latitude, use_weatherbench_lat_coeffs=False):
+        # Area weights are calculated different for generative and deterministic models
+        if self.type == 'gen':
+            area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
+            area_weights = (area_weights / area_weights.mean())[:, None]
+  
+        else:
+            compute_weights_fn = (
+                compute_lat_weights_weatherbench
+                if use_weatherbench_lat_coeffs
+                else compute_lat_weights
+            )
 
-    def compute_loss_coeffs(
-        self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False
-    ):
-        compute_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
+            area_weights = compute_weights_fn(latitude)
+    
+    def compute_variable_coeffs(self):
 
-        area_weights = compute_weights_fn(latitude)
-        pressure_levels = torch.tensor(self.levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
-
+        # Weighting for surface and level variables
         n_surface_vars = len(self.variables["surface"])
         n_level_vars = len(self.variables["level"])
 
@@ -178,24 +206,9 @@ class NormModule:
         surface_coeffs = n_surface_vars * surf_weights
         level_coeffs = n_level_vars * level_weights
 
-        loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-
-        # Get standard deviation for normalization
-        if self.mean is not None or self.std is not None:
-            data_std = self.std
-        elif self.norm_scheme == "graphcast":
-            _, data_std = self.load_normalization_stats()
-        elif self.norm_scheme == "pangu":
-            _, data_std = self.load_normalization_stats()
-        else:
-            raise ValueError(
-                f"Normalization scheme {self.norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
-            )
-
-        if loss_delta_normalization:
+        return surface_coeffs, level_coeffs, total_coeff
+    
+    def compute_loss_delta_scaler(self, data_std):
             if self.norm_scheme == "graphcast":
                 delta_surface_stds, delta_level_stds = self.load_graphcast_timedelta_stats()
             else:
@@ -219,13 +232,49 @@ class NormModule:
                 level=data_std["level"] / delta_level_stds,
             )
 
-            loss_coeffs = loss_coeffs * loss_delta_scaler.pow(pow)
+            return loss_delta_scaler
 
+    def compute_loss_coeffs(
+        self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False
+    ):  
+        
         print(
+            "#" * 50 + "\n",
             f"Loss coefficients computed with normalization scheme:\
             {self.norm_scheme}, pow: {pow}, delta normalization: {loss_delta_normalization},\
-            use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}"
+            use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}",
+            "\n" + "#" * 50,
         )
+        
+        # Compute area weights based on latitude
+        area_weights = self.compute_area_weights(latitude, use_weatherbench_lat_coeffs)
+
+        # Pressure level coefficients
+        pressure_levels = torch.tensor(self.levels).float()
+        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
+
+        # Compute variable coefficients
+        surface_coeffs, level_coeffs, total_coeff = self.compute_variable_coeffs()
+
+        # Calculate loss coefficients
+        loss_coeffs = TensorDict(
+            surface=area_weights * surface_coeffs / total_coeff,
+            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
+        )
+
+        # Get standard deviation for normalization
+        if self.mean is not None or self.std is not None:
+            data_std = self.std
+        elif self.norm_scheme in ["graphcast", "pangu"]:
+            _, data_std = self.load_normalization_stats()
+        else:
+            raise ValueError(
+                f"Normalization scheme {self.norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
+            )
+
+        if loss_delta_normalization:
+            loss_delta_scaler = self.compute_loss_delta_scaler(data_std)
+            loss_coeffs = loss_coeffs * loss_delta_scaler.pow(pow)
 
         self.loss_coeffs = loss_coeffs
 

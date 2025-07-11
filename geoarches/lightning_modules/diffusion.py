@@ -121,6 +121,7 @@ class DiffusionModule(BaseLightningModule):
             surface=area_weights * surface_coeffs / total_coeff,
             level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
         )
+        
         # scaling loss or states
         pangu_stats = torch.load(
             geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
