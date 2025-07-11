@@ -52,9 +52,11 @@ Path(args.output_path).mkdir(parents=True, exist_ok=True)
 
 
 if len(model_uids) > 1:
-    module, cfg = AvgModule(model_uids).to(device).eval()
+    module = AvgModule(model_uids).to(device).eval()
+    cfg = module.cfg
 else:
-    module, cfg = load_module(model_uids[0]).to(device).eval()
+    module, cfg = load_module(model_uids[0])
+    module.to(device).eval()
 
 
 # create dataset and dataloader
