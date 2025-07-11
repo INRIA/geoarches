@@ -27,7 +27,6 @@ parser.add_argument(
     default=list(range(1979, 2022)),
     help="Year(s) to download. By default downloads all 1979-2021.",
 )
-parser.add_argument("--years", default="", type=str, help="year to download")
 parser.add_argument("--clim", action="store_true", help="whether to download climatology")
 
 args = parser.parse_args()
