@@ -35,3 +35,4 @@ def tensordict_cat(tdict_list, dim=0, **kwargs):
         ),
         device=tdict_list[0].device,
     ).auto_batch_size_()
+
