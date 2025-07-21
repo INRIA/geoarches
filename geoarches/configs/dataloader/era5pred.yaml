@@ -1,5 +1,5 @@
 dataset: 
-  _target_: dataloaders.era5pred.Era5ForecastWithPrediction
+  _target_: geoarches.dataloaders.era5pred.Era5ForecastWithPrediction
   path: data/era5_240/full/
   pred_path: data/outputs/deterministic/jzh-geoaw-m-seed0
   lead_time_hours: 24 # mixed
