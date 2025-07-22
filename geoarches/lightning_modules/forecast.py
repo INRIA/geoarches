@@ -161,6 +161,11 @@ class ForecastModule(BaseLightningModule):
 
         if "future_states" not in batch:
             # standard prediction
+
+            for k, v in batch.items():
+                if k == 'state' or k == 'prev_state':
+                    print(k, 'level: ', torch.isnan(v['level']).any().item())
+                    print(k, 'surface: ', torch.isnan(v['surface']).any().item())
             pred = self.forward(batch)
             loss = self.loss(pred, batch["next_state"])
             self.mylog(loss=loss)

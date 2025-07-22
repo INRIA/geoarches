@@ -39,6 +39,7 @@ class NormModule:
     def __init__(
         self, 
         model_type = "det",
+        state_normalization='delta'
         variables=None, 
         levels=None, 
         norm_scheme=None, 
@@ -57,7 +58,7 @@ class NormModule:
 
         if levels is None:
             levels = arches_default_pressure_levels
-
+        self.state_normalization = state_normalization
         if norm_scheme is None:
             self.norm_scheme = "pangu"
         elif norm_scheme not in ["graphcast", "pangu"]:
@@ -177,7 +178,7 @@ class NormModule:
     
     def compute_area_weights(self, latitude, use_weatherbench_lat_coeffs=False):
         # Area weights are calculated different for generative and deterministic models
-        if self.type == 'gen':
+        if self.model_type == 'gen':
             area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
             area_weights = (area_weights / area_weights.mean())[:, None]
   
@@ -189,6 +190,8 @@ class NormModule:
             )
 
             area_weights = compute_weights_fn(latitude)
+
+        return area_weights
     
     def compute_variable_coeffs(self):
 
