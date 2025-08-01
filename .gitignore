@@ -2,7 +2,14 @@
 .vscode
 outputs  
 lightning_logs
+logs
 .DS_Store
+
+# softlinks
+evalstore
+modelstore
+data
+wandblogs 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
