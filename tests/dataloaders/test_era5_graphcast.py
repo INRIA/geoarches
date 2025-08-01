@@ -17,6 +17,9 @@ with initialize(version_base=None, config_path="../../geoarches/configs", job_na
 
     OmegaConf.resolve(cfg)
 
+    # Change parameters of cfg.stats.norm_scheme
+    cfg.stats.module.norm_scheme = "graphcast"
+
 
 class TestEra5Forecast:
     @classmethod

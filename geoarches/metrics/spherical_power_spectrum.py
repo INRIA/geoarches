@@ -112,10 +112,10 @@ class Era5PowerSpectrum(TensorDictMetricBase):
 
     def __init__(
         self,
+        surface_variables=era5.arches_default_surface_variables,
+        level_variables=era5.arches_default_level_variables,
+        pressure_levels=era5.arches_default_pressure_levels,
         compute_target_spectrum: bool = False,
-        surface_variables: str = era5.surface_variables,
-        level_variables: str = era5.level_variables,
-        pressure_levels: str = era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
     ):

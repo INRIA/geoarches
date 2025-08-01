@@ -34,8 +34,9 @@ class XarrayDataset(torch.utils.data.Dataset):
         dimension_indexers: Dict[str, list] | None = None,
         filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
         return_timestamp: bool = False,
-        warning_on_nan: bool = False,
+        warning_on_nan: bool = True,
         limit_examples: int | None = None,
+        interpolate_nans: bool = True,
     ):
         """
         Args:
@@ -48,12 +49,17 @@ class XarrayDataset(torch.utils.data.Dataset):
             return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
             warning_on_nan: Whether to log warning if nan data found.
             limit_examples: Return set number of examples in dataset
+            interpolate_nans: Whether to fill NaN values in the data with the mean of the 
+                              data across latitude and longitude dimensions. Defaults to True.
         """
         self.filename_filter = filename_filter
         self.variables = variables
+
         self.dimension_indexers = dimension_indexers
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
+        self.interpolate_nans = interpolate_nans
+
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
 
@@ -128,7 +134,10 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
         return tdict
 
-    def __getitem__(self, i, return_timestamp=False):
+    def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
+        interpolate_nans = interpolate_nans or self.interpolate_nans
+        warning_on_nan = warning_on_nan or self.warning_on_nan
+        
         file_id, line_id, timestamp = self.id2pt[i]
 
         if self.cached_fileid != file_id:
@@ -138,9 +147,22 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
 
         obsi = self.cached_xrdataset.isel(time=line_id)
+        if interpolate_nans:
+            # check if either latitude or longitude dimensions exist
+            # or lat and lon are dimension names
+            if "latitude" in obsi.dims and "longitude" in obsi.dims:
+                obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
+            elif "lat" in obsi.dims and "lon" in obsi.dims:
+                obsi = obsi.fillna(value=obsi.mean(dim=["lat", "lon"], skipna=True))
+            else:
+                warnings.warn(
+                    "No latitude or longitude dimensions found in the dataset. "
+                    "Skipping NaN interpolation."
+                )
+
         tdict = self.convert_to_tensordict(obsi)
 
-        if self.warning_on_nan:
+        if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):
                 warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
 
@@ -148,4 +170,5 @@ class XarrayDataset(torch.utils.data.Dataset):
             timestamp = self.cached_xrdataset.time[line_id].values.item()
             timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int32)
             return tdict, timestamp
+        
         return tdict
