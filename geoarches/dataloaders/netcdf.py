@@ -49,6 +49,8 @@ class XarrayDataset(torch.utils.data.Dataset):
             return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
             warning_on_nan: Whether to log warning if nan data found.
             limit_examples: Return set number of examples in dataset
+            interpolate_nans: Whether to fill NaN values in the data with the mean of the 
+                              data across latitude and longitude dimensions. Defaults to True.
         """
         self.filename_filter = filename_filter
         self.variables = variables
@@ -132,7 +134,10 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
         return tdict
 
-    def __getitem__(self, i, return_timestamp=False, interpolate_nans=False, warning_on_nan=False):
+    def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
+        interpolate_nans = interpolate_nans or self.interpolate_nans
+        warning_on_nan = warning_on_nan or self.warning_on_nan
+        
         file_id, line_id, timestamp = self.id2pt[i]
 
         if self.cached_fileid != file_id:
@@ -142,17 +147,10 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
 
         obsi = self.cached_xrdataset.isel(time=line_id)
-
-        if interpolate_nans is None:
-            interpolate_nans = self.interpolate_nans
-
         if interpolate_nans:
             obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
 
         tdict = self.convert_to_tensordict(obsi)
-
-        if warning_on_nan is None:
-            warning_on_nan = self.warning_on_nan
 
         if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):
@@ -162,4 +160,5 @@ class XarrayDataset(torch.utils.data.Dataset):
             timestamp = self.cached_xrdataset.time[line_id].values.item()
             timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int32)
             return tdict, timestamp
+        
         return tdict
