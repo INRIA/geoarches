@@ -1,6 +1,33 @@
 import torch
+import warnings
 from tensordict.tensordict import TensorDict
 
+def check_pred_has_no_NaNs(pred: torch.Tensor, target: torch.Tensor):
+    """
+    Pred is a tensor with predictions.
+    Target is a tensor with targets.
+    The function checks if pred has no NaNs where target has no NaNs.
+    """
+
+    target_no_nans = ~target.isnan()
+    target_nans = target.isnan()
+
+    # index pred with target_nans to check if pred has no NaNs where target has no NaNs
+    pred_no_target_nans = pred[target_no_nans]
+    pred_target_nans = pred[target_nans]
+    pred_no_target_nans = pred_no_target_nans.isnan()
+    pred_target_nans = pred_target_nans.isnan()
+
+    # check if pred_nans is all False where target_nans is True
+    # i.e., pred has no NaNs where target has no NaNs
+
+    if pred_no_target_nans.any():
+        warnings.warn("Prediction has NaNs where target data has no NaNs")
+
+    if pred_target_nans.any():
+        warnings.warn("Prediction has NaNs where target data has NaNs")
+
+    return pred
 
 def tensordict_apply(f, *args, **kwargs):
     tdicts = [a for a in args if isinstance(a, TensorDict)]

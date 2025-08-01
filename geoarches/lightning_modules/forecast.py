@@ -11,6 +11,7 @@ from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 
 from geoarches.dataloaders import zarr
+from geoarches.utils.tensordict_utils import tensordict_apply, check_pred_has_no_NaNs
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
@@ -77,6 +78,8 @@ class ForecastModule(BaseLightningModule):
         x = self.backbone(x, *args, **kwargs)
         out = self.embedder.decode(x)  # we get tdict
 
+        _ = tensordict_apply(check_pred_has_no_NaNs, out, batch["next_state"])
+
         if self.add_input_state:
             out += batch["state"]
 
@@ -110,6 +113,7 @@ class ForecastModule(BaseLightningModule):
         if return_format == "list":
             return preds_future
         preds_future = torch.stack(preds_future, dim=1)
+
         return preds_future
 
     def loss(self, pred, gt, multistep=False, **kwargs):
