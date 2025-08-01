@@ -3,6 +3,7 @@ import json
 
 import torch
 from tensordict import TensorDict
+from typing import Dict, List
 
 import geoarches.stats as geoarches_stats
 from geoarches.dataloaders.era5 import (
@@ -35,10 +36,77 @@ default_var_weights = {
 }
 
 
-class NormModule:
+class NormalizationStatistics:
     def __init__(
-        self, variables=None, levels=None, norm_scheme=None, loss_weight_per_variable=None
-    ):
+        self, 
+        variables: Dict[str, List[str]] = None,
+        levels: List[int] = None,
+        norm_scheme: str = None,
+        loss_weight_per_variable: Dict[str, Dict[str, float]] = None
+    ):  
+        """
+        Initializes the normalization module with the specified normalization scheme, variables,
+        pressure levels, and loss weights per variable.
+
+        The module supports two normalization schemes: 'graphcast' and 'pangu'.
+        Pangu normalization is the scheme used for the models presented in the papers.
+        Graphcast normalization scheme allows the use of more variables and pressure levels,
+        but it is not the default scheme used in the ArchesWeather models.
+
+        The normalization module will load the mean and standard deviation statistics
+        for the specified variables and pressure levels from the precomputed stats files.
+        Further, the modules computes the loss coefficients based on the provided variables,
+        pressure levels, and loss weights per variable.
+        The loss coefficients are computed based on the area weights, surface and level variables,
+        and the vertical coefficients derived from the pressure levels.
+        The normalization module also supports delta normalization, which is used to normalize
+        the loss coefficients based on the standard deviation of the difference between successive states.
+
+        Parameters
+        ----------
+        variables : dict, optional
+            A dictionary containing the variables to be normalized. The keys should be 'surface' and 'level',
+            and the values should be lists of variable names. If None, the default surface and level variables
+            of archesweather will be used.
+        levels : list, optional
+            A list of pressure levels to be used for normalization. If None, the default pressure levels
+            of archesweather will be used.
+        norm_scheme : str, optional
+            The normalization scheme to be used. It can be either 'graphcast' or 'pangu'.
+            If None, the default scheme 'pangu' will be used.
+        loss_weight_per_variable : dict, optional
+            A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
+            and the values should be dictionaries with variable names as keys and their corresponding weights as values.
+            If None, the default weights defined in `default_var_weights` will be used.
+        Raises
+        ------
+        ValueError
+            If the provided normalization scheme is not supported. Supported schemes are 'graphcast' and '
+            'pangu'.
+        AssertionError
+            If the normalization scheme is 'pangu' and the provided variables or levels do not match
+            the default values required for this scheme.
+        Notes
+        -----
+        The default surface variables for the 'pangu' normalization scheme are:
+        - 10m_u_component_of_wind       
+        - 10m_v_component_of_wind
+        - 2m_temperature
+        - mean_sea_level_pressure
+
+        The default level variables for the 'pangu' normalization scheme are:
+        - geopotential
+        - u_component_of_wind
+        - v_component_of_wind
+        - temperature
+        - specific_humidity
+        - vertical_velocity
+
+        The default pressure levels for the 'pangu' normalization scheme are:
+        - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
+
+
+        """
         print("##### NORM SCHEME: ", norm_scheme, " #####")
 
         if variables is None:
@@ -64,6 +132,23 @@ class NormModule:
         self.variables = variables
         self.levels = levels
         self.pl_indices = [pressure_levels.index(p) for p in self.levels]
+
+        if norm_scheme == "pangu": 
+            assert self.variables["surface"] == arches_default_surface_variables, (
+                "Pangu normalization scheme requires the default surface variables./n"
+                "Surf. Vars: 10m_u_component_of_wind, 10m_v_component_of_wind, 2m_temperature, "
+                "mean_sea_level_pressure"
+            )
+            assert self.variables["level"] == arches_default_level_variables, (
+                "Pangu normalization scheme requires the default level variables./n"
+                "Level Vars: geopotential, u_component_of_wind, v_component_of_wind, "
+                "temperature, specific_humidity, vertical_velocity"
+            )
+            assert self.levels == arches_default_pressure_levels, (
+                "Pangu normalization scheme requires the default pressure levels./n"
+                "Pressure Levels: 50, 100, 150, 200, 250, 300, 400, "
+                "500, 600, 700, 850, 925, 1000"
+            )
 
         if loss_weight_per_variable is not None:
             self.loss_weight_per_variable = loss_weight_per_variable
