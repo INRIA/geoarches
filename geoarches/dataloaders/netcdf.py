@@ -148,7 +148,17 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         obsi = self.cached_xrdataset.isel(time=line_id)
         if interpolate_nans:
-            obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
+            # check if either latitude or longitude dimensions exist
+            # or lat and lon are dimension names
+            if "latitude" in obsi.dims and "longitude" in obsi.dims:
+                obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
+            elif "lat" in obsi.dims and "lon" in obsi.dims:
+                obsi = obsi.fillna(value=obsi.mean(dim=["lat", "lon"], skipna=True))
+            else:
+                warnings.warn(
+                    "No latitude or longitude dimensions found in the dataset. "
+                    "Skipping NaN interpolation."
+                )
 
         tdict = self.convert_to_tensordict(obsi)
 

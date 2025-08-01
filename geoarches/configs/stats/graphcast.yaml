@@ -20,7 +20,7 @@ module:
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
   norm_scheme: graphcast
 
-loss_coeffs:
+compute_loss_coeffs_args:
   latitude: 121
   pow: 2
   use_weatherbench_lat_coeffs: true 
