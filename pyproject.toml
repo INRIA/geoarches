@@ -31,7 +31,7 @@ dependencies = [
     "hydra-core (==1.3.2)",
     "axial-attention (>=0.6.1,<0.7.0)",
     "lightning (>=2.5.0.post0,<3.0.0)",
-    "zarr (>=3.0.0,<4.0.0)",
+    "zarr (>=2.0.0,<3.0.0)",
     "einops (>=0.8.0,<0.9.0)",
     "tensordict (>=0.6.2,<0.7.0)",
     "scipy (>=1.15.1,<2.0.0)",
