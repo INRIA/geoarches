@@ -87,7 +87,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
             self.files = sorted(
                 [str(x) for x in files if filename_filter(x.name)],
-                key=lambda x: x.replace("6h", "06h").replace("0h", "00h"),
+                key=lambda x: x.replace("_6h", "_06h").replace("_0h", "_00h"),
             )
             if len(self.files) == 0:
                 raise ValueError("filename_filter filtered all files.")
