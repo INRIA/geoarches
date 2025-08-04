@@ -5,6 +5,10 @@ import xarray as xr
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
+
+# Test for the Era5Forecast and Era5Dataset classes in the geoarches.dataloaders.era5 module.
+# Test uses graphcast normalization scheme.
+
 from geoarches.dataloaders import era5
 
 # Dimension sizes.

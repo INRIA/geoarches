@@ -172,6 +172,10 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: bool = True,
+        latitude_dim_name: str = "latitude",
+        longitude_dim_name: str = "longitude",
+        level_dim_name: str = "level",
+        time_dim_name: str = "time",
     ):
         """
         Args:
@@ -204,6 +208,10 @@ class Era5Dataset(XarrayDataset):
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
+            latitude_dim_name=latitude_dim_name,
+            longitude_dim_name=longitude_dim_name,
+            level_dim_name=level_dim_name,
+            time_dim_name=time_dim_name,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -256,21 +264,33 @@ class Era5Dataset(XarrayDataset):
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
-                    v: (["time", "level", "latitude", "longitude"], level[:, i])
+                    v: ([
+                            self.time_dim_name, 
+                            self.level_dim_name, 
+                            self.latitude_dim_name, 
+                            self.longitude_dim_name
+                        ], 
+                        level[:, i])
                     for (i, v) in enumerate(self.variables["level"])
                 },
                 **{
-                    v: (["time", "latitude", "longitude"], surface[:, i])
+                    v: ([
+                            self.time_dim_name, 
+                            self.latitude_dim_name, 
+                            self.longitude_dim_name
+                        ], surface[:, i])
                     for (i, v) in enumerate(self.variables["surface"])
                 },
             ),
-            coords=dict(
-                time=times,
-                latitude=np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
-                longitude=np.arange(0, 360, 360 / 240),
-                level=levels if levels is not None else self.levels,
-            ),
+
+            coords={    
+                self.time_dim_name: times,
+                self.latitude_dim_name: np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
+                self.longitude_dim_name: np.arange(0, 360, 360 / 240),
+                self.level_dim_name: levels if levels is not None else self.levels,
+            },
         )
+        
         if levels is not None:
             xr_dataset = xr_dataset.sel(level=levels)
 
@@ -326,6 +346,10 @@ class Era5Forecast(Era5Dataset):
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
         interpolate_nans: bool = True,
+        latitude_dim_name: str = "latitude",
+        longitude_dim_name: str = "longitude",
+        level_dim_name: str = "level",
+        time_dim_name: str = "time",
     ):
         """
         Args:
@@ -356,6 +380,10 @@ class Era5Forecast(Era5Dataset):
             dimension_indexers=dimension_indexers,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,  # we always interpolate nans
+            latitude_dim_name=latitude_dim_name,
+            longitude_dim_name=longitude_dim_name,
+            level_dim_name=level_dim_name,
+            time_dim_name=time_dim_name,
         )
 
         # depending on domain, re-set timestamp bounds

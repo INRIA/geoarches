@@ -18,6 +18,7 @@ engine_mapping = {
 }
 
 
+
 class XarrayDataset(torch.utils.data.Dataset):
     """
     dataset to read a list of xarray files and iterate through it by timestamp.
@@ -31,12 +32,16 @@ class XarrayDataset(torch.utils.data.Dataset):
         self,
         path: str,
         variables: Dict[str, List[str]],
-        dimension_indexers: Dict[str, list] | None = None,
+        dimension_indexers: Dict[str, list] | None,
         filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = True,
+        latitude_dim_name: str = "None",
+        longitude_dim_name: str = "None",
+        level_dim_name: str = "None",
+        time_dim_name: str = "None"
     ):
         """
         Args:
@@ -59,6 +64,12 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
         self.interpolate_nans = interpolate_nans
+
+        # Names of dimensions used in the dataset.
+        self.latitude_dim_name = latitude_dim_name
+        self.longitude_dim_name = longitude_dim_name
+        self.level_dim_name = level_dim_name
+        self.time_dim_name = time_dim_name
 
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
@@ -150,15 +161,10 @@ class XarrayDataset(torch.utils.data.Dataset):
         if interpolate_nans:
             # check if either latitude or longitude dimensions exist
             # or lat and lon are dimension names
-            if "latitude" in obsi.dims and "longitude" in obsi.dims:
-                obsi = obsi.fillna(value=obsi.mean(dim=["latitude", "longitude"], skipna=True))
-            elif "lat" in obsi.dims and "lon" in obsi.dims:
-                obsi = obsi.fillna(value=obsi.mean(dim=["lat", "lon"], skipna=True))
-            else:
-                warnings.warn(
-                    "No latitude or longitude dimensions found in the dataset. "
-                    "Skipping NaN interpolation."
-                )
+            assert self.latitude_dim_name is not None, "Latitude dimension name must be set."
+            assert self.longitude_dim_name is not None, "Longitude dimension name must be set."
+            obsi = obsi.fillna(value=obsi.mean(dim=[self.latitude_dim_name, self.longitude_dim_name], skipna=True))
+
 
         tdict = self.convert_to_tensordict(obsi)
 
