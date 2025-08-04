@@ -54,6 +54,9 @@ class DCPPForecast(XarrayDataset):
         limit_examples: int = 0,
         mask_value=0,
         variables=None,
+        latitude_dim_name="lat",
+        longitude_dim_name="lon",
+        level_dim_name="plev",
     ):
         """
         Args:
@@ -83,6 +86,10 @@ class DCPPForecast(XarrayDataset):
             variables=variables,
             limit_examples=limit_examples,
             dimension_indexers=dimension_indexers,
+            latitude_dim_name=latitude_dim_name,
+            longitude_dim_name=longitude_dim_name,
+            level_dim_name=level_dim_name,
+            time_dim_name="time",
         )
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
