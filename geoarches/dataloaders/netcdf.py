@@ -18,6 +18,12 @@ engine_mapping = {
 }
 
 
+default_dimension_indexers = {
+    "latitude": ('latitude', None),
+    "longitude": ('longitude', None),
+    "level": ('level', None),
+    "time": ('time', None),
+}
 
 class XarrayDataset(torch.utils.data.Dataset):
     """
@@ -32,16 +38,12 @@ class XarrayDataset(torch.utils.data.Dataset):
         self,
         path: str,
         variables: Dict[str, List[str]],
-        dimension_indexers: Dict[str, list] | None,
+        dimension_indexers: Dict[str, list] = None,
         filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = True,
-        latitude_dim_name: str = "None",
-        longitude_dim_name: str = "None",
-        level_dim_name: str = "None",
-        time_dim_name: str = "None"
     ):
         """
         Args:
@@ -49,7 +51,19 @@ class XarrayDataset(torch.utils.data.Dataset):
             variables: Dict holding xarray data variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface: [data_var1, datavar2, ...], level: [...]}
                 Used in convert_to_tensordict() to read data arrays in the xarray dataset and convert to tensordict.
-            dimension_indexers: Dict of dimensions to select in xarray using Dataset.sel(dimension_indexers).
+            dimension_indexers: Dict of dimensions to select in xarray using Dataset.sel(dimension_indexers). Also provides
+                the dimension names to treat the xarray dataset as tensordict.
+                defaults to: 
+                    dimension_indexers = {
+                        'latitude': ('latitude', None), 
+                        'longitude': ('longitude', None), 
+                        'level': ('level', None), 
+                        'time': ('time', None)
+                    }
+                If not provided, defaults to selecting all data in all dimensions.
+                First value is the dimension name in xarray, second value is the indexer 
+                If None is used as the indexer, all coordinates in that dimension are used.
+                To select a range, use a tuple (start, end, step) as the indexer.
             filename_filter: To filter files within `path` based on filename.
             return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
             warning_on_nan: Whether to log warning if nan data found.
@@ -60,16 +74,11 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.filename_filter = filename_filter
         self.variables = variables
 
-        self.dimension_indexers = dimension_indexers
+        self.dimension_indexers = dimension_indexers or default_dimension_indexers
+        print(self.dimension_indexers)
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
         self.interpolate_nans = interpolate_nans
-
-        # Names of dimensions used in the dataset.
-        self.latitude_dim_name = latitude_dim_name
-        self.longitude_dim_name = longitude_dim_name
-        self.level_dim_name = level_dim_name
-        self.time_dim_name = time_dim_name
 
         # Workaround to avoid calling ds.sel() after ds.transponse() to avoid OOM.
         self.already_ran_index_selection = False
@@ -133,16 +142,23 @@ class XarrayDataset(torch.utils.data.Dataset):
         """
         # Optionally select dimensions.
         if self.dimension_indexers and not self.already_ran_index_selection:
-            xr_dataset = xr_dataset.sel(self.dimension_indexers)
+            indexers = {
+                v[0]: slice(*v[1]) if v[1] is not None else slice(None) for k, v in self.dimension_indexers.items()
+                if k != 'time'
+            }
+            xr_dataset = xr_dataset.sel(**indexers)
+
         self.already_ran_index_selection = False  # Reset for next call.
 
         np_arrays = {
             key: xr_dataset[list(variables)].to_array().to_numpy()
             for key, variables in self.variables.items()
         }
+
         tdict = TensorDict(
             {key: torch.from_numpy(np_array).float() for key, np_array in np_arrays.items()}
         )
+
         return tdict
 
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
@@ -159,12 +175,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         obsi = self.cached_xrdataset.isel(time=line_id)
         if interpolate_nans:
-            # check if either latitude or longitude dimensions exist
-            # or lat and lon are dimension names
-            assert self.latitude_dim_name is not None, "Latitude dimension name must be set."
-            assert self.longitude_dim_name is not None, "Longitude dimension name must be set."
-            obsi = obsi.fillna(value=obsi.mean(dim=[self.latitude_dim_name, self.longitude_dim_name], skipna=True))
-
+            obsi = obsi.fillna(value=obsi.mean(dim=[self.dimension_indexers['latitude'][0], self.dimension_indexers['longitude'][0]], skipna=True))
 
         tdict = self.convert_to_tensordict(obsi)
 

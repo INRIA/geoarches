@@ -167,7 +167,7 @@ class TestEra5Forecast:
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
-    @pytest.mark.parametrize("indexers", [{"level": [2, 4, 8]}])
+    @pytest.mark.parametrize("indexers", [{"level": ("level", [2, 8, 3]), "latitude": ("latitude", None), "longitude": ("longitude", None), "time": ("time", None)}])
     def test_dimension_indexers(self, indexers):
         ds = era5.Era5Dataset(path=str(self.test_dir), domain="all", dimension_indexers=indexers)
         example = ds[0]
@@ -176,7 +176,7 @@ class TestEra5Forecast:
         assert example["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["level"].shape == (
             6,
-            len(indexers["level"]),
+            len(indexers["level"][1]),
             LAT,
             LON,
         )  #  (var, lev, lat, lon)

@@ -32,6 +32,13 @@ def replace_nans(tensordict, value=0):
     )
 
 
+dimension_indexers = {
+    "level": ("plev", pressure_levels),
+    "latitude": ("lat", None),
+    "longitude": ("lon", None),
+    "time": ("time", None),
+}
+
 class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
@@ -54,9 +61,6 @@ class DCPPForecast(XarrayDataset):
         limit_examples: int = 0,
         mask_value=0,
         variables=None,
-        latitude_dim_name="lat",
-        longitude_dim_name="lon",
-        level_dim_name="plev",
     ):
         """
         Args:
@@ -79,17 +83,13 @@ class DCPPForecast(XarrayDataset):
             filename_filter = filename_filters[domain]
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
-        dimension_indexers = {"plev": pressure_levels}
+
         super().__init__(
             path,
             filename_filter=filename_filter,
             variables=variables,
             limit_examples=limit_examples,
             dimension_indexers=dimension_indexers,
-            latitude_dim_name=latitude_dim_name,
-            longitude_dim_name=longitude_dim_name,
-            level_dim_name=level_dim_name,
-            time_dim_name="time",
         )
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)

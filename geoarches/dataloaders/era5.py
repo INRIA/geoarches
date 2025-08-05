@@ -172,10 +172,6 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: bool = True,
-        latitude_dim_name: str = "latitude",
-        longitude_dim_name: str = "longitude",
-        level_dim_name: str = "level",
-        time_dim_name: str = "time",
     ):
         """
         Args:
@@ -197,8 +193,7 @@ class Era5Dataset(XarrayDataset):
                 surface=arches_default_surface_variables, level=arches_default_level_variables
             )
 
-        if levels is None:
-            self.levels = arches_default_pressure_levels
+        self.levels = levels or arches_default_pressure_levels
 
         super().__init__(
             path,
@@ -208,10 +203,6 @@ class Era5Dataset(XarrayDataset):
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
-            latitude_dim_name=latitude_dim_name,
-            longitude_dim_name=longitude_dim_name,
-            level_dim_name=level_dim_name,
-            time_dim_name=time_dim_name,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -219,10 +210,18 @@ class Era5Dataset(XarrayDataset):
         input xarr should be a single time slice
         """
         if self.dimension_indexers:
-            xr_dataset = xr_dataset.sel(self.dimension_indexers)
+            xr_dataset = xr_dataset.sel({
+                v[0]: slice(*v[1]) if v[1] is not None else slice(None) for k, v in self.dimension_indexers.items()
+                if k != 'time'
+            })
             #  Workaround to avoid calling sel() after transponse() to avoid OOM.
             self.already_ran_index_selection = True
-        xr_dataset = xr_dataset.transpose(..., "level", "latitude", "longitude")
+        xr_dataset = xr_dataset.transpose(
+            ..., self.dimension_indexers['level'][0], 
+            self.dimension_indexers['latitude'][0], 
+            self.dimension_indexers['longitude'][0]
+        )
+
         tdict = super().convert_to_tensordict(xr_dataset)
         # we don't do operations on xr datasets since it takes more time than on tensors
 
@@ -265,29 +264,29 @@ class Era5Dataset(XarrayDataset):
             data_vars=dict(
                 **{
                     v: ([
-                            self.time_dim_name, 
-                            self.level_dim_name, 
-                            self.latitude_dim_name, 
-                            self.longitude_dim_name
+                            self.dimension_indexers['time'][0], 
+                            self.dimension_indexers['level'][0], 
+                            self.dimension_indexers['latitude'][0], 
+                            self.dimension_indexers['longitude'][0]
                         ], 
                         level[:, i])
                     for (i, v) in enumerate(self.variables["level"])
                 },
                 **{
                     v: ([
-                            self.time_dim_name, 
-                            self.latitude_dim_name, 
-                            self.longitude_dim_name
+                            self.dimension_indexers['time'][0], 
+                            self.dimension_indexers['latitude'][0], 
+                            self.dimension_indexers['longitude'][0]
                         ], surface[:, i])
                     for (i, v) in enumerate(self.variables["surface"])
                 },
             ),
 
             coords={    
-                self.time_dim_name: times,
-                self.latitude_dim_name: np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
-                self.longitude_dim_name: np.arange(0, 360, 360 / 240),
-                self.level_dim_name: levels if levels is not None else self.levels,
+                self.dimension_indexers['time'][0]: times,
+                self.dimension_indexers['latitude'][0]: np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
+                self.dimension_indexers['longitude'][0]: np.arange(0, 360, 360 / 240),
+                self.dimension_indexers['level'][0]: levels if levels is not None else self.levels,
             },
         )
         
@@ -346,10 +345,6 @@ class Era5Forecast(Era5Dataset):
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
         interpolate_nans: bool = True,
-        latitude_dim_name: str = "latitude",
-        longitude_dim_name: str = "longitude",
-        level_dim_name: str = "level",
-        time_dim_name: str = "time",
     ):
         """
         Args:
@@ -380,10 +375,6 @@ class Era5Forecast(Era5Dataset):
             dimension_indexers=dimension_indexers,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,  # we always interpolate nans
-            latitude_dim_name=latitude_dim_name,
-            longitude_dim_name=longitude_dim_name,
-            level_dim_name=level_dim_name,
-            time_dim_name=time_dim_name,
         )
 
         # depending on domain, re-set timestamp bounds

@@ -11,7 +11,7 @@ from hydra.utils import instantiate
 from tensordict.tensordict import TensorDict
 
 from geoarches.dataloaders import zarr
-from geoarches.utils.tensordict_utils import tensordict_apply, check_pred_has_no_NaNs
+from geoarches.utils.tensordict_utils import tensordict_apply, check_pred_has_no_NaNs, apply_mask_from_gt_nans
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
@@ -131,12 +131,11 @@ class ForecastModule(BaseLightningModule):
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
         
+        # Set pred to 0 where gt is NaN and set gt to 0 where itself is NaN
+        pred, gt = apply_mask_from_gt_nans(pred, gt)
 
-        pred = TensorDict({k: (~torch.isnan(gt[k])).float() * v for k, v in pred.items()}, batch_size=gt.batch_size)
-        gt = TensorDict(
-            {k: torch.nan_to_num(v) * (~torch.isnan(v)).float() for k, v in gt.items()}, batch_size=pred.batch_size
-        )
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+        
         loss = sum(weighted_error.mean().values())
 
         return loss
