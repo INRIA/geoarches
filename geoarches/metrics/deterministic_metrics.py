@@ -73,6 +73,7 @@ class DeterministicRMSE(Metric, MetricBase):
         self,
         data_shape: tuple,
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
+        compute_per_gridpoint: bool = False,
     ):
         """
         Args:
@@ -84,6 +85,8 @@ class DeterministicRMSE(Metric, MetricBase):
                 Used for error and variance calculations. Expected shape of weights: [..., lat, 1].
                 See function example in metric_base.MetricBase.
                 Default function assumes latitudes are ordered -90 to 90.
+            compute_per_gridpoint: Whether to also compute mse and rmse per gridpoint (along with aggregated globally mse and rmse).
+                Default: only compute globally aggregated mse and rmse.
         """
         Metric.__init__(self)
         MetricBase.__init__(
@@ -93,14 +96,23 @@ class DeterministicRMSE(Metric, MetricBase):
             # lead_time_hours=lead_time_hours,
             # rollout_iterations=rollout_iterations,
         )
+        self.compute_per_gridpoint = compute_per_gridpoint
 
         # Call `self.add_state`for every internal state that is needed for the metrics computations.
         # `dist_reduce_fx` indicates the function that should be used to reduce.
         self.add_state("nsamples", default=torch.tensor(0), dist_reduce_fx="sum")
+
+        # Aggregated over gridpoints (lat weighted).
         self.add_state("mse", default=torch.zeros(data_shape), dist_reduce_fx="sum")
         self.add_state(
             "rmse_before_time_avg", default=torch.zeros(data_shape), dist_reduce_fx="sum"
         )
+
+        if self.compute_per_gridpoint:
+            # Per gridpoint.
+            self.add_state(
+                "mse_per_gridpt", default=torch.zeros((*data_shape, 1, 1)), dist_reduce_fx="sum"
+            )
 
     def update(self, targets: torch.Tensor, preds: torch.Tensor) -> None:
         """Update internal state with a batch of targets and predictions.
@@ -122,6 +134,9 @@ class DeterministicRMSE(Metric, MetricBase):
             targets, preds
         ).sqrt().sum(0)
 
+        if self.compute_per_gridpoint:
+            self.mse_per_gridpt = self.mse_per_gridpt + self.spatial_mse(targets, preds).sum(0)
+
     def compute(self) -> Dict[str, torch.Tensor]:
         """Compute final metrics utilizing internal states.
         Returns:
@@ -134,6 +149,14 @@ class DeterministicRMSE(Metric, MetricBase):
             rmse=(self.mse / self.nsamples).sqrt(),
         )
 
+        if self.compute_per_gridpoint:
+            all_metrics.update(
+                dict(
+                    mse_per_gridpoint=self.mse_per_gridpt / self.nsamples,
+                    rmse_per_gridpoint=(self.mse_per_gridpt / self.nsamples).sqrt(),
+                )
+            )
+
         # out = dict()
         # for var, index in self.indices.items():
         #     for metric_name, metric in all_metrics.items():
@@ -143,13 +166,13 @@ class DeterministicRMSE(Metric, MetricBase):
 
 
 class Era5DeterministicMetrics(TensorDictMetricBase):
-    """Wrapper class around EnsembleMetrics for computing over surface and level variables.
+    """Wrapper class around DeterministicRMSE for computing over surface and level variables.
 
     Handles batches coming from Era5 Dataloader.
 
     Accepted tensor shapes:
         targets: (batch, ..., timedelta, var, level, lat, lon)
-        preds: (batch, nmembers, ..., timedelta, var, level, lat, lon)
+        preds: (batch, ..., timedelta, var, level, lat, lon)
 
     Return dictionary of metrics reduced over batch, lat, lon.
     """
@@ -160,17 +183,28 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
         level_variables=era5.arches_default_level_variables,
         pressure_levels=era5.arches_default_pressure_levels,
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
+        compute_per_gridpoint: bool = False,
         lead_time_hours: int = 24,
         rollout_iterations: int = 1,
     ):
         """
         Args:
+            surface_variables: Names of surface variables (to select quantiles).
+            level_variables: Names of level variables (used to get `variable_indices`).
             pressure_levels: pressure levels in data (used to get `variable_indices`).
             level_data_shape: (var, lev) shape for level variables.
             num_level_variables: Number of level variables (used to compute data_shape).
-            rollout_iterations: Number of rollout iterations in multistep predictions.
-                this option labels each timestep separately in output metric dict.
-                Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon]
+            compute_per_gridpoint: Whether to also compute mse and rmse per gridpoint (along with aggregated globally mse and rmse).
+                Default: only compute globally aggregated mse and rmse.
+            lead_time_hours: Timedelta between timestamps in multistep rollout.
+                Set to explicitly handle predictions from multistep rollout.
+                This option labels each timestep separately in output metric dict.
+                Assumes that data shape of predictions/targets are [batch, ..., multistep, var, lev, lat, lon].
+                FYI when set to None, Era5EnsembleMetrics still handles natively any extra dimensions in targets/preds.
+                Set to None if no multistep dimension.
+            rollout_iterations: Size of timedelta dimension (number of rollout iterations in multistep predictions).
+                Set to explicitly handle metrics computed on predictions from multistep rollout.
+                See param `lead_time_hours`.
 
 
         """
@@ -179,6 +213,7 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
                 DeterministicRMSE(
                     data_shape=(len(surface_variables), 1),
                     compute_lat_weights_fn=compute_lat_weights_fn,
+                    compute_per_gridpoint=compute_per_gridpoint,
                 ),
                 variable_indices=add_timedelta_index(
                     era5.get_surface_variable_indices(surface_variables),
@@ -190,6 +225,7 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
                 DeterministicRMSE(
                     data_shape=(len(level_variables), len(pressure_levels)),
                     compute_lat_weights_fn=compute_lat_weights_fn,
+                    compute_per_gridpoint=compute_per_gridpoint,
                 ),
                 variable_indices=add_timedelta_index(
                     era5.get_headline_level_variable_indices(pressure_levels, level_variables),

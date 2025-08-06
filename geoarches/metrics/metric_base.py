@@ -72,6 +72,15 @@ class MetricBase:
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
         return (x - y).pow(2).mul(lat_coeffs).nanmean((-2, -1))
 
+    def spatial_mse(self, x: torch.Tensor, y: torch.Tensor | int = 0):
+        """Per gridpoint mse error.
+
+        Args:
+            x: preds with shape (..., lat, lon)
+            y: targets with shape (..., lat, lon)
+        """
+        return (x - y).pow(2)
+
     def wmae(self, x: torch.Tensor, y: torch.Tensor | int = 0):
         """Latitude weighted mae error.
 
