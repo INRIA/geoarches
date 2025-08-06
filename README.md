@@ -1,6 +1,6 @@
 <h1 align="center">
   <a href="http://www.geoarches.readthedocs.io">
-    <img src="./docs/assets/logo.png" alt="geoarches logo" width="120" height="120">
+    <img src="./docs/assets/logo.png" alt="Logo for geoarches picturing clouds and neural networks." width="120" height="120">
   </a>
   <br/>
   geoarches
