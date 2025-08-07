@@ -32,6 +32,13 @@ def replace_nans(tensordict, value=0):
     )
 
 
+dimension_indexers = {
+    "level": ("plev", pressure_levels),
+    "latitude": ("lat", None),
+    "longitude": ("lon", None),
+    "time": ("time", None),
+}
+
 class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
@@ -76,7 +83,7 @@ class DCPPForecast(XarrayDataset):
             filename_filter = filename_filters[domain]
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
-        dimension_indexers = {"plev": pressure_levels}
+
         super().__init__(
             path,
             filename_filter=filename_filter,
