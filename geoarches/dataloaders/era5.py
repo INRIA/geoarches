@@ -20,11 +20,14 @@ filename_filters = dict(
     last_train=lambda x: ("2018" in x),
     last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
     train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
+    # Before and after 2000. Need to load timestamp after to account for offset..
+    train_before_2000=lambda x: any([str(y) in x for y in range(1979, 2001)]),  # 1979-1999
+    train_after_2000=lambda x: any([str(y) in x for y in range(2000, 2020)]),  # 2000-2018
     # Splits val and test  are from 2019 and 2020 respectively, but
     # we read the years before and after to account for offsets when
     # loading previous and future timestamps for an example.
-    val=lambda x: ("2018" in x or "2019" in x or "2020" in x),
-    test=lambda x: ("2019" in x or "2020" in x or "2021" in x),
+    val=lambda x: ("2018" in x or "2019" in x or "2020" in x),  # 2019
+    test=lambda x: ("2019" in x or "2020" in x or "2021" in x),  # 2020
     test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
     test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
     recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
@@ -339,7 +342,6 @@ class Era5Forecast(Era5Dataset):
         )
 
         # depending on domain, re-set timestamp bounds
-
         if domain in ("val", "test", "test_z0012"):
             # re-select timestamps
             year = 2019 if domain.startswith("val") else 2020
