@@ -1,5 +1,7 @@
 """Script to compute and store metrics defined in metric_registry.py.
 
+Optionally caches intermediate metrics in case of process preemption (set --cache_metrics_every_nbatches).
+
 How to use:
  1. Run model inference and store outputs in xarray format (ie. zarr or netcdf).
  2. Define metric and its arguments using register_class() in metric_registry.py (see file for examples).
@@ -15,9 +17,11 @@ Example commandline:
 """
 
 import argparse
+import copy
 from datetime import timedelta
 from pathlib import Path
 
+import numpy as np
 import torch
 from einops import rearrange
 from tensordict.tensordict import TensorDict
@@ -57,6 +61,65 @@ def _custom_collate_fn(batch):
 
     # For all other types (lists, tensors, etc.), use PyTorch's default_collate
     return default_collate(batch)
+
+
+def cache_metrics(output_dir, timestamp, nbatches, metrics):
+    """
+    Saves the training state to disk.
+    :param filepath: Path to save the checkpoint file.
+    :param timestamp: The timestamp of the current training iteration.
+    :param nbatches: Number of batches already processed.
+    :param metrics: A dictionary of metrics to save.
+    """
+    metrics = copy.deepcopy(metrics)  # Avoid modifying the original metrics dictionary.
+    output_dir = Path(output_dir).joinpath("tmp").joinpath("_".join(metrics.keys()))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if "era5_rank_histogram_50_members" in metrics:
+        # Hack: Can't pickle lambda functions.
+        metrics["era5_rank_histogram_50_members"].metrics["surface"].metric.preprocess = None
+
+    # Need to save seed for rank_hist reproducibility.
+    torch.save(
+        {"metrics": metrics, "np_random_state": np.random.get_state(), "nbatches": nbatches},
+        output_dir.joinpath(f"{timestamp}.pt"),
+    )
+    print(
+        f"metrics saved until and including timestamp: {np.datetime64(timestamp, 's')} ({timestamp})"
+    )
+
+
+def load_metrics(output_dir, metric_names):
+    """
+    Loads the training state from disk.
+    :param dir: Directory to load the checkpoint files from.
+    :return: A dictionary of metrics loaded from the checkpoint files.
+    """
+    output_dir = Path(output_dir).joinpath("tmp").joinpath("_".join(metric_names))
+    if Path(output_dir).exists():
+        files = sorted(Path(output_dir).glob("*.pt"))
+        if len(files) == 0:
+            print(f"No intermediate metrics found in {output_dir}.")
+            return None, None, None
+        file = files[-1]
+        cached_dict = torch.load(file, weights_only=False)
+        nbatches = cached_dict["nbatches"]
+        metrics = cached_dict["metrics"]
+        np.random.set_state(cached_dict["np_random_state"])
+
+        for metric_name in metric_names:
+            if "rank_histogram" in metric_name:
+                # Hack: Add back lambda function.
+                metrics[metric_name].metrics["surface"].metric.preprocess = lambda x: x.squeeze(-3)
+
+        timestamp = np.datetime64(int(file.stem), "s")
+        print(
+            f"Loaded intermediate metrics from file: {file}, timestamp: {timestamp}, nbatches: {nbatches}"
+        )
+        return metrics, timestamp, nbatches
+
+    print(f"No intermediate metrics found in {output_dir}.")
+    return None, None, None
 
 
 def main():
@@ -102,6 +165,12 @@ def main():
         help="Batch size to load preds and targets for eval.",
     )
     parser.add_argument(
+        "--cache_metrics_every_nbatches",
+        type=int,
+        help="Set to cache accumulated metrics to disk every n batches. By default, does not cached metrics"
+        "Caches metrics to {output_dir}/tmp/{metric_name}/{timestamp_until_which_metrics_computed}.pt",
+    )
+    parser.add_argument(
         "--num_workers",
         default=4,
         type=int,
@@ -138,7 +207,7 @@ def main():
     # Output directory to save evaluation.
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    print("Saving evaluation to:", output_dir)
+    print("Saving evaluation metrics to:", output_dir)
 
     # Variables to load and evaluate. Assumes same variable naming in groundtruth and predictions.
     variables = {}
@@ -150,6 +219,22 @@ def main():
         raise ValueError(
             "Need to provide surface and/or level variables to load using --surface_vars and --level_vars."
         )
+
+    # Init metrics.
+    metrics, reloaded_timestamp, nbatches = load_metrics(output_dir, args.metrics)
+    if metrics is None:
+        nbatches = 0
+        metrics = {}
+        for metric_name in args.metrics:
+            metrics[metric_name] = metric_registry.instantiate_metric(
+                metric_name,
+                surface_variables=args.surface_vars,
+                level_variables=args.level_vars,
+                pressure_levels=[500, 700, 850],
+                lead_time_hours=24 if args.multistep else None,
+                rollout_iterations=args.multistep,
+            ).to(device)
+    print(f"Computing: {metrics.keys()}")
 
     # Groundtruth.
     ds_test = era5.Era5Forecast(
@@ -171,6 +256,8 @@ def main():
     def _pred_filename_filter(filename):
         if "metric" in filename:
             return False
+        if args.pred_filename_filter is None:
+            return True
         for substring in args.pred_filename_filter:
             if substring not in filename:
                 return False
@@ -188,6 +275,12 @@ def main():
             ),
         )
         print(f"Reading {len(ds_pred.files)} files from pred_path: {args.pred_path}.")
+
+        if reloaded_timestamp is not None:
+            # Don't include the reloaded timestamp.
+            low_bound = reloaded_timestamp + np.timedelta64(1, "s")
+            # If reloading metrics, filter dataset to timestamps that were not evaluated.
+            ds_pred.set_timestamp_bounds(low=low_bound, high=None, debug=True)
 
         # check if prediction timestamps are in ds
         class SelectTimestampsDataset(torch.utils.data.Dataset):
@@ -222,21 +315,10 @@ def main():
             collate_fn=_custom_collate_fn,
         )
 
-    # Init metrics.
-    metrics = {}
-    for metric_name in args.metrics:
-        metrics[metric_name] = metric_registry.instantiate_metric(
-            metric_name,
-            surface_variables=args.surface_vars,
-            level_variables=args.level_vars,
-            pressure_levels=[500, 700, 850],
-            lead_time_hours=24 if args.multistep else None,
-            rollout_iterations=args.multistep,
-        ).to(device)
-    print(f"Computing: {metrics.keys()}")
-
     # iterable = tqdm(dl_test) if args.eval_clim else tqdm(zip(dl_test, dl_pred))
     for next_batch in tqdm(dl_test) if args.eval_clim else tqdm(zip(dl_test, dl_pred)):
+        nbatches += 1
+
         if args.eval_clim:
             target = next_batch
             pred = next_batch["clim_state"].apply(lambda x: x.unsqueeze(1))  # Add mem dimension.
@@ -254,7 +336,7 @@ def main():
                     "batch var mem ... lev lat lon -> batch mem ... var lev lat lon",
                 )
             )
-
+        timestamps = target["timestamp"]
         if args.multistep == 0 or args.eval_clim:  # No timedelta dimension for climatology.
             target = target["state"]
         elif args.multistep == 1:
@@ -265,6 +347,20 @@ def main():
         # Update metrics.
         for metric in metrics.values():
             metric.update(target.to(device), pred.to(device))
+
+        if args.cache_metrics_every_nbatches and nbatches % args.cache_metrics_every_nbatches == 0:
+            print(f"Processed {nbatches} batches.")
+            cache_metrics(
+                output_dir=output_dir,
+                timestamp=int(timestamps[-1]),
+                nbatches=nbatches,
+                metrics=metrics,
+            )
+
+    timestamp = int(timestamps[-1])
+    print(
+        f"Finished computation. Computed until {np.datetime64(timestamp, 's')} ({timestamps[-1]})"
+    )
 
     for metric_name, metric in metrics.items():
         labelled_metric_output = metric.compute()

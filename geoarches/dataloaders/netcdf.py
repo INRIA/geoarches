@@ -73,7 +73,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 key=lambda x: x.replace("6h", "06h").replace("0h", "00h"),
             )
             if len(self.files) == 0:
-                raise ValueError("filename_filter filtered all files.")
+                raise ValueError("filename_filter filtered all files under path:", path)
 
         file_extension = Path(self.files[0]).suffix
         engine = engine_mapping[file_extension]
@@ -98,10 +98,30 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.cached_xrdataset = None
         self.cached_fileid = None
 
-    def set_timestamp_bounds(self, low, high):
-        self.timestamps = [
-            x for x in self.timestamps if low <= x[-1].astype("datetime64[s]") < high
-        ]
+    def set_timestamp_bounds(self, low, high, debug=False):
+        """Filter timestamps loaded from dataloader between bounds.
+
+        If low or high is None, only filter in one direction.
+
+        Args:
+            low: lower bound, inclusive. Set to None to not filter by lower bound.
+            high: upper bound, exclusive. Set to None to not filter by upper bound.
+        """
+        original_length = len(self.timestamps)
+
+        if low and high:
+            self.timestamps = [
+                x for x in self.timestamps if low <= x[-1].astype("datetime64[s]") < high
+            ]
+        elif low:
+            self.timestamps = [x for x in self.timestamps if low <= x[-1].astype("datetime64[s]")]
+        elif high:
+            self.timestamps = [x for x in self.timestamps if x[-1].astype("datetime64[s]") < high]
+        if debug:
+            print(
+                f"Filtered timestamps from {original_length} to {len(self.timestamps)} examples: "
+                f"{self.timestamps[0][-1].astype('datetime64[s]')} to {self.timestamps[-1][-1].astype('datetime64[s]')}."
+            )
         self.id2pt = dict(enumerate(self.timestamps))
 
     def __len__(self):

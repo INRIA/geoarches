@@ -60,6 +60,9 @@ class RankHistogram(Metric):
             "histogram", default=torch.zeros(*data_shape, n_members + 1), dist_reduce_fx="sum"
         )
 
+        # Set seed for reproducible metrics.
+        np.random.seed(0)
+
     def update(self, targets, preds) -> None:
         """Update internal state with a batch of targets and predictions.
 
@@ -91,7 +94,7 @@ class RankHistogram(Metric):
 
         # Handle rank ties.
         ties = np.sum(ranks[:, [0], ...] == ranks[:, 1:, ...], axis=1)  # Count ties.
-        ranks = ranks[:, 0, ...]  # Get rank of targets: (batch, var, level, lat, lon).
+        ranks = ranks[:, 0, ...]  # Get rank of targets: (batch, ..., lat, lon).
         index = ties > 0
         ranks[index] = [
             np.random.randint(rank, rank + num_ties + 1)
