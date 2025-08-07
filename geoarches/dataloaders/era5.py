@@ -17,6 +17,9 @@ filename_filters = dict(
     last_train=lambda x: ("2018" in x),
     last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
     train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
+    # Before and after 2000
+    train_before_2000=lambda x: any([str(y) in x for y in range(1979, 2000)]),
+    train_after_2000=lambda x: any([str(y) in x for y in range(2000, 2019)]),
     # Splits val and test  are from 2019 and 2020 respectively, but
     # we read the years before and after to account for offsets when
     # loading previous and future timestamps for an example.

@@ -59,7 +59,11 @@ class LabelDictWrapper(Metric):
         labeled_dict = dict()
         for var, index in self.variable_indices.items():
             for metric_name, metric in raw_metric_dict.items():
-                labeled_dict[f"{metric_name}_{var}"] = metric.__getitem__((..., *index))
+                if "spatial" in metric_name:
+                    # Account for lat, lon dims
+                    labeled_dict[f"{metric_name}_{var}"] = metric[..., *index, :, :]
+                else:
+                    labeled_dict[f"{metric_name}_{var}"] = metric[..., *index]
         return labeled_dict
 
     def update(self, *args: Any, **kwargs: Any) -> None:
@@ -134,6 +138,7 @@ def convert_metric_dict_to_xarray(
         labels = label.split("_")
         if len(labels) - 2 != len(extra_dimensions):
             raise ValueError(
+                f"Assumes metric name {label} is in format <metric>_<var>_<dim1>...."
                 f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}. Got extra_dimensions={extra_dimensions}."
             )
         metrics.add(labels[0])

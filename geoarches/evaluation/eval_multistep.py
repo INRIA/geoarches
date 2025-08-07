@@ -152,10 +152,16 @@ def main():
         help="Directory or file path to read groundtruth.",
     )
     parser.add_argument(
+        "--groundtruth_dataset_domain",
+        type=str,
+        default="test_z0012",
+        help="Domain (all, train, val, test) for groundtruth dataset. Should be a key in filename_filters. Determines filename_filter used.",
+    )
+    parser.add_argument(
         "--multistep",
         default=10,
         type=int,
-        help="Number of future timesteps model is rolled out for evaluation. In days "
+        help="Number of future timesteps model is rolled out for evaluation. Set to 1 if just one step."
         "(This script assumes lead time is 24 hours).",
     )
     parser.add_argument(
@@ -198,6 +204,16 @@ def main():
         action="store_true",
         help="Whether to evaluate climatology.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Whether to  print more verbose debug logs.",
+    )
+    parser.add_argument(
+        "--breakpoint",
+        action="store_true",
+        help="Whether to add breakpoint for debug.",
+    )
 
     args = parser.parse_args()
 
@@ -231,7 +247,7 @@ def main():
                 surface_variables=args.surface_vars,
                 level_variables=args.level_vars,
                 pressure_levels=[500, 700, 850],
-                lead_time_hours=24 if args.multistep else None,
+                lead_time_hours=24 if args.multistep and args.multistep > 1 else None,
                 rollout_iterations=args.multistep,
             ).to(device)
     print(f"Computing: {metrics.keys()}")
@@ -240,7 +256,7 @@ def main():
     ds_test = era5.Era5Forecast(
         path=args.groundtruth_path,
         # filename_filter=lambda x: ("2020" in x) and ("0h" in x or "12h" in x),
-        domain="test_z0012",
+        domain=args.groundtruth_dataset_domain,
         lead_time_hours=24,
         multistep=args.multistep,
         load_prev=False,
@@ -251,6 +267,8 @@ def main():
     )
 
     print(f"Reading {len(ds_test.files)} files from groundtruth path: {args.groundtruth_path}.")
+    if args.verbose:
+        print(ds_test.files)
 
     # Predictions.
     def _pred_filename_filter(filename):
@@ -258,23 +276,27 @@ def main():
             return False
         if args.pred_filename_filter is None:
             return True
-        for substring in args.pred_filename_filter:
-            if substring not in filename:
-                return False
-        return True
+        return any([str(y) in filename for y in args.pred_filename_filter])
 
     if not args.eval_clim:
+        dimension_indexers = dict(level=[500, 700, 850])
+        if args.multistep > 1:
+            dimension_indexers["prediction_timedelta"] = [
+                timedelta(days=i) for i in range(1, args.multistep + 1)
+            ]
+
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
             filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
-            dimension_indexers=dict(
-                prediction_timedelta=[timedelta(days=i) for i in range(1, args.multistep + 1)],
-                level=[500, 700, 850],
-            ),
+            dimension_indexers=dimension_indexers,
         )
         print(f"Reading {len(ds_pred.files)} files from pred_path: {args.pred_path}.")
+        if args.verbose:
+            print(ds_pred.files)
+            print("# prediction examples:", len(ds_pred))
+            print("# test examples:", len(ds_test))
 
         if reloaded_timestamp is not None:
             # Don't include the reloaded timestamp.
@@ -315,8 +337,13 @@ def main():
             collate_fn=_custom_collate_fn,
         )
 
+    if args.breakpoint:
+        breakpoint()
+
     # iterable = tqdm(dl_test) if args.eval_clim else tqdm(zip(dl_test, dl_pred))
     for next_batch in tqdm(dl_test) if args.eval_clim else tqdm(zip(dl_test, dl_pred)):
+        if args.verbose:
+            print(f"{nbatches} batch")
         nbatches += 1
 
         if args.eval_clim:
@@ -333,7 +360,7 @@ def main():
             pred = pred.apply(
                 lambda tensor: rearrange(
                     tensor,
-                    "batch var mem ... lev lat lon -> batch mem ... var lev lat lon",
+                    "batch var ... lev lat lon -> batch ... var lev lat lon",
                 )
             )
         timestamps = target["timestamp"]
@@ -347,6 +374,8 @@ def main():
         # Update metrics.
         for metric in metrics.values():
             metric.update(target.to(device), pred.to(device))
+            if args.breakpoint:
+                breakpoint()
 
         if args.cache_metrics_every_nbatches and nbatches % args.cache_metrics_every_nbatches == 0:
             print(f"Processed {nbatches} batches.")
@@ -370,26 +399,35 @@ def main():
         else:
             output_filename = f"test-multistep={args.multistep}-{metric_name}"
 
-        # Get xr dataset.
         if isinstance(labelled_metric_output, dict):
             labelled_dict = {
                 k: (v.cpu() if hasattr(v, "cpu") else v) for k, v in labelled_metric_output.items()
             }
-            extra_dimensions = ["prediction_timedelta"]
-            if "brier" in metric_name:
-                extra_dimensions = ["quantile", "prediction_timedelta"]
-            if "rankhist" in metric_name or "rank_hist" in metric_name:
-                extra_dimensions = ["bins", "prediction_timedelta"]
-            ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
-
             # Write labeled dict.
             labelled_dict["metadata"] = dict(
                 groundtruth_path=args.groundtruth_path, predictions_path=args.pred_path
             )
             torch.save(labelled_dict, Path(output_dir).joinpath(f"{output_filename}.pt"))
+
+            # Convert to xr dataset.
+            extra_dimensions = []
+            if args.multistep > 1:
+                extra_dimensions = ["prediction_timedelta"]
+            if "brier" in metric_name:
+                extra_dimensions.insert(0, "quantile")  # ["quantile", "prediction_timedelta"]
+            if "rankhist" in metric_name or "rank_hist" in metric_name:
+                extra_dimensions.insert(0, "bins")  # ["bins", "prediction_timedelta"]
+            if "spatial" in metric_name:
+                # Does not yet handle extra lat/lon dims.
+                continue
+
+            ds = convert_metric_dict_to_xarray(labelled_dict, extra_dimensions)
         else:
             ds = labelled_metric_output
         # Write xr dataset.
+        ds.attrs["groundtruth_path"] = args.groundtruth_path
+        ds.attrs["predictions_path"] = args.args.pred_path
+        ds.attrs["groundtruth_dataset_domain"] = args.groundtruth_dataset_domain
         ds.to_netcdf(Path(output_dir).joinpath(f"{output_filename}.nc"))
 
 
