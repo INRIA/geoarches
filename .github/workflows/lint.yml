@@ -19,4 +19,4 @@ jobs:
           python-version: '3.x'
       - uses: pre-commit/actions@v3.0.1
         with:
-          extra_args: --verbose
+          extra_args: --verbose --all-files
