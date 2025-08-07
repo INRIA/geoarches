@@ -428,7 +428,7 @@ class Era5Forecast(Era5Dataset):
         #  load current state
         out["timestamp"] = torch.tensor(
             self.id2pt[i][2].item() // 10**9,  # how to convert to tensor ?
-            dtype=torch.int32,
+            dtype=torch.int64,
         )  # time in seconds
 
         out["state"] = super().__getitem__(i, interpolate_nans=True)

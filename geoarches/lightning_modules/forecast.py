@@ -95,7 +95,7 @@ class ForecastModule(BaseLightningModule):
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
-        for _ in range(iters):
+        for i in range(iters):
             if torch.is_grad_enabled():
                 pred = gradient_checkpoint.checkpoint(
                     self.forward, loop_batch, use_reentrant=False
@@ -107,7 +107,9 @@ class ForecastModule(BaseLightningModule):
             loop_batch = dict(
                 prev_state=loop_batch["state"],
                 state=pred,
+                next_state=loop_batch["next_state"], # only to obtain NaN mask 
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+
             )
 
         if return_format == "list":
