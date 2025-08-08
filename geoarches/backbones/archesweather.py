@@ -35,6 +35,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         level_ch=6,
         n_concatenated_states=0,
         final_interpolation=False,
+        auto_move_to_device=True,
     ) -> None:
         super().__init__()
         self.__dict__.update(locals())
@@ -103,7 +104,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         """
         bs = state.shape[0]
         device = state.device
-        if self.constant_masks.device != device:
+        if self.auto_move_to_device and (self.constant_masks.device != device):
             self.constant_masks = self.constant_masks.to(device)
 
         # embed
