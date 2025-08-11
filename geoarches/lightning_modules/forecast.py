@@ -42,6 +42,7 @@ class ForecastModule(BaseLightningModule):
         lead_time_hours=24,
         rollout_iterations=1,
         test_filename_suffix="",
+        replace_nan_by=torch.nan,
         **kwargs,
     ):
         """should create self.encoder and self.decoder in subclasses"""
@@ -133,12 +134,12 @@ class ForecastModule(BaseLightningModule):
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
         
-        # Set pred to 0 where gt is NaN and set gt to 0 where itself is NaN
-        pred, gt = apply_mask_from_gt_nans(pred, gt)
+        # Set pred to value where gt is NaN and set gt to value where itself is NaN
+        pred, gt = apply_mask_from_gt_nans(pred, gt, value=self.replace_nan_by)
 
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
         
-        loss = sum(weighted_error.mean().values())
+        loss = sum(weighted_error.nanmean().values())
 
         return loss
 

@@ -19,10 +19,10 @@ engine_mapping = {
 
 
 default_dimension_indexers = {
-    "latitude": ('latitude', None),
-    "longitude": ('longitude', None),
-    "level": ('level', None),
-    "time": ('time', None),
+    "latitude": ('latitude', slice(None)),
+    "longitude": ('longitude', slice(None)),
+    "level": ('level', slice(None)),
+    "time": ('time', slice(None)),
 }
 
 class XarrayDataset(torch.utils.data.Dataset):
@@ -75,7 +75,6 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.variables = variables
 
         self.dimension_indexers = dimension_indexers or default_dimension_indexers
-        print(self.dimension_indexers)
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
         self.interpolate_nans = interpolate_nans
@@ -143,9 +142,12 @@ class XarrayDataset(torch.utils.data.Dataset):
         # Optionally select dimensions.
         if self.dimension_indexers and not self.already_ran_index_selection:
             indexers = {
-                v[0]: slice(*v[1]) if v[1] is not None else slice(None) for k, v in self.dimension_indexers.items()
-                if k != 'time'
+                v[0]: v[1] for k, v in self.dimension_indexers.items() if k != 'time'
             }
+
+            print(xr_dataset)
+            print(indexers)
+            
             xr_dataset = xr_dataset.sel(**indexers)
 
         self.already_ran_index_selection = False  # Reset for next call.

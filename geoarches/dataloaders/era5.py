@@ -205,13 +205,16 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
+        self.dimension_indexers['level'] = ('level', self.levels)
+
+
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
         """
         if self.dimension_indexers:
             xr_dataset = xr_dataset.sel({
-                v[0]: slice(*v[1]) if v[1] is not None else slice(None) for k, v in self.dimension_indexers.items()
+                v[0]: v[1] for k, v in self.dimension_indexers.items()
                 if k != 'time'
             })
             #  Workaround to avoid calling sel() after transponse() to avoid OOM.
@@ -286,7 +289,7 @@ class Era5Dataset(XarrayDataset):
                 self.dimension_indexers['time'][0]: times,
                 self.dimension_indexers['latitude'][0]: np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
                 self.dimension_indexers['longitude'][0]: np.arange(0, 360, 360 / 240),
-                self.dimension_indexers['level'][0]: levels if levels is not None else self.levels,
+                self.dimension_indexers['level'][0]: self.levels,
             },
         )
         

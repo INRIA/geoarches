@@ -2,7 +2,7 @@ import torch
 import warnings
 from tensordict.tensordict import TensorDict
 
-def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict) -> TensorDict:
+def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict, value) -> TensorDict:
     """
     Applies a mask retrieved from the ground truth to the predictions.
     The mask is created by checking where the ground truth has NaNs.
@@ -15,14 +15,28 @@ def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict) -> Tenso
 
     # Mask predictions with binary mask from ground truth
     # where ground truth is not NaN, the mask is 1, otherwise 0 
-    pred = TensorDict(
-        {k: (~torch.isnan(ground_truth[k])).float() * v for k, v in pred.items()}, batch_size=pred.batch_size
-    )
+
+
+    #pred = TensorDict(
+    #    {k: (~torch.isnan(ground_truth[k])).float()  * v for k, v in pred.items()}, batch_size=pred.batch_size
+    #)
+
+    for k, v in ground_truth.items():
+        pred[k][torch.isnan(v)] = value
     
+    for k, v in ground_truth.items():
+        ground_truth[k][torch.isnan(v)] = value
+
+    #pred = TensorDict(
+    #if value is not None:
+    #    pred = TensorDict(
+    #        {k: torch.where(v == 0, ) for k, v in pred.items()}, batch_size=pred.batch_size
+    #    )
+
     # Remove NaNs form the ground truth
-    ground_truth = TensorDict(
+    """ground_truth = TensorDict(
             {k: torch.nan_to_num(v) * (~torch.isnan(v)).float() for k, v in ground_truth.items()}, batch_size=ground_truth.batch_size
-    )
+    )"""
 
     return pred, ground_truth
 

@@ -32,11 +32,11 @@ def replace_nans(tensordict, value=0):
     )
 
 
-dimension_indexers = {
+default_dimension_indexers = {
     "level": ("plev", pressure_levels),
-    "latitude": ("lat", None),
-    "longitude": ("lon", None),
-    "time": ("time", None),
+    "latitude": ("lat", slice(None)),
+    "longitude": ("lon", slice(None)),
+    "time": ("time", slice(None)),
 }
 
 class DCPPForecast(XarrayDataset):
@@ -61,6 +61,7 @@ class DCPPForecast(XarrayDataset):
         limit_examples: int = 0,
         mask_value=0,
         variables=None,
+        dimension_indexers: dict = default_dimension_indexers
     ):
         """
         Args:
@@ -74,6 +75,9 @@ class DCPPForecast(XarrayDataset):
             load_clim: Whether to load climatology.
             limit_examples: Return set number of examples in dataset
             mask_value: what value to use as mask for nan values in dataset
+            dimension_indexers: dict, dimension indexers for the dataset.
+                Default is set to pressure levels, latitude, longitude, and time.
+
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
 

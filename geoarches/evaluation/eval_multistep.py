@@ -25,6 +25,7 @@ from torch.utils.data import default_collate
 from tqdm import tqdm
 
 from geoarches.dataloaders import era5
+from geoarches.dataloaders.netcdf import default_dimension_indexers
 from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 from . import metric_registry
@@ -151,7 +152,10 @@ def main():
             "Need to provide surface and/or level variables to load using --surface_vars and --level_vars."
         )
 
+    
     # Groundtruth.
+    dimension_indexers = {k: v for k, v in default_dimension_indexers.items()}
+    dimension_indexers['level'] = ('level', [500, 700, 850])  # Use only these pressure levels.
     ds_test = era5.Era5Forecast(
         path=args.groundtruth_path,
         # filename_filter=lambda x: ("2020" in x) and ("0h" in x or "12h" in x),
@@ -161,7 +165,7 @@ def main():
         load_prev=False,
         norm_scheme=None,
         variables=variables,
-        dimension_indexers=dict(level=[500, 700, 850]),
+        dimension_indexers=dimension_indexers,
         load_clim=True if args.eval_clim else False,  # Set if evaluating climatology.
     )
 
@@ -177,15 +181,18 @@ def main():
         return True
 
     if not args.eval_clim:
+        dimension_indexers['prediction_timedelta'] = (
+            'prediction_timedelta',
+            [timedelta(days=i) for i in range(1, args.multistep + 1)],
+        )
+        
+        # Load predictions.
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
             filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
-            dimension_indexers=dict(
-                prediction_timedelta=[timedelta(days=i) for i in range(1, args.multistep + 1)],
-                level=[500, 700, 850],
-            ),
+            dimension_indexers=dimension_indexers,
         )
         print(f"Reading {len(ds_pred.files)} files from pred_path: {args.pred_path}.")
 
