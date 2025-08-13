@@ -159,8 +159,8 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
         compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
         pressure_levels=era5.pressure_levels,
         num_level_variables=len(era5.level_variables),
-        lead_time_hours: int = 24,
-        rollout_iterations: int = 1,
+        lead_time_hours: int | None = 24,
+        rollout_iterations: int | None = 1,
     ):
         """
         Args:
@@ -173,10 +173,14 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
 
 
         """
+        add_data_dims = ()
+        if rollout_iterations is not None:
+            add_data_dims = (rollout_iterations,)
+
         super().__init__(
             surface=LabelDictWrapper(
                 DeterministicRMSE(
-                    data_shape=(len(era5.surface_variables), 1),
+                    data_shape=(*add_data_dims, len(era5.surface_variables), 1),
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
                 variable_indices=add_timedelta_index(
@@ -187,7 +191,7 @@ class Era5DeterministicMetrics(TensorDictMetricBase):
             ),
             level=LabelDictWrapper(
                 DeterministicRMSE(
-                    data_shape=(num_level_variables, len(pressure_levels)),
+                    data_shape=(*add_data_dims, num_level_variables, len(pressure_levels)),
                     compute_lat_weights_fn=compute_lat_weights_fn,
                 ),
                 variable_indices=add_timedelta_index(
