@@ -1,9 +1,9 @@
 import importlib
 import json
+from typing import Dict, List
 
 import torch
 from tensordict import TensorDict
-from typing import Dict, List
 
 import geoarches.stats as geoarches_stats
 from geoarches.dataloaders.era5 import (
@@ -38,12 +38,12 @@ default_var_weights = {
 
 class NormalizationStatistics:
     def __init__(
-        self, 
+        self,
         variables: Dict[str, List[str]] = None,
         levels: List[int] = None,
         norm_scheme: str = None,
-        loss_weight_per_variable: Dict[str, Dict[str, float]] = None
-    ):  
+        loss_weight_per_variable: Dict[str, Dict[str, float]] = None,
+    ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
         pressure levels, and loss weights per variable.
@@ -89,11 +89,10 @@ class NormalizationStatistics:
         Notes
         -----
         The default surface variables for the 'pangu' normalization scheme are:
-        - 10m_u_component_of_wind       
+        - 10m_u_component_of_wind
         - 10m_v_component_of_wind
         - 2m_temperature
         - mean_sea_level_pressure
-
         The default level variables for the 'pangu' normalization scheme are:
         - geopotential
         - u_component_of_wind
@@ -101,12 +100,10 @@ class NormalizationStatistics:
         - temperature
         - specific_humidity
         - vertical_velocity
-
         The default pressure levels for the 'pangu' normalization scheme are:
         - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
-
-
         """
+
         print("##### NORM SCHEME: ", norm_scheme, " #####")
 
         if variables is None:
@@ -133,7 +130,7 @@ class NormalizationStatistics:
         self.levels = levels
         self.pl_indices = [pressure_levels.index(p) for p in self.levels]
 
-        if norm_scheme == "pangu": 
+        if norm_scheme == "pangu":
             assert self.variables["surface"] == arches_default_surface_variables, (
                 "Pangu normalization scheme requires the default surface variables./n"
                 "Surf. Vars: 10m_u_component_of_wind, 10m_v_component_of_wind, 2m_temperature, "

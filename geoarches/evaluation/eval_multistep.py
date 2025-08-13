@@ -152,10 +152,9 @@ def main():
             "Need to provide surface and/or level variables to load using --surface_vars and --level_vars."
         )
 
-    
     # Groundtruth.
-    dimension_indexers = {k: v for k, v in default_dimension_indexers.items()}
-    dimension_indexers['level'] = ('level', [500, 700, 850])  # Use only these pressure levels.
+    dimension_indexers = default_dimension_indexers.copy()
+    dimension_indexers["level"] = ("level", [500, 700, 850])  # Use only these pressure levels.
     ds_test = era5.Era5Forecast(
         path=args.groundtruth_path,
         # filename_filter=lambda x: ("2020" in x) and ("0h" in x or "12h" in x),
@@ -181,11 +180,11 @@ def main():
         return True
 
     if not args.eval_clim:
-        dimension_indexers['prediction_timedelta'] = (
-            'prediction_timedelta',
+        dimension_indexers["prediction_timedelta"] = (
+            "prediction_timedelta",
             [timedelta(days=i) for i in range(1, args.multistep + 1)],
         )
-        
+
         # Load predictions.
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,

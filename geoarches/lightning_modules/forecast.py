@@ -8,10 +8,13 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
-from tensordict.tensordict import TensorDict
 
 from geoarches.dataloaders import zarr
-from geoarches.utils.tensordict_utils import tensordict_apply, check_pred_has_no_NaNs, apply_mask_from_gt_nans
+from geoarches.utils.tensordict_utils import (
+    apply_mask_from_gt_nans,
+    check_pred_has_no_nans,
+    tensordict_apply,
+)
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
@@ -79,7 +82,7 @@ class ForecastModule(BaseLightningModule):
         x = self.backbone(x, *args, **kwargs)
         out = self.embedder.decode(x)  # we get tdict
 
-        _ = tensordict_apply(check_pred_has_no_NaNs, out, batch["next_state"])
+        _ = tensordict_apply(check_pred_has_no_nans, out, batch["next_state"])
 
         if self.add_input_state:
             out += batch["state"]
@@ -108,9 +111,8 @@ class ForecastModule(BaseLightningModule):
             loop_batch = dict(
                 prev_state=loop_batch["state"],
                 state=pred,
-                next_state=loop_batch["next_state"], # only to obtain NaN mask 
+                next_state=loop_batch["next_state"],  # only to obtain NaN mask
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-
             )
 
         if return_format == "list":
@@ -133,12 +135,11 @@ class ForecastModule(BaseLightningModule):
 
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
-        
         # Set pred to value where gt is NaN and set gt to value where itself is NaN
         pred, gt = apply_mask_from_gt_nans(pred, gt, value=self.replace_nan_by)
 
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        
+
         loss = sum(weighted_error.nanmean().values())
 
         return loss

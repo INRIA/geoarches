@@ -39,6 +39,7 @@ default_dimension_indexers = {
     "time": ("time", slice(None)),
 }
 
+
 class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
@@ -61,7 +62,7 @@ class DCPPForecast(XarrayDataset):
         limit_examples: int = 0,
         mask_value=0,
         variables=None,
-        dimension_indexers: dict = default_dimension_indexers
+        dimension_indexers: dict = default_dimension_indexers,
     ):
         """
         Args:

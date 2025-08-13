@@ -205,24 +205,23 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
-        self.dimension_indexers['level'] = ('level', self.levels)
-
+        self.dimension_indexers["level"] = ("level", self.levels)
 
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
         """
         if self.dimension_indexers:
-            xr_dataset = xr_dataset.sel({
-                v[0]: v[1] for k, v in self.dimension_indexers.items()
-                if k != 'time'
-            })
+            xr_dataset = xr_dataset.sel(
+                {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
+            )
             #  Workaround to avoid calling sel() after transponse() to avoid OOM.
             self.already_ran_index_selection = True
         xr_dataset = xr_dataset.transpose(
-            ..., self.dimension_indexers['level'][0], 
-            self.dimension_indexers['latitude'][0], 
-            self.dimension_indexers['longitude'][0]
+            ...,
+            self.dimension_indexers["level"][0],
+            self.dimension_indexers["latitude"][0],
+            self.dimension_indexers["longitude"][0],
         )
 
         tdict = super().convert_to_tensordict(xr_dataset)
@@ -266,33 +265,39 @@ class Era5Dataset(XarrayDataset):
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
-                    v: ([
-                            self.dimension_indexers['time'][0], 
-                            self.dimension_indexers['level'][0], 
-                            self.dimension_indexers['latitude'][0], 
-                            self.dimension_indexers['longitude'][0]
-                        ], 
-                        level[:, i])
+                    v: (
+                        [
+                            self.dimension_indexers["time"][0],
+                            self.dimension_indexers["level"][0],
+                            self.dimension_indexers["latitude"][0],
+                            self.dimension_indexers["longitude"][0],
+                        ],
+                        level[:, i],
+                    )
                     for (i, v) in enumerate(self.variables["level"])
                 },
                 **{
-                    v: ([
-                            self.dimension_indexers['time'][0], 
-                            self.dimension_indexers['latitude'][0], 
-                            self.dimension_indexers['longitude'][0]
-                        ], surface[:, i])
+                    v: (
+                        [
+                            self.dimension_indexers["time"][0],
+                            self.dimension_indexers["latitude"][0],
+                            self.dimension_indexers["longitude"][0],
+                        ],
+                        surface[:, i],
+                    )
                     for (i, v) in enumerate(self.variables["surface"])
                 },
             ),
-
-            coords={    
-                self.dimension_indexers['time'][0]: times,
-                self.dimension_indexers['latitude'][0]: np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
-                self.dimension_indexers['longitude'][0]: np.arange(0, 360, 360 / 240),
-                self.dimension_indexers['level'][0]: self.levels,
+            coords={
+                self.dimension_indexers["time"][0]: times,
+                self.dimension_indexers["latitude"][0]: np.arange(
+                    90, -90 - 1e-6, -180 / 120
+                ),  # decreasing lats
+                self.dimension_indexers["longitude"][0]: np.arange(0, 360, 360 / 240),
+                self.dimension_indexers["level"][0]: self.levels,
             },
         )
-        
+
         if levels is not None:
             xr_dataset = xr_dataset.sel(level=levels)
 

@@ -1,6 +1,8 @@
-import torch
 import warnings
+
+import torch
 from tensordict.tensordict import TensorDict
+
 
 def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict, value) -> TensorDict:
     """
@@ -14,21 +16,20 @@ def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict, value) -
     """
 
     # Mask predictions with binary mask from ground truth
-    # where ground truth is not NaN, the mask is 1, otherwise 0 
+    # where ground truth is not NaN, the mask is 1, otherwise 0
 
-
-    #pred = TensorDict(
+    # pred = TensorDict(
     #    {k: (~torch.isnan(ground_truth[k])).float()  * v for k, v in pred.items()}, batch_size=pred.batch_size
-    #)
+    # )
 
     for k, v in ground_truth.items():
         pred[k][torch.isnan(v)] = value
-    
+
     for k, v in ground_truth.items():
         ground_truth[k][torch.isnan(v)] = value
 
-    #pred = TensorDict(
-    #if value is not None:
+    # pred = TensorDict(
+    # if value is not None:
     #    pred = TensorDict(
     #        {k: torch.where(v == 0, ) for k, v in pred.items()}, batch_size=pred.batch_size
     #    )
@@ -40,7 +41,8 @@ def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict, value) -
 
     return pred, ground_truth
 
-def check_pred_has_no_NaNs(pred: torch.Tensor, target: torch.Tensor):
+
+def check_pred_has_no_nans(pred: torch.Tensor, target: torch.Tensor):
     """
     Pred is a tensor with predictions.
     Target is a tensor with targets.
@@ -66,6 +68,7 @@ def check_pred_has_no_NaNs(pred: torch.Tensor, target: torch.Tensor):
         warnings.warn("Prediction has NaNs where target data has NaNs")
 
     return pred
+
 
 def tensordict_apply(f, *args, **kwargs):
     tdicts = [a for a in args if isinstance(a, TensorDict)]
@@ -100,4 +103,3 @@ def tensordict_cat(tdict_list, dim=0, **kwargs):
         ),
         device=tdict_list[0].device,
     ).auto_batch_size_()
-

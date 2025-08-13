@@ -165,9 +165,24 @@ class TestEra5Forecast:
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
-    @pytest.mark.parametrize("indexers", [{"level": ("level", [2, 5, 7]), "latitude": ("latitude", slice(None)), "longitude": ("longitude", slice(None)), "time": ("time", slice(None))}])
+    @pytest.mark.parametrize(
+        "indexers",
+        [
+            {
+                "level": ("level", [2, 5, 7]),
+                "latitude": ("latitude", slice(None)),
+                "longitude": ("longitude", slice(None)),
+                "time": ("time", slice(None)),
+            }
+        ],
+    )
     def test_dimension_indexers(self, indexers):
-        ds = era5.Era5Dataset(path=str(self.test_dir), domain="all", dimension_indexers=indexers, levels=range(0, LEVEL))
+        ds = era5.Era5Dataset(
+            path=str(self.test_dir),
+            domain="all",
+            dimension_indexers=indexers,
+            levels=range(0, LEVEL),
+        )
         example = ds[0]
 
         assert len(ds) == 6
