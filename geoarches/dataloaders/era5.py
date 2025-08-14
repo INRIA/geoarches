@@ -1,4 +1,3 @@
-import importlib.resources
 from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Dict, List
@@ -7,9 +6,8 @@ import numpy as np
 import pandas as pd
 import torch
 import xarray as xr
-from tensordict.tensordict import TensorDict
+from hydra.utils import instantiate
 
-from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
 
 filename_filters = dict(
@@ -28,10 +26,52 @@ filename_filters = dict(
     empty=lambda x: False,
 )
 
+# 37 pressure levels available from graphcast stats
+pressure_levels = [
+    1,
+    2,
+    3,
+    5,
+    7,
+    10,
+    20,
+    30,
+    50,
+    70,
+    100,
+    125,
+    150,
+    175,
+    200,
+    225,
+    250,
+    300,
+    350,
+    400,
+    450,
+    500,
+    550,
+    600,
+    650,
+    700,
+    750,
+    775,
+    800,
+    825,
+    850,
+    875,
+    900,
+    925,
+    950,
+    975,
+    1000,
+]
 
-pressure_levels = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
 
-level_variables = [
+# ArchesWeather default settings for ERA5 dataset.
+arches_default_pressure_levels = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+
+arches_default_level_variables = [
     "geopotential",
     "u_component_of_wind",
     "v_component_of_wind",
@@ -40,18 +80,44 @@ level_variables = [
     "vertical_velocity",
 ]
 
-surface_variables = [
+arches_default_surface_variables = [
     "10m_u_component_of_wind",
     "10m_v_component_of_wind",
     "2m_temperature",
     "mean_sea_level_pressure",
 ]
 
+
+# Short names for variables used in tensordicts and metrics
 surface_variables_short = {
     "10m_u_component_of_wind": "U10m",
     "10m_v_component_of_wind": "V10m",
     "2m_temperature": "T2m",
-    "mean_sea_level_pressure": "SP",
+    "mean_sea_level_pressure": "MSLP",
+    "low_vegetation_cover": "CVL",
+    "high_vegetation_cover": "CVH",
+    "tympe_of_low_vegetation_cover": "TVL",
+    "type_of_high_vegetation_cover": "TVH",
+    "soil_type": "SLT",
+    "standard_deviation_of_filtred_subgrid_orography": "SDFSOR",
+    "angle_of_sub_gridscale_orography": "ANOR",
+    "anisotropy_of_subgridscale_orography": "ASOR",
+    "geopotential_at_surface": "Z0",
+    "lake_cover": "LC",
+    "lake_depth": "LD",
+    "sea_ice_cover": "SIC",
+    "sea_surface_temperature": "SST",
+    "slope_of_subgridscale_orography": "SSOR",
+    "standard_deviation_of_orography": "SDFO",
+    "surface_pressure": "SP",
+    "toa_incident_solar_radiation": "SIS",
+    "toa_incident_solar_radiation_12hr": "SIS12",
+    "toa_incident_solar_radiation_24hr": "SIS24",
+    "total_cloud_cover": "TCC",
+    "total_precipitation_12hr": "TP",
+    "total_precipitation_24hr": "TP24",
+    "total_column_water_vapour": "TCWV",
+    "wind_speed": "WS",
 }
 
 level_variables_short = {
@@ -64,12 +130,14 @@ level_variables_short = {
 }
 
 
-def get_surface_variable_indices(variables=surface_variables):
+def get_surface_variable_indices(variables=arches_default_surface_variables):
     """Mapping from surface variable name to (var, lev) index in ERA5 dataset."""
     return {surface_variables_short[var]: (i, 0) for i, var in enumerate(variables)}
 
 
-def get_level_variable_indices(pressure_levels=pressure_levels, variables=level_variables):
+def get_level_variable_indices(
+    pressure_levels=arches_default_pressure_levels, variables=arches_default_level_variables
+):
     """Mapping from level variable name to (var, lev) index in ERA5 dataset."""
     out = {}
     for var_idx, var in enumerate(variables):
@@ -80,7 +148,7 @@ def get_level_variable_indices(pressure_levels=pressure_levels, variables=level_
 
 
 def get_headline_level_variable_indices(
-    pressure_levels=pressure_levels, level_variables=level_variables
+    pressure_levels=arches_default_pressure_levels, level_variables=arches_default_level_variables
 ):
     """Mapping for main level variables."""
     out = get_level_variable_indices(pressure_levels, level_variables)
@@ -99,8 +167,11 @@ class Era5Dataset(XarrayDataset):
         domain: str = "train",
         filename_filter: Callable | None = None,
         variables: Dict[str, List[str]] | None = None,
+        levels: List[int] = None,
         dimension_indexers: Dict[str, list] | None = None,
         return_timestamp: bool = False,
+        warning_on_nan: bool = True,
+        interpolate_nans: bool = True,
     ):
         """
         Args:
@@ -118,7 +189,11 @@ class Era5Dataset(XarrayDataset):
             filename_filter = filename_filters[domain]
 
         if variables is None:
-            variables = dict(surface=surface_variables, level=level_variables)
+            variables = dict(
+                surface=arches_default_surface_variables, level=arches_default_level_variables
+            )
+
+        self.levels = levels or arches_default_pressure_levels
 
         super().__init__(
             path,
@@ -126,18 +201,29 @@ class Era5Dataset(XarrayDataset):
             variables=variables,
             dimension_indexers=dimension_indexers,
             return_timestamp=return_timestamp,
-            warning_on_nan=True,
+            warning_on_nan=warning_on_nan,
+            interpolate_nans=interpolate_nans,
         )
+
+        self.dimension_indexers["level"] = ("level", self.levels)
 
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
         """
         if self.dimension_indexers:
-            xr_dataset = xr_dataset.sel(self.dimension_indexers)
+            xr_dataset = xr_dataset.sel(
+                {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
+            )
             #  Workaround to avoid calling sel() after transponse() to avoid OOM.
             self.already_ran_index_selection = True
-        xr_dataset = xr_dataset.transpose(..., "level", "latitude", "longitude")
+        xr_dataset = xr_dataset.transpose(
+            ...,
+            self.dimension_indexers["level"][0],
+            self.dimension_indexers["latitude"][0],
+            self.dimension_indexers["longitude"][0],
+        )
+
         tdict = super().convert_to_tensordict(xr_dataset)
         # we don't do operations on xr datasets since it takes more time than on tensors
 
@@ -179,21 +265,39 @@ class Era5Dataset(XarrayDataset):
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
-                    v: (["time", "level", "latitude", "longitude"], level[:, i])
+                    v: (
+                        [
+                            self.dimension_indexers["time"][0],
+                            self.dimension_indexers["level"][0],
+                            self.dimension_indexers["latitude"][0],
+                            self.dimension_indexers["longitude"][0],
+                        ],
+                        level[:, i],
+                    )
                     for (i, v) in enumerate(self.variables["level"])
                 },
                 **{
-                    v: (["time", "latitude", "longitude"], surface[:, i])
+                    v: (
+                        [
+                            self.dimension_indexers["time"][0],
+                            self.dimension_indexers["latitude"][0],
+                            self.dimension_indexers["longitude"][0],
+                        ],
+                        surface[:, i],
+                    )
                     for (i, v) in enumerate(self.variables["surface"])
                 },
             ),
-            coords=dict(
-                time=times,
-                latitude=np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
-                longitude=np.arange(0, 360, 360 / 240),
-                level=pressure_levels,
-            ),
+            coords={
+                self.dimension_indexers["time"][0]: times,
+                self.dimension_indexers["latitude"][0]: np.arange(
+                    90, -90 - 1e-6, -180 / 120
+                ),  # decreasing lats
+                self.dimension_indexers["longitude"][0]: np.arange(0, 360, 360 / 240),
+                self.dimension_indexers["level"][0]: self.levels,
+            },
         )
+
         if levels is not None:
             xr_dataset = xr_dataset.sel(level=levels)
 
@@ -233,11 +337,13 @@ class Era5Forecast(Era5Dataset):
 
     def __init__(
         self,
+        stats_cfg,
         path: str = "data/era5_240/full/",
         domain: str = "train",
         filename_filter: Callable | None = None,
         timedelta_hours: int = None,
         variables: Dict[str, List[str]] | None = None,
+        levels: List[int] = None,
         dimension_indexers: Dict[str, list] | None = None,
         norm_scheme: str | None = "pangu",
         lead_time_hours: int = 24,
@@ -245,6 +351,8 @@ class Era5Forecast(Era5Dataset):
         load_prev: bool = True,
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
+        warning_on_nan: bool = True,
+        interpolate_nans: bool = True,
     ):
         """
         Args:
@@ -256,11 +364,12 @@ class Era5Forecast(Era5Dataset):
             multistep: Number of future states to load. By default, loads next state only (current time + lead_time_hours).
             load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).
             load_clim: Whether to load climatology.
-            norm_scheme: Normalization scheme to use. Can be None to perform no normalization.
+            norm_scheme: Normalization scheme to use (pangu or graphcast). Can be None to perform no normalization.
             timedelta_hours: Time difference (hours) between 2 consecutive timestamps. If not expecified,
                              default is 6 or 12, depending on domain.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
+            levels: Pressure levels to load from dataset. By default uses standard pressure levels of ArchesWeather.
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
         """
         self.__dict__.update(locals())
@@ -270,7 +379,10 @@ class Era5Forecast(Era5Dataset):
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
+            levels=levels,
             dimension_indexers=dimension_indexers,
+            warning_on_nan=warning_on_nan,
+            interpolate_nans=interpolate_nans,  # we always interpolate nans
         )
 
         # depending on domain, re-set timestamp bounds
@@ -294,26 +406,17 @@ class Era5Forecast(Era5Dataset):
         self.current_multistep = 1
 
         # include vertical component by default
-        geoarches_stats_path = importlib.resources.files(geoarches_stats)
-        norm_file_path = geoarches_stats_path / "pangu_norm_stats2_with_w.pt"
-        pangu_stats = torch.load(norm_file_path, weights_only=True)
-
-        # normalization,
-        if self.norm_scheme == "pangu":
-            self.data_mean = TensorDict(
-                surface=pangu_stats["surface_mean"],
-                level=pangu_stats["level_mean"],
-            )
-            self.data_std = TensorDict(
-                surface=pangu_stats["surface_std"],
-                level=pangu_stats["level_std"],
-            )
+        stats = instantiate(stats_cfg.module)
+        self.data_mean, self.data_std = stats.load_normalization_stats()
 
         # variable names
         # TODO: fix this below
-        self.surface_variables = ["U10m", "V10m", "T2m", "SP"]
+        self.surface_variables = [surface_variables_short[v] for v in self.variables["surface"]]
+
         self.level_variables = [
-            a + str(p) for a in ["Z", "U", "V", "T", "Q"] for p in pressure_levels
+            level_variables_short[lvl] + str(p)
+            for lvl in self.variables["level"]
+            for p in self.levels
         ]
 
         # Load climatology.
@@ -333,10 +436,10 @@ class Era5Forecast(Era5Dataset):
         #  load current state
         out["timestamp"] = torch.tensor(
             self.id2pt[i][2].item() // 10**9,  # how to convert to tensor ?
-            dtype=torch.int32,
+            dtype=torch.int64,
         )  # time in seconds
 
-        out["state"] = super().__getitem__(i)
+        out["state"] = super().__getitem__(i, interpolate_nans=True)
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
 
@@ -344,17 +447,25 @@ class Era5Forecast(Era5Dataset):
         T = self.lead_time_hours  # multistep
 
         if self.multistep > 0:
-            out["next_state"] = super().__getitem__(i + T // self.timedelta)
+            out["next_state"] = super().__getitem__(
+                i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+            )
 
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
             future_states = []
             for k in range(1, self.multistep + 1):
-                future_states.append(super().__getitem__(i + k * T // self.timedelta))
+                future_states.append(
+                    super().__getitem__(
+                        i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                    )
+                )
             out["future_states"] = torch.stack(future_states, dim=0)
 
         if self.load_prev:
-            out["prev_state"] = super().__getitem__(i - self.lead_time_hours // self.timedelta)
+            out["prev_state"] = super().__getitem__(
+                i - self.lead_time_hours // self.timedelta, interpolate_nans=True
+            )
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)
