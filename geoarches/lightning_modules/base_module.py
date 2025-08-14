@@ -127,6 +127,12 @@ class AvgModule(L.LightningModule):
 
     def __init__(self, module_paths):
         super().__init__()
+        path = module_paths[0]
+        if Path("modelstore").joinpath(path).exists():
+            path = Path("modelstore").joinpath(path)
+        else:
+            path = Path(path)
+        self.cfg = OmegaConf.load(path / "config.yaml")
         self.core = nn.ModuleList([load_module(p, return_config=False) for p in module_paths])
 
     def forward(self, *args, **kwargs):

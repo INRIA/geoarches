@@ -224,7 +224,9 @@ def main(cfg: DictConfig):
         load_ckpt_dir = Path(cfg.load_ckpt).joinpath("checkpoints")
         ckpts = list(sorted(load_ckpt_dir.iterdir(), key=os.path.getmtime))
         load_ckpt_path = ckpts[-1]
-        pl_module.load_state_dict(torch.load(load_ckpt_path, map_location="cpu")["state_dict"])
+        pl_module.load_state_dict(
+            torch.load(load_ckpt_path, map_location="cpu", weights_only=False)["state_dict"]
+        )
 
     checkpointer = CheckpointEveryNSteps(
         dirpath=cfg.exp_dir, save_step_frequency=cfg.save_step_frequency
