@@ -100,11 +100,13 @@ def get_level_variable_indices(
 
 
 def get_headline_level_variable_indices(
-    pressure_levels=arches_default_pressure_levels, level_variables=arches_default_level_variables
+    pressure_levels=arches_default_pressure_levels,
+    level_variables=arches_default_level_variables,
+    headline_variables=("Z500", "T850", "Q700", "U850", "V850"),
 ):
     """Mapping for main level variables."""
     out = get_level_variable_indices(pressure_levels, level_variables)
-    return {k: v for k, v in out.items() if k in ("Z500", "T850", "Q700", "U850", "V850")}
+    return {k: v for k, v in out.items() if k in headline_variables}
 
 
 class Era5Dataset(XarrayDataset):

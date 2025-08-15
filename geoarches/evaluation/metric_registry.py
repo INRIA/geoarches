@@ -47,6 +47,13 @@ register_metric(
     "era5_deterministic_metrics_with_spatial", Era5DeterministicMetrics, compute_per_gridpoint=True
 )
 register_metric(
+    "era5_deterministic_metrics_with_spatial_and_hemisphere",
+    Era5DeterministicMetrics,
+    compute_per_gridpoint=True,
+    compute_per_hemisphere=True,
+    headline_variables=("Z500", "Z850", "T850", "Q700", "U850", "V850"),
+)
+register_metric(
     "era5_ensemble_metrics",
     Era5EnsembleMetrics,
     save_memory=True,
