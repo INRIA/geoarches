@@ -3,7 +3,6 @@ dataset:
   path: data/era5_240/full/
   pred_path: data/outputs/deterministic/jzh-geoaw-m-seed0
   lead_time_hours: 24 # mixed
-  norm_scheme: pangu
   load_prev: True
   load_hard_neg: False
 

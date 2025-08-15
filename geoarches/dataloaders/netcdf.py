@@ -39,12 +39,12 @@ class XarrayDataset(torch.utils.data.Dataset):
         self,
         path: str,
         variables: Dict[str, List[str]],
-        dimension_indexers: Dict[str, list] = None,
+        dimension_indexers: Dict[str, list] | None = None,
         filename_filter: Callable = lambda _: True,  # condition to keep file in dataset
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
-        interpolate_nans: bool = True,
+        interpolate_nans: bool = False,
     ):
         """
         Args:
@@ -54,17 +54,10 @@ class XarrayDataset(torch.utils.data.Dataset):
             Used in convert_to_tensordict() to read data arrays in the xarray dataset and convert to tensordict.
         dimension_indexers: Dict of dimensions to select in xarray using Dataset.sel(dimension_indexers). Also provides
             the dimension names to treat the xarray dataset as tensordict.
-            defaults to:
-                dimension_indexers = {
-                    'latitude': ('latitude', None),
-                    'longitude': ('longitude', None),
-                    'level': ('level', None),
-                    'time': ('time', None)
-                }
+            Defaults to default_dimension_indexers.
             If not provided, defaults to selecting all data in all dimensions.
             First value is the dimension name in xarray, second value is the indexer
             If None is used as the indexer, all coordinates in that dimension are used.
-            To select a range, use a tuple (start, end, step) as the indexer.
         filename_filter: To filter files within `path` based on filename.
         return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
         warning_on_nan: Whether to log warning if nan data found.
@@ -75,7 +68,23 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.filename_filter = filename_filter
         self.variables = variables
 
-        self.dimension_indexers = dimension_indexers or default_dimension_indexers
+        self.dimension_indexers = default_dimension_indexers.copy()
+        self.dimension_indexers.update(dimension_indexers or {})
+
+        self.time_dim_name = self.dimension_indexers["time"][0]
+        self.latitude_dim_name = self.dimension_indexers["latitude"][0]
+        self.longitude_dim_name = self.dimension_indexers["longitude"][0]
+        self.level_dim_name = self.dimension_indexers["level"][0]
+
+        # Separate indexers with slice and those without.
+        indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
+        self.slice_indexers = {k: v for k, v in indexers.items() if isinstance(v, slice)}
+        self.other_indexers = {k: v for k, v in indexers.items() if not isinstance(v, slice)}
+        if not self.slice_indexers:
+            self.slice_indexers = None
+        if not self.other_indexers:
+            self.other_indexers = None
+
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
         self.interpolate_nans = interpolate_nans
@@ -153,7 +162,7 @@ class XarrayDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.id2pt)
 
-    def convert_to_tensordict(self, xr_dataset):
+    def convert_to_tensordict(self, xr_dataset, debug=False):
         """
         Convert xarray dataset to tensordict.
 
@@ -161,13 +170,20 @@ class XarrayDataset(torch.utils.data.Dataset):
             e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
         # Optionally select dimensions.
-        if self.dimension_indexers and not self.already_ran_index_selection:
-            indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
+        if not self.already_ran_index_selection:
+            if debug:
+                print(xr_dataset)
+                print(self.slice_indexers)
+                print(self.other_indexers)
 
-            print(xr_dataset)
-            print(indexers)
-
-            xr_dataset = xr_dataset.sel(**indexers)
+            # Apply sel for non-slice indexers with method and tolerance
+            if self.other_indexers:
+                xr_dataset = xr_dataset.sel(
+                    **self.other_indexers, method="nearest", tolerance=1e-6
+                )
+            # Apply sel for slice indexers without method and tolerance
+            if self.slice_indexers:
+                xr_dataset = xr_dataset.sel(**self.slice_indexers)
 
         self.already_ran_index_selection = False  # Reset for next call.
 
@@ -214,7 +230,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         if return_timestamp or self.return_timestamp:
             timestamp = self.cached_xrdataset.time[line_id].values.item()
-            timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int32)
+            timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int64)
             return tdict, timestamp
 
         return tdict
