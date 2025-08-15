@@ -5,6 +5,7 @@ from typing import List, Type
 import torchmetrics
 
 from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
+from geoarches.metrics.deterministic_metrics import Era5DeterministicMetrics
 from geoarches.metrics.ensemble_metrics import Era5EnsembleMetrics
 from geoarches.metrics.rank_histogram import Era5RankHistogram
 from geoarches.metrics.spherical_power_spectrum import Era5PowerSpectrum
@@ -38,6 +39,20 @@ def instantiate_metric(metric_name: str, **extra_kwargs):
 #######################################################
 ###### Registering classes with their arguments. ######
 #######################################################
+register_metric(
+    "era5_deterministic_metrics",
+    Era5DeterministicMetrics,
+)
+register_metric(
+    "era5_deterministic_metrics_with_spatial", Era5DeterministicMetrics, compute_per_gridpoint=True
+)
+register_metric(
+    "era5_deterministic_metrics_with_spatial_and_hemisphere",
+    Era5DeterministicMetrics,
+    compute_per_gridpoint=True,
+    compute_per_hemisphere=True,
+    headline_variables=("Z500", "Z850", "T850", "Q700", "U850", "V850"),
+)
 register_metric(
     "era5_ensemble_metrics",
     Era5EnsembleMetrics,

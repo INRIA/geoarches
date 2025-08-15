@@ -62,15 +62,37 @@ class MetricBase:
         super().__init__()
         self.compute_lat_weights_fn = compute_lat_weights_fn
 
-    def wmse(self, x: torch.Tensor, y: torch.Tensor | int = 0):
+    def wmse(
+        self, x: torch.Tensor, y: torch.Tensor | int = 0, lat_range: tuple[int, int] | None = None
+    ):
         """Latitude weighted mse error.
 
         Args:
             x: preds with shape (..., lat, lon)
             y: targets with shape (..., lat, lon)
+            lat_range: Optional tuple of (min_lat, max_lat) to restrict the latitude range for the computation.
+                If None, uses the full latitude range.
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).pow(2).mul(lat_coeffs).mean((-2, -1))
+
+        if lat_range is not None:
+            start_lat, end_lat = lat_range
+            x = x[..., start_lat:end_lat, :]
+            lat_coeffs = lat_coeffs[start_lat:end_lat, :]
+
+            if not isinstance(y, int):
+                y = y[..., start_lat:end_lat, :]
+
+        return (x - y).pow(2).mul(lat_coeffs).nanmean((-2, -1))
+
+    def spatial_mse(self, x: torch.Tensor, y: torch.Tensor | int = 0):
+        """Per gridpoint mse error.
+
+        Args:
+            x: preds with shape (..., lat, lon)
+            y: targets with shape (..., lat, lon)
+        """
+        return (x - y).pow(2)
 
     def wmae(self, x: torch.Tensor, y: torch.Tensor | int = 0):
         """Latitude weighted mae error.
@@ -80,7 +102,7 @@ class MetricBase:
             y: targets with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).abs().mul(lat_coeffs).mean((-2, -1))
+        return (x - y).abs().mul(lat_coeffs).nanmean((-2, -1))
 
     def wvar(self, x: torch.Tensor, dim: int = 1):
         """Latitude weighted variance along axis.
@@ -90,7 +112,7 @@ class MetricBase:
             dim: over which dimension to compute variance.
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.var(dim).mul(lat_coeffs).mean((-2, -1))
+        return x.var(dim).mul(lat_coeffs).nanmean((-2, -1))
 
     def weighted_mean(self, x: torch.Tensor):
         """Latitude weighted mean over grid.
@@ -99,7 +121,7 @@ class MetricBase:
             x: preds with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.mul(lat_coeffs).mean((-2, -1))
+        return x.mul(lat_coeffs).nanmean((-2, -1))
 
 
 class TensorDictMetricBase(Metric):
