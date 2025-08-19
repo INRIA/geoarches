@@ -3,16 +3,19 @@ import shutil
 import fasteners
 import xarray as xr
 
+from geoarches.utils.logging_utils import setup_logger
+
 
 class ZarrIterativeWriter:
     def __init__(self, path, force=True):
+        self.console_logger = setup_logger(__name__, "INFO")
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         self.synchronizer = fasteners.InterProcessLock(str(path.parent) + "/.lock")
-        print("Creating ZarrIterativeWriter")
+        self.console_logger.info("Creating ZarrIterativeWriter")
         with self.synchronizer:
             if path.exists() and force:
-                print("path already exists")
+                self.console_logger.info("path already exists")
                 shutil.rmtree(path)
 
     def write(self, xr_dataset, append_dim="time"):

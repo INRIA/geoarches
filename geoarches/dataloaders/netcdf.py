@@ -1,4 +1,3 @@
-import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -6,6 +5,8 @@ import torch
 import xarray as xr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
+
+from geoarches.utils.logging_utils import setup_logger
 
 # Appropriate xarray engine for a given file extension
 engine_mapping = {
@@ -45,6 +46,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = False,
+        debug: bool = False,
     ):
         """
         Args:
@@ -64,6 +66,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         interpolate_nans: Whether to fill NaN values in the data with the mean of the
                             data across latitude and longitude dimensions. Defaults to True.
         """
+        self.console_logger = setup_logger(__name__, "DEBUG" if debug else "INFO")
         self.filename_filter = filename_filter
         self.variables = variables
 
@@ -95,19 +98,20 @@ class XarrayDataset(torch.utils.data.Dataset):
             raise ValueError("Path does not exist:", path)
 
         if Path(path).is_file() and "." in path.split("/")[-1]:
-            print("Single file detected. Loading single file ", path)
+            self.console_logger.info(f"Single file detected: {path}.")
             self.files = [path]
         else:
+            self.console_logger.info(f"Directory detected. Searching for files in: {path}")
             files = list(Path(path).glob("*"))
             if len(files) == 0:
-                raise ValueError("No files found under path:", path)
+                raise FileNotFoundError(f"No files found in directory: {path}")
 
             self.files = sorted(
                 [str(x) for x in files if filename_filter(x.name)],
                 key=lambda x: x.replace("_6h", "_06h").replace("_0h", "_00h"),
             )
             if len(self.files) == 0:
-                raise ValueError("filename_filter filtered all files under path:", path)
+                raise FileNotFoundError("No files remain after applying 'filename_filter'.")
 
         file_extension = Path(self.files[0]).suffix
         engine = engine_mapping[file_extension]
@@ -122,7 +126,9 @@ class XarrayDataset(torch.utils.data.Dataset):
             if (
                 limit_examples and len(self.timestamps) > limit_examples
             ):  # get fraction of full dataset
-                print("Limiting number of examples loaded to", limit_examples)
+                self.console_logger.info(
+                    f"Limiting number of examples loaded to {limit_examples}."
+                )
                 self.timestamps = self.timestamps[:limit_examples]
                 break
 
@@ -132,7 +138,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.cached_xrdataset = None
         self.cached_fileid = None
 
-    def set_timestamp_bounds(self, low, high, debug=False):
+    def set_timestamp_bounds(self, low, high):
         """Filter timestamps loaded from dataloader between bounds.
 
         If low or high is None, only filter in one direction.
@@ -151,17 +157,18 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.timestamps = [x for x in self.timestamps if low <= x[-1].astype("datetime64[s]")]
         elif high:
             self.timestamps = [x for x in self.timestamps if x[-1].astype("datetime64[s]") < high]
-        if debug:
-            print(
-                f"Filtered timestamps from {original_length} to {len(self.timestamps)} examples: "
-                f"{self.timestamps[0][-1].astype('datetime64[s]')} to {self.timestamps[-1][-1].astype('datetime64[s]')}."
-            )
+
+        self.console_logger.debug(
+            f"Filtered timestamps from {original_length} to {len(self.timestamps)} examples: "
+            f"{self.timestamps[0][-1].astype('datetime64[s]')} to {self.timestamps[-1][-1].astype('datetime64[s]')}."
+        )
+
         self.id2pt = dict(enumerate(self.timestamps))
 
     def __len__(self):
         return len(self.id2pt)
 
-    def convert_to_tensordict(self, xr_dataset, debug=False):
+    def convert_to_tensordict(self, xr_dataset):
         """
         Convert xarray dataset to tensordict.
 
@@ -170,10 +177,9 @@ class XarrayDataset(torch.utils.data.Dataset):
         """
         # Optionally select dimensions.
         if not self.already_ran_index_selection:
-            if debug:
-                print(xr_dataset)
-                print(self.slice_indexers)
-                print(self.other_indexers)
+            self.console_logger.debug(xr_dataset)
+            self.console_logger.debug(self.slice_indexers)
+            self.console_logger.debug(self.other_indexers)
 
             # Apply sel for non-slice indexers with method and tolerance
             if self.other_indexers:
@@ -223,7 +229,9 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):
-                warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
+                self.console_logger.warning(
+                    f"NaN values detected in {file_id} {line_id} {self.files[file_id]}"
+                )
 
         if return_timestamp or self.return_timestamp:
             timestamp = self.cached_xrdataset.time[line_id].values.item()

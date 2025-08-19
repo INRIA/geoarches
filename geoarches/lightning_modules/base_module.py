@@ -7,7 +7,7 @@ import torch.nn as nn
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
-# import ValueError
+from geoarches.utils.logging_utils import setup_logger
 
 
 def load_module(
@@ -44,6 +44,7 @@ def load_module(
 class BaseLightningModule(L.LightningModule):
     def __init__(self):
         super().__init__()
+        self.console_logger = setup_logger(__name__, "INFO")
 
     def mylog(self, dct={}, mode="auto", **kwargs):
         if mode == "auto":
@@ -79,18 +80,18 @@ class BaseLightningModule(L.LightningModule):
         for k in keys:
             for ik in ignore_keys:
                 if k.startswith(ik):
-                    print("Deleting key {} from state_dict.".format(k))
+                    self.console_logger.info(f"Deleting key '{k}' from 'state_dict'.")
                     del sd[k]
         self.load_state_dict(sd, strict=False)
         missing_keys = set(
             [".".join(k.split(".")[:2]) for k in self.state_dict().keys() if k not in sd.keys()]
         )
         if len(missing_keys) and missing_warning:
-            print("Missing keys", missing_keys)
-        print(f"Restored from {path}")
+            self.console_logger.warning(f"Missing keys in checkpoint: {missing_keys}")
+        self.console_logger.info(f"Restored checkpoint from {path}!")
 
     def configure_optimizers(self):
-        print("configure optimizers")
+        self.console_logger.info("Configuring optimizers...")
         if self.ckpt_path is not None:
             opt = torch.optim.AdamW(
                 self.parameters(),
