@@ -180,13 +180,13 @@ def main():
     parser.add_argument(
         "--level_vars",
         nargs="*",  # Accepts 0 or more arguments as a list.
-        default=era5.level_variables,
+        default=era5.arches_default_level_variables,
         help="Level vars to load from preds. Order is respected when read into tensors. Can be empty.",
     )
     parser.add_argument(
         "--surface_vars",
         nargs="*",  # Accepts 0 or more arguments as a list.
-        default=era5.surface_variables,
+        default=era5.arches_default_surface_variables,
         help="Surface vars to load from preds. Order is respected when read into tensors. Can be empty.",
     )
     parser.add_argument(
@@ -241,13 +241,13 @@ def main():
     dimension_indexers = default_dimension_indexers.copy()
     dimension_indexers["level"] = ("level", [500, 700, 850])  # Use only these pressure levels.
     ds_test = era5.Era5Forecast(
+        stats_cfg=None,  # No normalization.
         path=args.groundtruth_path,
         # filename_filter=lambda x: ("2020" in x) and ("0h" in x or "12h" in x),
         domain="test_z0012",
         lead_time_hours=24,
         multistep=args.multistep,
         load_prev=False,
-        norm_scheme=None,
         variables=variables,
         dimension_indexers=dimension_indexers,
         load_clim=True if args.eval_clim else False,  # Set if evaluating climatology.

@@ -1,16 +1,15 @@
 import importlib
-import json
 from typing import Dict, List
 
 import torch
-from tensordict import TensorDict
+import xarray as xr
+from tensordict.tensordict import TensorDict
 
 import geoarches.stats as geoarches_stats
-from geoarches.dataloaders.era5 import (
+from geoarches.dataloaders.era5_constants import (
     arches_default_level_variables,
     arches_default_pressure_levels,
     arches_default_surface_variables,
-    pressure_levels,
 )
 from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
 
@@ -19,20 +18,8 @@ geoarches_stats_path = importlib.resources.files(geoarches_stats)
 
 # Default loss weights used for ArchesWeather
 default_var_weights = {
-    "surface": {
-        "T2m": 1.0,
-        "U10m": 0.1,
-        "V10m": 0.1,
-        "SP": 0.1,
-    },
-    "level": {
-        "Z": 1.0,
-        "U": 1.0,
-        "V": 1.0,
-        "T": 1.0,
-        "Q": 1.0,
-        "W": 1.0,
-    },
+    "surface": [0.1, 0.1, 1.0, 0.1],
+    "level": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
 }
 
 
@@ -40,9 +27,10 @@ class NormalizationStatistics:
     def __init__(
         self,
         variables: Dict[str, List[str]] = None,
-        levels: List[int] = None,
-        norm_scheme: str = None,
-        loss_weight_per_variable: Dict[str, Dict[str, float]] = None,
+        levels: List[int] = arches_default_pressure_levels,
+        norm_scheme: str = "pangu",
+        loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
+        stats_path: str | None = None,
     ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
@@ -73,11 +61,15 @@ class NormalizationStatistics:
             of archesweather will be used.
         norm_scheme : str, optional
             The normalization scheme to be used. It can be either 'graphcast' or 'pangu'.
-            If None, the default scheme 'pangu' will be used.
+            If None, no normalization will be applied.
         loss_weight_per_variable : dict, optional
             A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
-            and the values should be dictionaries with variable names as keys and their corresponding weights as values.
+            and the values should be lists of corresponding weights (in the same order as the variable lists).
             If None, the default weights defined in `default_var_weights` will be used.
+        stats_path : str, optional
+            The path to the normalization statistics files. If None, the default statistics files
+            from geoarches/stats/ will be used.
+
         Raises
         ------
         ValueError
@@ -111,128 +103,103 @@ class NormalizationStatistics:
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             }
-
         print("##### VARIABLES: ", variables, " #####")
+        print("##### LEVELS: ", levels, " #####")
 
-        if levels is None:
-            levels = arches_default_pressure_levels
-
-        if norm_scheme is None:
-            self.norm_scheme = "pangu"
-        elif norm_scheme not in ["graphcast", "pangu"]:
+        if norm_scheme and norm_scheme not in ["graphcast", "pangu"]:
             raise ValueError(
                 f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
             )
-        else:
-            self.norm_scheme = norm_scheme
+        self.norm_scheme = norm_scheme
 
-        self.variables = variables
-        self.levels = levels
-        self.pl_indices = [pressure_levels.index(p) for p in self.levels]
+        if self.norm_scheme == "pangu":
+            self.norm_file_path = stats_path or geoarches_stats_path / "pangu_norm_stats.nc"
+        elif self.norm_scheme == "graphcast":
+            self.norm_file_path = stats_path or geoarches_stats_path / "graphcast_norm_stats.nc"
+
+        # If passed through hydra, need to convert from OmegaConf objects to lists.
+        self.variables = {k: list(vars) for k, vars in variables.items()}
+        self.levels = list(levels)
 
         if norm_scheme == "pangu":
-            assert self.variables["surface"] == arches_default_surface_variables, (
-                "Pangu normalization scheme requires the default surface variables./n"
+            assert set(self.variables["surface"]).issubset(
+                set(arches_default_surface_variables)
+            ), (
+                "Pangu normalization scheme requires subset of the default surface variables./n"
                 "Surf. Vars: 10m_u_component_of_wind, 10m_v_component_of_wind, 2m_temperature, "
-                "mean_sea_level_pressure"
+                f"mean_sea_level_pressure. Provided: {self.variables['surface']}"
             )
-            assert self.variables["level"] == arches_default_level_variables, (
-                "Pangu normalization scheme requires the default level variables./n"
+            assert set(self.variables["level"]).issubset(set(arches_default_level_variables)), (
+                "Pangu normalization scheme requires subset of the default level variables./n"
                 "Level Vars: geopotential, u_component_of_wind, v_component_of_wind, "
-                "temperature, specific_humidity, vertical_velocity"
+                f"temperature, specific_humidity, vertical_velocity. Provided: {self.variables['level']}"
             )
-            assert self.levels == arches_default_pressure_levels, (
-                "Pangu normalization scheme requires the default pressure levels./n"
+            assert set(self.levels).issubset(set(arches_default_pressure_levels)), (
+                "Pangu normalization scheme requires subset of the default pressure levels./n"
                 "Pressure Levels: 50, 100, 150, 200, 250, 300, 400, "
-                "500, 600, 700, 850, 925, 1000"
+                f"500, 600, 700, 850, 925, 1000. Provided: {self.levels}"
             )
 
-        if loss_weight_per_variable is not None:
-            self.loss_weight_per_variable = loss_weight_per_variable
-        else:
-            self.loss_weight_per_variable = default_var_weights
+        self.loss_weight_per_variable = loss_weight_per_variable
 
         self.mean = None
         self.std = None
         self.loss_coeffs = None
 
-    def _graphcast_normalization_stats(self):
-        with open(geoarches_stats_path / "gc_stats_mean_by_level.json") as f:
-            mean_stats = json.load(f)
-        with open(geoarches_stats_path / "gc_stats_stddev_by_level.json") as f:
-            std_stats = json.load(f)
-
-        data_mean = {
-            "surface": torch.tensor(
-                [mean_stats["data_vars"][v]["data"] for v in self.variables["surface"]]
-            ).reshape(-1, 1, 1, 1),
-            "level": torch.tensor(
-                [
-                    [mean_stats["data_vars"][v]["data"][j] for j in self.pl_indices]
-                    for v in self.variables["level"]
-                ]
-            ).reshape(-1, len(self.levels), 1, 1),
-        }
-
-        data_std = {
-            "surface": torch.tensor(
-                [[std_stats["data_vars"][v]["data"]] for v in self.variables["surface"]]
-            ).reshape(-1, 1, 1, 1),
-            "level": torch.tensor(
-                [
-                    [std_stats["data_vars"][v]["data"][j] for j in self.pl_indices]
-                    for v in self.variables["level"]
-                ]
-            ).reshape(-1, len(self.levels), 1, 1),
-        }
-
-        return TensorDict(surface=data_mean["surface"], level=data_mean["level"]), TensorDict(
-            surface=data_std["surface"], level=data_std["level"]
-        )
-
-    def _pangu_normalization_stats(self):
-        norm_file_path = geoarches_stats_path / "pangu_norm_stats2_with_w.pt"
-        pangu_stats = torch.load(norm_file_path, weights_only=True)
-
-        data_mean = TensorDict(
-            surface=pangu_stats["surface_mean"],
-            level=pangu_stats["level_mean"],
-        )
-
-        data_std = TensorDict(
-            surface=pangu_stats["surface_std"],
-            level=pangu_stats["level_std"],
-        )
-
-        return data_mean, data_std
-
     def load_normalization_stats(self):
-        if self.norm_scheme == "pangu":
-            mean, std = self._pangu_normalization_stats()
-        elif self.norm_scheme == "graphcast":
-            mean, std = self._graphcast_normalization_stats()
+        if self.norm_scheme is None:
+            return None, None
 
-        self.mean = mean
-        self.std = std
+        with xr.open_dataset(self.norm_file_path) as stats_ds:
+            stats = {
+                "surface_mean": torch.from_numpy(
+                    stats_ds[self.variables["surface"]].sel(statistic="mean").to_array().to_numpy()
+                )[..., None, None, None],
+                "surface_std": torch.from_numpy(
+                    stats_ds[self.variables["surface"]].sel(statistic="std").to_array().to_numpy()
+                )[..., None, None, None],
+                "level_mean": torch.from_numpy(
+                    stats_ds[self.variables["level"]]
+                    .sel(statistic="mean")
+                    .sel(level=self.levels)
+                    .to_array()
+                    .to_numpy()
+                )[..., None, None],
+                "level_std": torch.from_numpy(
+                    stats_ds[self.variables["level"]]
+                    .sel(statistic="std")
+                    .sel(level=self.levels)
+                    .to_array()
+                    .to_numpy()
+                )[..., None, None],
+            }
 
-        return mean, std
+        self.mean = TensorDict(
+            surface=stats["surface_mean"],
+            level=stats["level_mean"],
+        )
+        self.std = TensorDict(
+            surface=stats["surface_std"],
+            level=stats["level_std"],
+        )
 
-    def load_graphcast_timedelta_stats(self):
-        file = geoarches_stats_path / "gc_stats_diffs_stddev_by_level.json"
-        with open(file) as f:
-            diff_stats = json.load(f)
+        return self.mean, self.std
 
-        surface_stds = torch.tensor(
-            [diff_stats["data_vars"][v]["data"] for v in self.variables["surface"]]
-        ).reshape(-1, 1, 1, 1)
-        level_stds = torch.tensor(
-            [
-                [diff_stats["data_vars"][v]["data"][i] for i in self.pl_indices]
-                for v in self.variables["level"]
-            ]
-        ).reshape(-1, len(self.levels), 1, 1)
+    def load_timedelta_stats(self):
+        """Loads the standard deviation of the difference between successive states."""
+        with xr.open_dataset(self.norm_file_path) as stats_ds:
+            surface_stds = torch.from_numpy(
+                stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
+            )[..., None, None, None]
+            level_stds = torch.from_numpy(
+                stats_ds[self.variables["level"]]
+                .sel(statistic="diff_std")
+                .sel(level=self.levels)
+                .to_array()
+                .to_numpy()
+            )[..., None, None]
 
-        return surface_stds, level_stds
+            return surface_stds, level_stds
 
     def compute_loss_coeffs(
         self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False
@@ -266,35 +233,23 @@ class NormalizationStatistics:
         )
 
         # Get standard deviation for normalization
-        if self.mean is not None or self.std is not None:
+        if self.std is not None:
             data_std = self.std
-        elif self.norm_scheme == "graphcast":
-            _, data_std = self.load_normalization_stats()
-        elif self.norm_scheme == "pangu":
-            _, data_std = self.load_normalization_stats()
         else:
-            raise ValueError(
-                f"Normalization scheme {self.norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
-            )
+            _, data_std = self.load_normalization_stats()
+            self.std = data_std
 
         if loss_delta_normalization:
-            if self.norm_scheme == "graphcast":
-                delta_surface_stds, delta_level_stds = self.load_graphcast_timedelta_stats()
-            else:
-                # For Pangu, we use the precomputed stats
-                delta_surface_stds = torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(
-                    -1, 1, 1, 1
-                )
-                delta_level_stds = torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1)
+            delta_surface_stds, delta_level_stds = self.load_timedelta_stats()
 
-            assert data_std["surface"].shape[0] == delta_surface_stds.shape[0], (
-                "Surface stds shape mismatch"
-            )
-            assert data_std["level"].shape[0] == delta_level_stds.shape[0], (
-                "Level stds shape mismatch"
-            )
+            if data_std["surface"].shape[0] != delta_surface_stds.shape[0]:
+                raise ValueError(
+                    f"Surface stds shape mismatch: {data_std['surface'].shape} vs {delta_surface_stds.shape}"
+                )
+            if data_std["level"].shape[0] != delta_level_stds.shape[0]:
+                raise ValueError(
+                    f"Level stds shape mismatch: {data_std['level'].shape} vs {delta_level_stds.shape}"
+                )
 
             loss_delta_scaler = TensorDict(
                 surface=data_std["surface"] / delta_surface_stds,
