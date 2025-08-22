@@ -4,6 +4,7 @@ from typing import Callable, Dict, List
 
 import numpy as np
 import pandas as pd
+import tensordict
 import torch
 import xarray as xr
 from hydra.utils import instantiate
@@ -460,7 +461,7 @@ class Era5Forecast(Era5Dataset):
                         i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False
                     )
                 )
-            out["future_states"] = torch.stack(future_states, dim=0)
+            out["future_states"] = tensordict.stack(future_states, dim=0)
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
