@@ -1,6 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -9,6 +9,13 @@ import torch
 import xarray as xr
 from hydra.utils import instantiate
 
+from .era5_constants import (
+    arches_default_level_variables,
+    arches_default_pressure_levels,
+    arches_default_surface_variables,
+    level_variables_short,
+    surface_variables_short,
+)
 from .netcdf import XarrayDataset
 
 filename_filters = dict(
@@ -27,107 +34,10 @@ filename_filters = dict(
     empty=lambda x: False,
 )
 
-# 37 pressure levels available from graphcast stats
-pressure_levels = [
-    1,
-    2,
-    3,
-    5,
-    7,
-    10,
-    20,
-    30,
-    50,
-    70,
-    100,
-    125,
-    150,
-    175,
-    200,
-    225,
-    250,
-    300,
-    350,
-    400,
-    450,
-    500,
-    550,
-    600,
-    650,
-    700,
-    750,
-    775,
-    800,
-    825,
-    850,
-    875,
-    900,
-    925,
-    950,
-    975,
-    1000,
-]
-
-
-# ArchesWeather default settings for ERA5 dataset.
-arches_default_pressure_levels = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
-
-arches_default_level_variables = [
-    "geopotential",
-    "u_component_of_wind",
-    "v_component_of_wind",
-    "temperature",
-    "specific_humidity",
-    "vertical_velocity",
-]
-
-arches_default_surface_variables = [
-    "10m_u_component_of_wind",
-    "10m_v_component_of_wind",
-    "2m_temperature",
-    "mean_sea_level_pressure",
-]
-
-
-# Short names for variables used in tensordicts and metrics
-surface_variables_short = {
-    "10m_u_component_of_wind": "U10m",
-    "10m_v_component_of_wind": "V10m",
-    "2m_temperature": "T2m",
-    "mean_sea_level_pressure": "MSLP",
-    "low_vegetation_cover": "CVL",
-    "high_vegetation_cover": "CVH",
-    "tympe_of_low_vegetation_cover": "TVL",
-    "type_of_high_vegetation_cover": "TVH",
-    "soil_type": "SLT",
-    "standard_deviation_of_filtred_subgrid_orography": "SDFSOR",
-    "angle_of_sub_gridscale_orography": "ANOR",
-    "anisotropy_of_subgridscale_orography": "ASOR",
-    "geopotential_at_surface": "Z0",
-    "lake_cover": "LC",
-    "lake_depth": "LD",
-    "sea_ice_cover": "SIC",
-    "sea_surface_temperature": "SST",
-    "slope_of_subgridscale_orography": "SSOR",
-    "standard_deviation_of_orography": "SDFO",
-    "surface_pressure": "SP",
-    "toa_incident_solar_radiation": "SIS",
-    "toa_incident_solar_radiation_12hr": "SIS12",
-    "toa_incident_solar_radiation_24hr": "SIS24",
-    "total_cloud_cover": "TCC",
-    "total_precipitation_12hr": "TP",
-    "total_precipitation_24hr": "TP24",
-    "total_column_water_vapour": "TCWV",
-    "wind_speed": "WS",
-}
-
-level_variables_short = {
-    "geopotential": "Z",
-    "u_component_of_wind": "U",
-    "v_component_of_wind": "V",
-    "temperature": "T",
-    "specific_humidity": "Q",
-    "vertical_velocity": "W",
+default_dimension_indexers = {
+    "latitude": ("latitude", np.arange(90, -90 - 1e-6, -180 / 120)),  # decreasing lats
+    "longitude": ("longitude", np.arange(0, 360, 360 / 240)),
+    "level": ("level", arches_default_pressure_levels),
 }
 
 
@@ -168,11 +78,10 @@ class Era5Dataset(XarrayDataset):
         domain: str = "train",
         filename_filter: Callable | None = None,
         variables: Dict[str, List[str]] | None = None,
-        levels: List[int] = None,
-        dimension_indexers: Dict[str, list] | None = None,
+        dimension_indexers: Dict[str, Tuple[str, Any]] = default_dimension_indexers,
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = True,
+        interpolate_nans: bool = False,
     ):
         """
         Args:
@@ -183,7 +92,9 @@ class Era5Dataset(XarrayDataset):
                 If None, filters files based on `domain`.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...]}. By default uses standard 6 level and 4 surface vars.
-            dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
+            dimension_indexers: Dict of tuples of dimensions to select using Dataset.sel().
+                Used to select levels and lat/lon resolution.
+                First element is the dimension name in the xr dataset, second is the indexer used in Dataset.sel(indexer).
             return_timestamp: Whether to return tuple of (example, timestamp) from __getitem__().
         """
         if filename_filter is None:
@@ -194,35 +105,34 @@ class Era5Dataset(XarrayDataset):
                 surface=arches_default_surface_variables, level=arches_default_level_variables
             )
 
-        self.levels = levels or arches_default_pressure_levels
+        all_indexers = default_dimension_indexers.copy()
+        all_indexers.update(dimension_indexers or {})
 
         super().__init__(
             path,
             filename_filter=filename_filter,
             variables=variables,
-            dimension_indexers=dimension_indexers,
+            dimension_indexers=all_indexers,
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
         )
 
-        self.dimension_indexers["level"] = ("level", self.levels)
-
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
         """
-        if self.dimension_indexers:
-            xr_dataset = xr_dataset.sel(
-                {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
-            )
-            #  Workaround to avoid calling sel() after transponse() to avoid OOM.
-            self.already_ran_index_selection = True
+        if self.slice_indexers:
+            xr_dataset = xr_dataset.sel(**self.slice_indexers)
+        if self.other_indexers:
+            xr_dataset = xr_dataset.sel(**self.other_indexers, method="nearest", tolerance=1e-6)
+        #  Workaround to avoid calling sel() after transponse() to avoid OOM.
+        self.already_ran_index_selection = True
         xr_dataset = xr_dataset.transpose(
             ...,
-            self.dimension_indexers["level"][0],
-            self.dimension_indexers["latitude"][0],
-            self.dimension_indexers["longitude"][0],
+            self.level_dim_name,
+            self.latitude_dim_name,
+            self.longitude_dim_name,
         )
 
         tdict = super().convert_to_tensordict(xr_dataset)
@@ -262,16 +172,26 @@ class Era5Dataset(XarrayDataset):
         surface = tdict["surface"].squeeze(-3)
         level = tdict["level"]
 
+        # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
+        coords = {self.time_dim_name: times}
+
+        if self.latitude_dim_name in self.other_indexers:
+            coords[self.latitude_dim_name] = self.dimension_indexers["latitude"][1]
+        if self.longitude_dim_name in self.other_indexers:
+            coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
+        if self.level_dim_name in self.other_indexers:
+            coords[self.level_dim_name] = self.dimension_indexers["level"][1]
+
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
                     v: (
                         [
-                            self.dimension_indexers["time"][0],
-                            self.dimension_indexers["level"][0],
-                            self.dimension_indexers["latitude"][0],
-                            self.dimension_indexers["longitude"][0],
+                            self.time_dim_name,
+                            self.level_dim_name,
+                            self.latitude_dim_name,
+                            self.longitude_dim_name,
                         ],
                         level[:, i],
                     )
@@ -280,23 +200,16 @@ class Era5Dataset(XarrayDataset):
                 **{
                     v: (
                         [
-                            self.dimension_indexers["time"][0],
-                            self.dimension_indexers["latitude"][0],
-                            self.dimension_indexers["longitude"][0],
+                            self.time_dim_name,
+                            self.latitude_dim_name,
+                            self.longitude_dim_name,
                         ],
                         surface[:, i],
                     )
                     for (i, v) in enumerate(self.variables["surface"])
                 },
             ),
-            coords={
-                self.dimension_indexers["time"][0]: times,
-                self.dimension_indexers["latitude"][0]: np.arange(
-                    90, -90 - 1e-6, -180 / 120
-                ),  # decreasing lats
-                self.dimension_indexers["longitude"][0]: np.arange(0, 360, 360 / 240),
-                self.dimension_indexers["level"][0]: self.levels,
-            },
+            coords=coords,
         )
 
         if levels is not None:
@@ -344,19 +257,18 @@ class Era5Forecast(Era5Dataset):
         filename_filter: Callable | None = None,
         timedelta_hours: int = None,
         variables: Dict[str, List[str]] | None = None,
-        levels: List[int] = None,
-        dimension_indexers: Dict[str, list] | None = None,
-        norm_scheme: str | None = "pangu",
+        dimension_indexers: Dict[str, list] = default_dimension_indexers,
         lead_time_hours: int = 24,
         multistep: int = 1,
         load_prev: bool = True,
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = True,
+        interpolate_nans: bool = False,
     ):
         """
         Args:
+            stats_cfg: Configuration for normalization statistics. None if no normalization is needed.
             path: Single filepath or directory holding files.
             domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..)
             filename_filter: To filter files within `path` based on filename. If set, does not use `domain` param.
@@ -365,25 +277,28 @@ class Era5Forecast(Era5Dataset):
             multistep: Number of future states to load. By default, loads next state only (current time + lead_time_hours).
             load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).
             load_clim: Whether to load climatology.
-            norm_scheme: Normalization scheme to use (pangu or graphcast). Can be None to perform no normalization.
             timedelta_hours: Time difference (hours) between 2 consecutive timestamps. If not expecified,
                              default is 6 or 12, depending on domain.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
-            levels: Pressure levels to load from dataset. By default uses standard pressure levels of ArchesWeather.
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
+                Used to select levels and lat/lon resolution.
+            warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
+            interpolate_nans: Whether to interpolate NaN values for model input (prev and current state).
         """
         self.__dict__.update(locals())
+
+        all_indexers = default_dimension_indexers.copy()
+        all_indexers.update(dimension_indexers or {})
 
         super().__init__(
             path,
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            levels=levels,
-            dimension_indexers=dimension_indexers,
+            dimension_indexers=all_indexers,
             warning_on_nan=warning_on_nan,
-            interpolate_nans=interpolate_nans,  # we always interpolate nans
+            interpolate_nans=interpolate_nans,
         )
 
         # depending on domain, re-set timestamp bounds
@@ -406,19 +321,21 @@ class Era5Forecast(Era5Dataset):
             self.timedelta = 6 if "z0012" not in domain else 12
         self.current_multistep = 1
 
-        # include vertical component by default
-        stats = instantiate(stats_cfg.module)
-        self.data_mean, self.data_std = stats.load_normalization_stats()
+        # Load normalization statistics.
+        self.norm_scheme = None
+        if stats_cfg:
+            stats = instantiate(stats_cfg.module)
+            self.data_mean, self.data_std = stats.load_normalization_stats()
+            self.norm_scheme = stats.norm_scheme
 
-        # variable names
-        # TODO: fix this below
-        self.surface_variables = [surface_variables_short[v] for v in self.variables["surface"]]
-
-        self.level_variables = [
-            level_variables_short[lvl] + str(p)
-            for lvl in self.variables["level"]
-            for p in self.levels
-        ]
+            # Check levels.
+            dataset_levels = self.dimension_indexers["level"][1]
+            stats_levels = stats.levels
+            if not np.equal(dataset_levels, stats_levels).all():
+                raise ValueError(
+                    "Levels in normalization statistics do not match levels in dataset dimension indexers.\n"
+                    f"Dataset levels: {dataset_levels}\nStatistics levels: {stats_levels}"
+                )
 
         # Load climatology.
         self.clim_path = Path(path).parent.joinpath("era5_240_clim.nc")
@@ -440,7 +357,9 @@ class Era5Forecast(Era5Dataset):
             dtype=torch.int64,
         )  # time in seconds
 
-        out["state"] = super().__getitem__(i, interpolate_nans=True)
+        out["state"] = super().__getitem__(
+            i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
+        )
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
 
@@ -465,7 +384,9 @@ class Era5Forecast(Era5Dataset):
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
-                i - self.lead_time_hours // self.timedelta, interpolate_nans=True
+                i - self.lead_time_hours // self.timedelta,
+                interpolate_nans=self.interpolate_nans,
+                warning_on_nan=self.warning_on_nan,
             )
 
         if self.load_clim:

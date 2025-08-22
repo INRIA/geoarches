@@ -11,13 +11,13 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
 
     def __init__(
         self,
+        stats_cfg,
         path="data/era5_240/full/",
         domain="train",
         filename_filter=None,
         lead_time_hours=24,
         pred_path="data/era5_pred_archesweather-S/",
         load_prev=False,
-        norm_scheme="pangu",
         load_hard_neg=False,
         variables=None,
         **kwargs,
@@ -31,17 +31,16 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             lead_time_hours: Time difference between current state and previous and future states.
             pred_path: Single filepath or directory holding model prediction files to also load.
             load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).
-            norm_scheme: Normalization scheme to use. Can be None to perform no normalization.
             load_hard_neg: Whether to additionallty load hard negative example for contrastive learning.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
         """
         super().__init__(
+            stats_cfg=stats_cfg,
             path=path,
             domain=domain,
             lead_time_hours=lead_time_hours,
             filename_filter=filename_filter,
-            norm_scheme=norm_scheme,
             load_prev=load_prev,
             **kwargs,
         )
