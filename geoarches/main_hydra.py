@@ -186,8 +186,12 @@ def main(cfg: DictConfig):
 
     if cfg.mode == "train":
         val_args = getattr(cfg.dataloader, "validation_args", {})
-        valset = instantiate(cfg.dataloader.dataset, **val_args)
-        trainset = instantiate(cfg.dataloader.dataset)  # will automatically pickup cfg split
+        valset = instantiate(cfg.dataloader.dataset, cfg.stats, **val_args)
+        trainset = instantiate(
+            # will automatically pickup cfg split
+            cfg.dataloader.dataset,
+            cfg.stats,
+        )
 
         val_loader = torch.utils.data.DataLoader(
             valset,
@@ -206,7 +210,7 @@ def main(cfg: DictConfig):
         )
     elif cfg.mode == "test":
         test_args = getattr(cfg.dataloader, "test_args", {})
-        testset = instantiate(cfg.dataloader.dataset, **test_args)
+        testset = instantiate(cfg.dataloader.dataset, cfg.stats, **test_args)
         test_loader = torch.utils.data.DataLoader(
             testset,
             batch_size=cfg.batch_size,
@@ -217,7 +221,7 @@ def main(cfg: DictConfig):
 
     # Resolve interpolations in the entire config before passing `cfg.module`
     OmegaConf.resolve(cfg.module)
-    pl_module = instantiate(cfg.module.module, cfg.module)
+    pl_module = instantiate(cfg.module.module, cfg.module, cfg.stats)
 
     if hasattr(cfg, "load_ckpt"):
         # load weights w/o resuming run

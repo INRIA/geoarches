@@ -25,7 +25,7 @@ geoarches_stats_path = importlib.resources.files(geoarches_stats)
 class ForecastModule(BaseLightningModule):
     def __init__(
         self,
-        cfg,  # instead of backbone
+        cfg,  # module config, instead of backbone
         stats_cfg,
         name="forecast",
         dataset=None,
@@ -82,7 +82,7 @@ class ForecastModule(BaseLightningModule):
         x = self.backbone(x, *args, **kwargs)
         out = self.embedder.decode(x)  # we get tdict
 
-        _ = tensordict_apply(check_pred_has_no_nans, out, batch["next_state"])
+        _ = tensordict_apply(check_pred_has_no_nans, pred=out, target=batch["next_state"])
 
         if self.add_input_state:
             out += batch["state"]
@@ -99,7 +99,7 @@ class ForecastModule(BaseLightningModule):
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
-        for i in range(iters):
+        for _ in range(iters):
             if torch.is_grad_enabled():
                 pred = gradient_checkpoint.checkpoint(
                     self.forward, loop_batch, use_reentrant=False
@@ -111,7 +111,8 @@ class ForecastModule(BaseLightningModule):
             loop_batch = dict(
                 prev_state=loop_batch["state"],
                 state=pred,
-                next_state=loop_batch["next_state"],  # only to obtain NaN mask
+                # Used only to obtain NaN mask (not true next state)
+                next_state=loop_batch["next_state"],
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
             )
 
