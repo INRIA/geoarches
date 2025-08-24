@@ -21,23 +21,12 @@ def apply_mask_from_gt_nans(pred: TensorDict, ground_truth: TensorDict, value) -
     # pred = TensorDict(
     #    {k: (~torch.isnan(ground_truth[k])).float()  * v for k, v in pred.items()}, batch_size=pred.batch_size
     # )
+    value = torch.tensor(value)
 
     for k, v in ground_truth.items():
-        pred[k][torch.isnan(v)] = value
-
-    for k, v in ground_truth.items():
-        ground_truth[k][torch.isnan(v)] = value
-
-    # pred = TensorDict(
-    # if value is not None:
-    #    pred = TensorDict(
-    #        {k: torch.where(v == 0, ) for k, v in pred.items()}, batch_size=pred.batch_size
-    #    )
-
-    # Remove NaNs form the ground truth
-    """ground_truth = TensorDict(
-            {k: torch.nan_to_num(v) * (~torch.isnan(v)).float() for k, v in ground_truth.items()}, batch_size=ground_truth.batch_size
-    )"""
+        gt_valid = ~torch.isnan(v)
+        pred[k] = pred[k].where(gt_valid, value)
+        ground_truth[k] = ground_truth[k].where(gt_valid, value)
 
     return pred, ground_truth
 
@@ -49,22 +38,16 @@ def check_pred_has_no_nans(pred: torch.Tensor, target: torch.Tensor):
     The function checks if pred has no NaNs where target has no NaNs.
     """
 
-    target_no_nans = ~target.isnan()
+    target_valid = ~target.isnan()
     target_nans = target.isnan()
 
     # index pred with target_nans to check if pred has no NaNs where target has no NaNs
-    pred_no_target_nans = pred[target_no_nans]
-    pred_target_nans = pred[target_nans]
-    pred_no_target_nans = pred_no_target_nans.isnan()
-    pred_target_nans = pred_target_nans.isnan()
-
-    # check if pred_nans is all False where target_nans is True
-    # i.e., pred has no NaNs where target has no NaNs
-
-    if pred_no_target_nans.any():
+    pred_should_be_valid = pred.where(target_valid, 0)
+    if pred_should_be_valid.isnan().any():
         warnings.warn("Prediction has NaNs where target data has no NaNs")
 
-    if pred_target_nans.any():
+    pred_where_target_has_nans = pred.where(target_nans, 0)
+    if pred_where_target_has_nans.isnan().any():
         warnings.warn("Prediction has NaNs where target data has NaNs")
 
     return pred
