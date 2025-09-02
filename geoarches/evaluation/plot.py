@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import timedelta
 from pathlib import Path
 
+import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
@@ -260,8 +261,8 @@ def plot_rankhist(
 def parse_vars(vars):
     """Parse the --vars argument into a list of tuples with 'var' and dictionary with 'dim_name' to 'dim_value'.
 
-    Example input: temperature:level:500, 2m_temperature
-    Example output: (temperature, dict(level=500)), (2m_temperature, {})
+    Example input: T500:temperature:level:500, T2m:2m_temperature
+    Example output: (T500, temperature, dict(level=500)), (T2m, 2m_temperature, {})
     """
     if not vars:
         return None
@@ -339,7 +340,7 @@ def main():
         "OR if need to rename variable for plotting or need to select extra dimensions from xarray, "
         "can also be a list of variables and dimensions in this format: '<alias>:<var>:<dim1_name>:<dim1_value>:<...'."
         "where alias is the name for the plot, var is the name of the dict/xarray variable and dim1,dim2 are extra dimensions to select with ds.sel()."
-        "Example: '--vars Z500:geopotential:level:500 Q700:specific_humidity:level:700 T2m:2m_temperature",
+        "Example: '--vars Z500:geopotential:level:500 T850:temperature:level:850 Q700:specific_humidity:level:700 U850:u_component_of_wind:level:850 V850:v_component_of_wind:level:850 T2m:2m_temperature",
     )
     parser.add_argument(
         "--figsize",
@@ -361,7 +362,7 @@ def main():
         nargs="+",  # Accepts 1 or more arguments as a list.
         type=int,
         default=[1, 3, 5, 10, 15],
-        help="Used only for plotting `rankhist` metric. For each variable, which lead times to plot. Example: --rankhist_prediction_timedeltas 1 7.",
+        help="Used only for plotting `rankhist` metric. For each variable, which lead times (in days) to plot. Example: --rankhist_prediction_timedeltas 1 7.",
     )
     parser.add_argument(
         "--force", action="store_true", help="Force save plots if file already exists."
@@ -383,6 +384,8 @@ def main():
     assert len(args.model_colors) == len(args.model_names_for_legend), (
         "Len of model_colors != len of model_names_for_legend."
     )
+
+    mpl.use("Agg")
 
     output_dir = args.output_dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)

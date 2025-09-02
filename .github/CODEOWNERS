@@ -1,6 +1,7 @@
 # These owners will be the default owners for everything in
 # the repo.
 *       @INRIA/geoarches-owners
+*       @robert-DL
 
-/src/geoarches/backbones @gcouairon
-/src/geoarches/lightning_modules @gcouairon
+geoarches/backbones @gcouairon
+geoarches/lightning_modules @gcouairon

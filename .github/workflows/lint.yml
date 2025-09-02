@@ -2,9 +2,9 @@ name: 'Lint codebase'
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 permissions:
   contents: read
@@ -19,4 +19,4 @@ jobs:
           python-version: '3.x'
       - uses: pre-commit/actions@v3.0.1
         with:
-          extra_args: --verbose
+          extra_args: --verbose --all-files

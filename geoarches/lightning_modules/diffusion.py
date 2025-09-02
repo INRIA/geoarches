@@ -454,7 +454,7 @@ class DiffusionModule(BaseLightningModule):
 
         # compute metrics
         if self.cfg.inference.save_test_outputs != "without_metrics":
-            for metric in self.test_metrics:
+            for metric in self.test_metrics.values():
                 metric.update(
                     dataset.denormalize(
                         batch["future_states"]
@@ -473,7 +473,7 @@ class DiffusionModule(BaseLightningModule):
             return
 
         all_metrics = {}
-        for metric in self.test_metrics:
+        for metric in self.test_metrics.values():
             scores = metric.compute()
 
             self.log_dict(scores, sync_dist=True)  # dont put on_epoch = True here
