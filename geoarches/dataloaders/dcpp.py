@@ -6,9 +6,9 @@ import torch
 from tensordict.tensordict import TensorDict
 
 from geoarches.utils.tensordict_utils import (
-    apply_isnan,
     apply_nan_to_num,
-    apply_threshold,
+    get_non_nan_mask,
+    replace_inf_and_large_values,
 )
 
 from .. import stats as geoarches_stats
@@ -31,7 +31,7 @@ class DCPPForecast(XarrayDataset):
         filename_filter=None,
         lead_time_months=1,
         multistep=1,
-        load_prev=True,
+        load_prev=1,#how many previous states to load
         load_clim=False,
         norm_scheme="spatial_norm",
         limit_examples: int = 0,
@@ -42,8 +42,8 @@ class DCPPForecast(XarrayDataset):
         surface_variable_indices=[],
         level_variable_indices=[],
         pressure_levels=[85000, 70000, 50000, 25000],
-        filename_filter_type="dcpp",
-        forcing_type="dcpp",
+        filename_filter_type="dcpp", #choose train/test split with filename filter: "dcpp" and "dcpp_alt"
+        indexed_year_forcings=False, #toggle index for forcings between zero-indexed and and year-indexed
     ):
         """
         Args:
@@ -60,10 +60,10 @@ class DCPPForecast(XarrayDataset):
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
         self.timedelta = 1
-
         if self.filename_filter_type == "dcpp_alt":
-            train_filter = [x for i, x in enumerate(range(1960, 2000))]
-            val_filter = [x for i, x in enumerate(range(2000, 2010))]
+            train_filter = range(1960, 2000)
+            val_filter = range(2000,2010)
+            test_filter = range(2010,2016)
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
@@ -72,7 +72,7 @@ class DCPPForecast(XarrayDataset):
                 test=lambda x: any(
                     substring in x
                     for substring in [
-                        f"{str(x)}_" for x in [2010, 2011, 2012, 2013, 2014, 2015, 2016]
+                        f"{str(x)}_" for x in test_filter
                     ]
                 ),
                 val=lambda x: any(
@@ -82,6 +82,7 @@ class DCPPForecast(XarrayDataset):
             )
         elif self.filename_filter_type == "dcpp":
             train_filter = [x for i, x in enumerate(range(1960, 2010)) if (i + 1) % 10 != 0]
+            val_filter = range(2010,2016)
             test_filter = [1969, 1979, 1989, 1999, 2009]
             filename_filters = dict(
                 all=(lambda _: True),
@@ -91,7 +92,7 @@ class DCPPForecast(XarrayDataset):
                 val=lambda x: any(
                     substring in x
                     for substring in [
-                        f"{str(x)}_" for x in [2010, 2011, 2012, 2013, 2014, 2015, 2016]
+                        f"{str(x)}_" for x in val_filter
                     ]
                 ),
                 test=lambda x: any(
@@ -99,48 +100,26 @@ class DCPPForecast(XarrayDataset):
                 ),
                 empty=lambda x: False,
             )
-        elif self.filename_filter_type == "cmip":
-            train_filter = ["historical", "ssp245"]
-            test_filter = ["ssp370"]
-            val_filter = ["ssp245"]  # for accessibility
-            filename_filters = dict(
-                all=(lambda _: True),
-                train=lambda x: any(
-                    substring in x for substring in [f"{str(x)}.nc" for x in train_filter]
-                ),
-                val=lambda x: any(
-                    substring in x for substring in [f"{str(x)}.nc" for x in val_filter]
-                ),
-                test=lambda x: any(
-                    substring in x for substring in [f"{str(x)}.nc" for x in test_filter]
-                ),
-                empty=lambda x: False,
-            )
         if filename_filter is None:
             filename_filter = filename_filters[domain]
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
-        if self.filename_filter_type == "cmip":
-            stats_file_path = "cmip_stats.pt"
-            dimension_indexers = {"plev": None}
-
-        else:
-            stats_file_path = "dcpp_stats.pt"
-            dimension_indexers = {"plev": pressure_levels}
+        stats_file_path = "dcpp_stats.pt"
+        dimension_indexers = {"plev": pressure_levels}
         super().__init__(
             path,
             filename_filter=filename_filter,
             variables=variables,
             limit_examples=limit_examples,
             dimension_indexers=dimension_indexers,
+            timestamp_key=lambda x: (x[0],x[1])
         )
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         norm_file_path = geoarches_stats_path / stats_file_path
-        level_norm_file_path = geoarches_stats_path / stats_file_path
 
         spatial_norm_stats = torch.load(norm_file_path)
-        level_spatial_norm_stats = torch.load(level_norm_file_path)
+
 
         clim_removed_file_path = geoarches_stats_path / "dcpp_clim_removed_norm_stats.pt"
         clim_removed_norm_stats = torch.load(clim_removed_file_path)
@@ -154,13 +133,14 @@ class DCPPForecast(XarrayDataset):
                 surface=torch.tensor(1),
                 level=torch.tensor(1),
             )
+        #both mean and std_dev have spatial dimensions
         elif self.norm_scheme == "spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack(
                     [spatial_norm_stats["surface_mean"][i] for i in surface_variable_indices]
                 ),
                 level=torch.stack(
-                    [level_spatial_norm_stats["level_mean"][i] for i in level_variable_indices]
+                    [spatial_norm_stats["level_mean"][i] for i in level_variable_indices]
                 ),
             )
             self.data_std = TensorDict(
@@ -168,16 +148,17 @@ class DCPPForecast(XarrayDataset):
                     [spatial_norm_stats["surface_std"][i] for i in surface_variable_indices]
                 ),
                 level=torch.stack(
-                    [level_spatial_norm_stats["level_std"][i] for i in level_variable_indices]
+                    [spatial_norm_stats["level_std"][i] for i in level_variable_indices]
                 ),
             )
+        #only mean is spatial, std_dev is averaged over space
         elif self.norm_scheme == "mean_only_spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack(
                     [spatial_norm_stats["surface_mean"][i] for i in surface_variable_indices]
                 ),
                 level=torch.stack(
-                    [level_spatial_norm_stats["level_mean"][i] for i in level_variable_indices]
+                    [spatial_norm_stats["level_mean"][i] for i in level_variable_indices]
                 ),
             )
 
@@ -186,9 +167,10 @@ class DCPPForecast(XarrayDataset):
                     [spatial_norm_stats["surface_std"][i] for i in surface_variable_indices]
                 ).nanmean(axis=(-1, -2), keepdim=True),
                 level=torch.stack(
-                    [level_spatial_norm_stats["level_std"][i] for i in level_variable_indices]
+                    [spatial_norm_stats["level_std"][i] for i in level_variable_indices]
                 ).nanmean(axis=(-1, -2), keepdim=True),
             )
+        #statistics for predicting the anomaly, both mean and std_dev have spatial dimensions
         elif self.norm_scheme == "clim_removed":
             self.data_mean = TensorDict(
                 surface=clim_removed_norm_stats["surface_mean"],
@@ -207,7 +189,7 @@ class DCPPForecast(XarrayDataset):
         self.level_variables = [
             a + " " + str(p // 100) for a in level_variables for p in pressure_levels
         ]
-        self.atmos_forcings = torch.tensor(np.load(f"{forcings_path}/ghg_forcings_normed.npy"))
+        self.atmos_forcings = torch.load(f"{forcings_path}/cmip_ghg_forcings_ssp245.pt")
         self.solar_forcings = torch.tensor(np.load(f"{forcings_path}/solar_forcings_normed.npy"))
         times_seconds = [v[2].item() // 10**9 for k, v in self.id2pt.items()]
         self.next_timestamp_map = {k: v for k, v in list(zip(times_seconds, times_seconds[1:]))}
@@ -242,16 +224,20 @@ class DCPPForecast(XarrayDataset):
         )  # time in seconds
         times = pd.to_datetime(out["timestamp"].cpu().numpy(), unit="s").tz_localize(None)
         current_month = torch.tensor(times.month) - 1 % 12
-        current_year = torch.tensor(times.year) - 1961  # -1961 to zero index
+        if(self.indexed_year_forcings):
+            current_year = torch.tensor(times.year)
+            current_solar_year = torch.tensor(times.year)-1961
+        else:
+            current_year = torch.tensor(times.year) - 1961
+            current_solar_year = torch.tensor(times.year) - 1961  # -1961 to zero index
         out["forcings"] = torch.concatenate(
             [
                 self.atmos_forcings[current_year, :],
-                self.solar_forcings[(current_year * 12) + current_month, :],
+                self.solar_forcings[(current_solar_year * 12) + current_month, :],
             ]
         )
 
         t = self.lead_time_months  # multistep
-
         out["next_state"] = super().__getitem__(i + t // self.timedelta)
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
@@ -276,15 +262,15 @@ class DCPPForecast(XarrayDataset):
                     self.id2pt[i - self.lead_time_months // self.timedelta][2].item() // 10**9
                 )
                 times = pd.to_datetime(prev_timestamp, unit="s").tz_localize(None)
+
         if normalize:
             out = self.normalize(out, month=current_month)
 
         # need to replace nans with mask_value
-        mask = {k: (apply_isnan(v) if "state" in k else v) for k, v in out.items()}
+        mask = {k: (get_non_nan_mask(v) if "state" in k else v) for k, v in out.items()}
 
         out = {k: apply_nan_to_num(v) if "state" in k else v for k, v in out.items()}
         out = {k: (v * mask[k] if "state" in k else v) for k, v in out.items()}
-
         return out
 
     def normalize(self, batch, stateless=False, month=None):
@@ -301,7 +287,7 @@ class DCPPForecast(XarrayDataset):
             return (batch - means) / stds
         else:
             dict_out = {k: ((v - means) / stds if "state" in k else v) for k, v in batch.items()}
-            dict_out = {k: apply_threshold(v) if "state" in k else v for k, v in dict_out.items()}
+            dict_out = {k: replace_inf_and_large_values(v,1e35) if "state" in k else v for k, v in dict_out.items()}
             return dict_out
 
     def denormalize(self, batch, stateless=False, month=None):

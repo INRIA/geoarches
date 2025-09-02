@@ -2,6 +2,7 @@ import warnings
 from pathlib import Path
 from typing import Callable, Dict, List
 
+import numpy as np
 import torch
 import xarray as xr
 from tensordict.tensordict import TensorDict
@@ -36,6 +37,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = False,
         limit_examples: int | None = None,
+        timestamp_key: Callable = lambda x: (x[-1]),
     ):
         """
         Args:
@@ -92,7 +94,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 self.timestamps = self.timestamps[:limit_examples]
                 break
 
-        self.timestamps = sorted(self.timestamps, key=lambda x: x[-1])  # sort by timestamp
+        self.timestamps = sorted(self.timestamps, key=timestamp_key)  # sort by timestamp
         self.id2pt = dict(enumerate(self.timestamps))
 
         self.cached_xrdataset = None
@@ -119,10 +121,14 @@ class XarrayDataset(torch.utils.data.Dataset):
             xr_dataset = xr_dataset.sel(self.dimension_indexers)
         self.already_ran_index_selection = False  # Reset for next call.
 
-        np_arrays = {
-            key: xr_dataset[list(variables)].to_array().to_numpy()
-            for key, variables in self.variables.items()
-        }
+        #Make np arrays for each key and make an empty array if no variables for this list. Needed for running experiments with different variable sets
+        np_arrays = {}
+        for key, variables in self.variables.items():
+            if variables:  # non-empty
+                np_arrays[key] = xr_dataset[list(variables)].to_array().to_numpy()
+            else:  # empty list -> create an empty array
+                np_arrays[key] = np.empty((0,))
+
         tdict = TensorDict(
             {key: torch.from_numpy(np_array).float() for key, np_array in np_arrays.items()}
         )
