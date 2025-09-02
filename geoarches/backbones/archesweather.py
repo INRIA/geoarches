@@ -197,7 +197,7 @@ class ArchesWeatherCondBackbone(nn.Module):
         super().__init__()
         self.__dict__.update(locals())
         drop_path = np.linspace(
-            0, droppath_coeff / depth_multiplier, 8 * depth_multiplier
+            0, droppath_coeff / depth_multiplier, int(8 * depth_multiplier)
         ).tolist()
         # In addition, three constant masks(the topography mask, land-sea mask and soil type mask)
         self.zdim = tensor_size[0]
@@ -225,9 +225,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer1 = CondBasicLayer(
             dim=emb_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[0],
-            drop_path=drop_path[: 2 * depth_multiplier],
+            drop_path=drop_path[: int(2 * depth_multiplier)],
             **layer_args,
             **kwargs,
         )
@@ -239,18 +239,18 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer2 = CondBasicLayer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[1],
-            drop_path=drop_path[2 * depth_multiplier :],
+            drop_path=drop_path[int(2 * depth_multiplier) :],
             **layer_args,
             **kwargs,
         )
         self.layer3 = CondBasicLayer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[2],
-            drop_path=drop_path[2 * depth_multiplier :],
+            drop_path=drop_path[int(2 * depth_multiplier) :],
             **layer_args,
             **kwargs,
         )
@@ -261,9 +261,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer4 = CondBasicLayer(
             dim=out_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[3],
-            drop_path=drop_path[: 2 * depth_multiplier],
+            drop_path=drop_path[: int(2 * depth_multiplier)],
             **layer_args,
             **kwargs,
         )

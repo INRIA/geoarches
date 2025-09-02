@@ -5,7 +5,11 @@ dataset:
   multistep: ${oc.select:module.train.rollout_iterations,1}
   norm_scheme: pangu
   load_prev: True
-
+  variables: 
+    surface: ${stats.module.variables.surface}
+    level: ${stats.module.variables.level}
+  levels: ${stats.module.levels}
+  
 validation_args:
   multistep: ${oc.select:module.val.rollout_iterations,1}
   domain: val

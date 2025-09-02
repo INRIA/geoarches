@@ -5,6 +5,8 @@ import xarray as xr
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
+# Test for the Era5Forecast and Era5Dataset classes in the geoarches.dataloaders.era5 module.
+# Test uses graphcast normalization scheme.
 from geoarches.dataloaders import era5
 
 # Dimension sizes.
@@ -16,6 +18,9 @@ with initialize(version_base=None, config_path="../../geoarches/configs", job_na
     print(OmegaConf.to_yaml(cfg))
 
     OmegaConf.resolve(cfg)
+
+    # Change parameters of cfg.stats.norm_scheme
+    cfg.stats.module.norm_scheme = "graphcast"
 
 
 class TestEra5Forecast:
@@ -64,10 +69,7 @@ class TestEra5Forecast:
 
     def test_load_current_state_with_timestamp(self):
         ds = era5.Era5Dataset(
-            path=str(self.test_dir),
-            domain="all",
-            return_timestamp=True,
-            levels=range(0, LEVEL),
+            path=str(self.test_dir), domain="all", return_timestamp=True, levels=range(0, LEVEL)
         )
         example, timestamp = ds[0]
 
@@ -169,7 +171,7 @@ class TestEra5Forecast:
         "indexers",
         [
             {
-                "level": ("level", [2, 5, 7]),
+                "level": ("level", [2, 3, 8]),
                 "latitude": ("latitude", slice(None)),
                 "longitude": ("longitude", slice(None)),
                 "time": ("time", slice(None)),
