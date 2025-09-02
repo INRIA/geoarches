@@ -15,13 +15,6 @@ from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
 
 
-default_dimension_indexers = {
-    "level": ("plev", pressure_levels),
-    "latitude": ("lat", slice(None)),
-    "longitude": ("lon", slice(None)),
-    "time": ("time", slice(None)),
-}
-
 
 class DCPPForecast(XarrayDataset):
     """

@@ -49,7 +49,7 @@ class TestDCPPForecast:
 
         # make fake atmos forcings
         full_atmos_normal = torch.rand((540, 4))
-        np.save(f"{self.test_dir}/ghg_forcings_normed.npy", full_atmos_normal.numpy())
+        torch.save(full_atmos_normal,f"{self.test_dir}/cmip_ghg_forcings_ssp245.pt")
         full_solar_normal = torch.rand((804, 6))
         np.save(f"{self.test_dir}/solar_forcings_normed.npy", full_solar_normal.numpy())
 
