@@ -103,3 +103,32 @@ def tensordict_cat(tdict_list, dim=0, **kwargs):
         ),
         device=tdict_list[0].device,
     ).auto_batch_size_()
+
+
+def apply_nan_to_num(td: TensorDict):
+    return TensorDict(
+        {key: torch.nan_to_num(value) for key, value in td.items()}, batch_size=td.batch_size
+    )
+
+
+def get_non_nan_mask(td: TensorDict):
+    return TensorDict(
+        {key: ~torch.isnan(value) for key, value in td.items()}, batch_size=td.batch_size
+    )
+
+
+def replace_inf_and_large_values(td: TensorDict, threshold):
+    """
+    Replaces `inf` values and values larger than threshold with 0.
+    """
+    return TensorDict(
+        {
+            key: value.masked_fill(torch.isinf(value) | (value > threshold), 0)
+            for key, value in td.items()
+        },
+        batch_size=td.batch_size,
+    )
+
+
+def replace_nans(td: TensorDict, value=0):
+    return td.apply(lambda x: torch.where(torch.isnan(x), torch.tensor(value, dtype=x.dtype), x))

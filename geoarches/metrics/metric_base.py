@@ -103,7 +103,7 @@ class MetricBase:
 
 
 class TensorDictMetricBase(Metric):
-    """Wrapper around metric to enable handling of targets and preds that are TensorDicts.
+    """Wrapper around metric to enable handling of and preds that are TensorDicts.
 
     Assumes metric should accept tensor target and pred.
     Keeps track of a metric instantiation per item in the TensorDict.
