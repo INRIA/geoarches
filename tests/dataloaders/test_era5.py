@@ -277,6 +277,8 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         )
         example = ds[0]
 
+        assert ds.norm_scheme == "graphcast"
+
         assert len(ds) == expected_len
         # Current state
         assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
@@ -289,6 +291,11 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         assert "future_states" not in example
         # No prev state
         assert "prev_state" not in example
+
+        # Check if normalization is applied.
+        example_normalized = example["state"]["surface"]
+        example_denormalized = ds.denormalize(example)["state"]["surface"]
+        assert not np.allclose(example_normalized, example_denormalized)
 
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
@@ -308,6 +315,8 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             },
         )
         example = ds[0]
+
+        assert ds.norm_scheme == "graphcast"
 
         assert len(ds) == expected_len
         # Current state
@@ -341,6 +350,8 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             },
         )
         example = ds[0]
+
+        assert ds.norm_scheme == "graphcast"
 
         assert len(ds) == expected_len
         # Current state
@@ -381,6 +392,8 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
 
         example = ds[0]
 
+        assert ds.norm_scheme == "pangu"
+
         assert len(ds) == expected_len
         # Current state
         assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
@@ -393,3 +406,8 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
         assert "future_states" not in example
         # No prev state
         assert "prev_state" not in example
+
+        # Check if normalization is applied.
+        example_normalized = example["state"]["surface"]
+        example_denormalized = ds.denormalize(example)["state"]["surface"]
+        assert not np.allclose(example_normalized, example_denormalized)

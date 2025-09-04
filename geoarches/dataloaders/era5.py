@@ -287,6 +287,7 @@ class Era5Forecast(Era5Dataset):
             interpolate_nans: Whether to interpolate NaN values for model input (prev and current state).
         """
         self.__dict__.update(locals())
+        del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
 
         all_indexers = default_dimension_indexers.copy()
         all_indexers.update(dimension_indexers or {})
@@ -422,6 +423,9 @@ class Era5Forecast(Era5Dataset):
         return out
 
     def denormalize(self, batch):
+        if self.norm_scheme is None:
+            return batch
+
         device = list(batch.values())[0].device
         means = self.data_mean.to(device)
         stds = self.data_std.to(device)
