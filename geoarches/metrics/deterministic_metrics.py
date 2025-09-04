@@ -14,7 +14,7 @@ lat_coeffs_equi = torch.tensor(
 lat_coeffs_equi = (lat_coeffs_equi / lat_coeffs_equi.mean())[None, None, :, None]
 
 
-def wrmse(pred, gt, weights=None,ignore_nans=False):
+def wrmse(pred, gt, weights=None, ignore_nans=False):
     """Weighted root mean square error.
 
     Expects inputs of shape: [..., lat, lon]
@@ -26,7 +26,7 @@ def wrmse(pred, gt, weights=None,ignore_nans=False):
     """
     if weights is None:
         weights = lat_coeffs_equi.to(pred.device)
-    if(ignore_nans):
+    if ignore_nans:
         err = (pred - gt).pow(2).mul(weights).mean((-2, -1)).sqrt()
     else:
         err = (pred - gt).pow(2).mul(weights).nanmean((-2, -1)).sqrt()

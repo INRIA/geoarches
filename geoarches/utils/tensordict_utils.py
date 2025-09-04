@@ -117,7 +117,7 @@ def get_non_nan_mask(td: TensorDict):
     )
 
 
-def replace_inf_and_large_values(td: TensorDict,threshold):
+def replace_inf_and_large_values(td: TensorDict, threshold):
     """
     Replaces `inf` values and values larger than threshold with 0.
     """
@@ -131,6 +131,4 @@ def replace_inf_and_large_values(td: TensorDict,threshold):
 
 
 def replace_nans(td: TensorDict, value=0):
-    return td.apply(
-        lambda x: torch.where(torch.isnan(x), torch.tensor(value, dtype=x.dtype), x)
-    )
+    return td.apply(lambda x: torch.where(torch.isnan(x), torch.tensor(value, dtype=x.dtype), x))

@@ -46,7 +46,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         timestamp_key: Callable = lambda x: (x[-1]),
-        interpolate_nans: bool = True,
+        interpolate_nans: bool = False,
     ):
         """
         Args:
@@ -166,14 +166,11 @@ class XarrayDataset(torch.utils.data.Dataset):
         if self.dimension_indexers and not self.already_ran_index_selection:
             indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
 
-            print(xr_dataset)
-            print(indexers)
-
             xr_dataset = xr_dataset.sel(**indexers)
 
         self.already_ran_index_selection = False  # Reset for next call.
 
-        #Make np arrays for each key and make an empty array if no variables for this list. Needed for running experiments with different variable sets
+        # Make np arrays for each key and make an empty array if no variables for this list. Needed for running experiments with different variable sets
         np_arrays = {}
         for key, variables in self.variables.items():
             if variables:  # non-empty

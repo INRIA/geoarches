@@ -15,7 +15,6 @@ from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
 
 
-
 class DCPPForecast(XarrayDataset):
     """
     Load DCPP data for the forecast task.
@@ -32,7 +31,7 @@ class DCPPForecast(XarrayDataset):
         filename_filter=None,
         lead_time_months=1,
         multistep=1,
-        load_prev=1,#how many previous states to load
+        load_prev=1,  # how many previous states to load
         load_clim=False,
         norm_scheme="spatial_norm",
         limit_examples: int = 0,
@@ -43,8 +42,8 @@ class DCPPForecast(XarrayDataset):
         surface_variable_indices=[],
         level_variable_indices=[],
         pressure_levels=[85000, 70000, 50000, 25000],
-        filename_filter_type="dcpp", #choose train/test split with filename filter: "dcpp" and "dcpp_alt"
-        indexed_year_forcings=False, #toggle index for forcings between zero-indexed and and year-indexed
+        filename_filter_type="dcpp",  # choose train/test split with filename filter: "dcpp" and "dcpp_alt"
+        indexed_year_forcings=False,  # toggle index for forcings between zero-indexed and and year-indexed
     ):
         """
         Args:
@@ -66,18 +65,15 @@ class DCPPForecast(XarrayDataset):
         self.timedelta = 1
         if self.filename_filter_type == "dcpp_alt":
             train_filter = range(1960, 2000)
-            val_filter = range(2000,2010)
-            test_filter = range(2010,2016)
+            val_filter = range(2000, 2010)
+            test_filter = range(2010, 2016)
             filename_filters = dict(
                 all=(lambda _: True),
                 train=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 test=lambda x: any(
-                    substring in x
-                    for substring in [
-                        f"{str(x)}_" for x in test_filter
-                    ]
+                    substring in x for substring in [f"{str(x)}_" for x in test_filter]
                 ),
                 val=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in val_filter]
@@ -86,7 +82,7 @@ class DCPPForecast(XarrayDataset):
             )
         elif self.filename_filter_type == "dcpp":
             train_filter = [x for i, x in enumerate(range(1960, 2010)) if (i + 1) % 10 != 0]
-            val_filter = range(2010,2016)
+            val_filter = range(2010, 2016)
             test_filter = [1969, 1979, 1989, 1999, 2009]
             filename_filters = dict(
                 all=(lambda _: True),
@@ -94,10 +90,7 @@ class DCPPForecast(XarrayDataset):
                     substring in x for substring in [f"{str(x)}_" for x in train_filter]
                 ),
                 val=lambda x: any(
-                    substring in x
-                    for substring in [
-                        f"{str(x)}_" for x in val_filter
-                    ]
+                    substring in x for substring in [f"{str(x)}_" for x in val_filter]
                 ),
                 test=lambda x: any(
                     substring in x for substring in [f"{str(x)}_" for x in test_filter]
@@ -109,7 +102,7 @@ class DCPPForecast(XarrayDataset):
         if variables is None:
             variables = dict(surface=surface_variables, level=level_variables)
         stats_file_path = "dcpp_stats.pt"
-        dimension_indexers = {"plev": pressure_levels}
+        dimension_indexers = {"plev": ("plev", pressure_levels)}
 
         super().__init__(
             path,
@@ -117,14 +110,13 @@ class DCPPForecast(XarrayDataset):
             variables=variables,
             limit_examples=limit_examples,
             dimension_indexers=dimension_indexers,
-            timestamp_key=lambda x: (x[0],x[1])
+            timestamp_key=lambda x: (x[0], x[1]),
         )
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         norm_file_path = geoarches_stats_path / stats_file_path
 
         spatial_norm_stats = torch.load(norm_file_path)
-
 
         clim_removed_file_path = geoarches_stats_path / "dcpp_clim_removed_norm_stats.pt"
         clim_removed_norm_stats = torch.load(clim_removed_file_path)
@@ -138,7 +130,7 @@ class DCPPForecast(XarrayDataset):
                 surface=torch.tensor(1),
                 level=torch.tensor(1),
             )
-        #both mean and std_dev have spatial dimensions
+        # both mean and std_dev have spatial dimensions
         elif self.norm_scheme == "spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack(
@@ -156,7 +148,7 @@ class DCPPForecast(XarrayDataset):
                     [spatial_norm_stats["level_std"][i] for i in level_variable_indices]
                 ),
             )
-        #only mean is spatial, std_dev is averaged over space
+        # only mean is spatial, std_dev is averaged over space
         elif self.norm_scheme == "mean_only_spatial_norm":
             self.data_mean = TensorDict(
                 surface=torch.stack(
@@ -175,7 +167,7 @@ class DCPPForecast(XarrayDataset):
                     [spatial_norm_stats["level_std"][i] for i in level_variable_indices]
                 ).nanmean(axis=(-1, -2), keepdim=True),
             )
-        #statistics for predicting the anomaly, both mean and std_dev have spatial dimensions
+        # statistics for predicting the anomaly, both mean and std_dev have spatial dimensions
         elif self.norm_scheme == "clim_removed":
             self.data_mean = TensorDict(
                 surface=clim_removed_norm_stats["surface_mean"],
@@ -229,9 +221,9 @@ class DCPPForecast(XarrayDataset):
         )  # time in seconds
         times = pd.to_datetime(out["timestamp"].cpu().numpy(), unit="s").tz_localize(None)
         current_month = torch.tensor(times.month) - 1 % 12
-        if(self.indexed_year_forcings):
+        if self.indexed_year_forcings:
             current_year = torch.tensor(times.year)
-            current_solar_year = torch.tensor(times.year)-1961
+            current_solar_year = torch.tensor(times.year) - 1961
         else:
             current_year = torch.tensor(times.year) - 1961
             current_solar_year = torch.tensor(times.year) - 1961  # -1961 to zero index
@@ -292,7 +284,10 @@ class DCPPForecast(XarrayDataset):
             return (batch - means) / stds
         else:
             dict_out = {k: ((v - means) / stds if "state" in k else v) for k, v in batch.items()}
-            dict_out = {k: replace_inf_and_large_values(v,1e35) if "state" in k else v for k, v in dict_out.items()}
+            dict_out = {
+                k: replace_inf_and_large_values(v, 1e35) if "state" in k else v
+                for k, v in dict_out.items()
+            }
             return dict_out
 
     def denormalize(self, batch, stateless=False, month=None):
