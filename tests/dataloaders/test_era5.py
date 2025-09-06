@@ -152,6 +152,46 @@ class TestEra5Dataset(TestBase):
         )  #  (var, lev, lat, lon)
 
 
+@pytest.fixture(scope="session")
+def write_val_test_data(tmp_path_factory):
+    """Write dummy data for validation and testing years."""
+    # Use tmp_path_factory to create a class-level temporary directory.
+    test_dir = tmp_path_factory.mktemp("val_test_data")
+
+    # 1 file per year.
+    for year in range(2018, 2022):
+        file_path = test_dir / f"fake_era5_{year}.nc"
+        start_date = f"{year}-12-01" if year == 2018 else f"{year}-01-01"
+        end_date = f"{year}-01-31" if year == 2021 else f"{year}-12-31"
+        time = pd.date_range(start=start_date, end=end_date, freq="24h")  # datetime64[ns]
+
+        # Create some dummy data
+        level_var_data = np.zeros((len(time), LEVEL, LON, LAT))  # Lon first.
+        surface_var_data = np.zeros((len(time), LAT, LON))  # Lat first.
+
+        ds = xr.Dataset(
+            data_vars=dict(
+                **{
+                    var_name: (["time", "level", "longitude", "latitude"], level_var_data)
+                    for var_name in era5_constants.arches_default_level_variables
+                },
+                **{
+                    var_name: (["time", "latitude", "longitude"], surface_var_data)
+                    for var_name in era5_constants.arches_default_surface_variables
+                },
+            ),
+            coords={
+                "time": time,
+                "latitude": np.arange(0, LAT),
+                "longitude": np.arange(0, LON),
+                "level": all_levels,
+            },
+        )
+        ds.to_netcdf(file_path)
+
+    return test_dir
+
+
 class TestEra5Forecast(TestBase):
     @pytest.mark.parametrize(
         "lead_time_hours, expected_len",
@@ -253,6 +293,60 @@ class TestEra5Forecast(TestBase):
         # Prev state
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
+
+    @pytest.mark.parametrize(
+        "domain, load_prev, multistep, expected_start_time, expected_end_time",
+        [
+            (
+                "val",
+                True,
+                2,
+                np.datetime64("2018-12-31T00:00:00"),
+                np.datetime64("2020-01-02T00:00:00"),
+            ),  # 2019
+            (
+                "val",
+                False,
+                2,
+                np.datetime64("2019-01-01T00:00:00"),
+                np.datetime64("2020-01-02T00:00:00"),
+            ),  # 2019
+            (
+                "test",
+                True,
+                1,
+                np.datetime64("2019-12-31T00:00:00"),
+                np.datetime64("2021-01-01T00:00:00"),
+            ),  # 2020
+        ],
+    )
+    def test_reselect_timestamps(
+        self,
+        write_val_test_data,
+        domain,
+        load_prev,
+        multistep,
+        expected_start_time,
+        expected_end_time,
+    ):
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(write_val_test_data),
+            domain=domain,
+            lead_time_hours=24,
+            multistep=multistep,
+            load_prev=load_prev,
+            load_clim=False,
+            # Select all values in each dimension.
+            dimension_indexers={
+                "level": ("level", all_levels),
+                "latitude": ("latitude", slice(None)),
+                "longitude": ("longitude", slice(None)),
+            },
+        )
+
+        assert ds.timestamps[0][-1] == expected_start_time
+        assert ds.timestamps[-1][-1] == expected_end_time
 
 
 class TestEra5ForecastWithGraphcastNormalization(TestBase):
