@@ -171,7 +171,7 @@ class DiffusionModule(BaseLightningModule):
 
         cond_emb = month_emb + hour_emb + timestep_emb
 
-        x = self.embedder.encode(batch["state"], input_state)
+        x = self.embedder.encode(batch["state"], input_state, batch.get("forcings", None))
 
         x = self.backbone(x, cond_emb)
         out = self.embedder.decode(x)  # we get tdict
