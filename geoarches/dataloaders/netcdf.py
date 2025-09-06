@@ -204,7 +204,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
             self.cached_xrdataset = xrdataset
 
-        obsi = self.cached_xrdataset.isel(time=line_id)
+        obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
         if interpolate_nans:
             obsi = obsi.fillna(
                 value=obsi.mean(

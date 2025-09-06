@@ -39,9 +39,9 @@ filename_filters = dict(
 )
 
 default_dimension_indexers = {
-    "latitude": np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
-    "longitude": np.arange(0, 360, 360 / 240),
-    "level": arches_default_pressure_levels,
+    "latitude": ("latitude", slice(None)),  # decreasing lats
+    "longitude": ("longitude", slice(None)),
+    "level": ("level", arches_default_pressure_levels),
 }
 
 
