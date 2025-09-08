@@ -337,7 +337,7 @@ class Era5Forecast(Era5Dataset):
 
     def __init__(
         self,
-        stats_cfg,
+        stats_cfg = None,
         path: str = "data/era5_240/full/",
         domain: str = "train",
         filename_filter: Callable | None = None,
@@ -406,8 +406,18 @@ class Era5Forecast(Era5Dataset):
         self.current_multistep = 1
 
         # include vertical component by default
-        stats = instantiate(stats_cfg.module)
-        self.data_mean, self.data_std = stats.load_normalization_stats()
+        if stats_cfg is not None:
+            stats = instantiate(stats_cfg.module)
+            self.data_mean, self.data_std = stats.load_normalization_stats()
+        else:
+            from geoarches.utils.normalization import NormalizationStatistics
+            stats = NormalizationStatistics(
+                variables=self.variables,
+                levels=self.levels,
+                norm_scheme=self.norm_scheme
+            )
+            if self.norm_scheme is not None:
+                self.data_mean, self.data_std = stats.load_normalization_stats()
 
         # variable names
         # TODO: fix this below
