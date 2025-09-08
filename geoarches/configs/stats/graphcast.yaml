@@ -1,5 +1,7 @@
 module:
   _target_: geoarches.utils.normalization.NormalizationStatistics
+  # Note: If you change number of variables,
+  # update surface_ch, level_ch in embedder in configs/module/.
   variables: 
     surface:
         - 10m_u_component_of_wind
@@ -16,7 +18,9 @@ module:
   loss_weight_per_variable:
     surface: [0.1, 0.1, 1.0, 0.1]
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    
+
+  # Note: If you change number of levels,
+  # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
   norm_scheme: graphcast
 
