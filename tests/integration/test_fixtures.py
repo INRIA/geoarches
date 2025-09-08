@@ -7,9 +7,12 @@ import pandas as pd
 import xarray as xr
 
 
-def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6, lat: int = 120, lon: int = 240):
+def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6, lat: int = 121, lon: int = 240):
     """Create minimal dummy ERA5 data for integration tests."""
-    LAT, LON = lat, lon  # Default to match constant masks dimensions (120x240)
+    # Use full ERA5 grid dimensions
+    # The dataloader expects these exact coordinate values
+    LAT_COORDS = 121  # Full ERA5 latitude points
+    LON_COORDS = 240  # Full ERA5 longitude points
     LEVELS = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]  # Match pangu defaults
     
     # Surface variables to include (full names expected by Era5Forecast)
@@ -33,25 +36,35 @@ def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6, lat: int = 1
         times = pd.date_range(start_date, periods=2, freq="6h")
         time = times
         
-        # Create dummy data with proper shapes
-        level_var_data = np.random.randn(len(time), len(LEVELS), LON, LAT)
-        surface_var_data = np.random.randn(len(time), LAT, LON)
+        # Create dummy data with full ERA5 grid dimensions
+        # This ensures compatibility with the dataloader's coordinate selection
+        level_var_data = np.random.randn(len(time), len(LEVELS), LAT_COORDS, LON_COORDS)
+        surface_var_data = np.random.randn(len(time), LAT_COORDS, LON_COORDS)
         
         data_vars = {}
         # Add level variables
         for var in level_vars:
-            data_vars[var] = (["time", "level", "longitude", "latitude"], level_var_data)
+            data_vars[var] = (["time", "level", "latitude", "longitude"], level_var_data)
         
         # Add surface variables  
         for var in surface_vars:
             data_vars[var] = (["time", "latitude", "longitude"], surface_var_data)
         
+        # Generate coordinates that match exactly what Era5Forecast expects
+        # Era5Forecast will try to select these specific values with method="nearest"
+        expected_lats = np.arange(90, -90 - 1e-6, -180 / 120)  # Full ERA5 latitudes (121 points)
+        expected_lons = np.arange(0, 360, 360 / 240)  # Full ERA5 longitudes (240 points)
+        
+        # Use the full expected coordinate arrays
+        latitude = expected_lats[:LAT_COORDS]
+        longitude = expected_lons[:LON_COORDS]
+        
         ds = xr.Dataset(
             data_vars=data_vars,
             coords={
                 "time": time,
-                "latitude": np.linspace(-90, 90, LAT),
-                "longitude": np.linspace(0, 360, LON),
+                "latitude": latitude,
+                "longitude": longitude,
                 "level": LEVELS,
             },
         )
@@ -59,41 +72,3 @@ def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6, lat: int = 1
         ds.to_netcdf(file_path)
     
     return data_dir
-
-
-def create_dummy_stats_file(stats_dir: Path):
-    """Create minimal statistics file for normalization."""
-    stats_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create a dummy quantiles file
-    LAT, LON = 4, 8
-    LEVELS = [50, 100, 200, 500, 850, 1000]
-    
-    surface_vars = ["u10", "v10", "t2m", "msl"]
-    level_vars = ["u", "v", "t", "z"]
-    
-    data_vars = {}
-    
-    # Create dummy quantile data for each variable
-    for var in surface_vars:
-        # Mean and std for normalization
-        data_vars[f"{var}_mean"] = (["latitude", "longitude"], np.zeros((LAT, LON)))
-        data_vars[f"{var}_std"] = (["latitude", "longitude"], np.ones((LAT, LON)))
-    
-    for var in level_vars:
-        data_vars[f"{var}_mean"] = (["level", "latitude", "longitude"], np.zeros((len(LEVELS), LAT, LON)))
-        data_vars[f"{var}_std"] = (["level", "latitude", "longitude"], np.ones((len(LEVELS), LAT, LON)))
-    
-    ds = xr.Dataset(
-        data_vars=data_vars,
-        coords={
-            "latitude": np.linspace(-90, 90, LAT),
-            "longitude": np.linspace(0, 360, LON),
-            "level": LEVELS,
-        },
-    )
-    
-    stats_file = stats_dir / "era5-quantiles-2016_2022.nc"
-    ds.to_netcdf(stats_file)
-    
-    return stats_file
