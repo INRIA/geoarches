@@ -70,4 +70,12 @@ jobs:
       - name: Run unit tests
         run: |
           source .venv/bin/activate
-          python -m pytest -v tests/
+          python -m pytest -v tests/ --ignore=tests/integration/
+      #----------------------------------------------
+      #         run integration tests if unit tests pass
+      #----------------------------------------------
+      - name: Run integration tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest -v tests/integration/ -s
+        timeout-minutes: 15
