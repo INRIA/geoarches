@@ -102,9 +102,15 @@ def test_workflow_with_real_dataloader(tmp_path):
                 "dataloader.dataset.lead_time_hours=6",
                 # Disable multiprocessing to avoid pickling issues with lambda functions
                 "cluster.cpus=0",
+                # Disable GPU to avoid memory issues in CI
+                "cluster.gpus=0",
                 # Reduce model complexity to save memory
+                "module.backbone.emb_dim=8",  # Minimal embedding dimension
+                "module.backbone.num_heads=[2,2,2,2]",  # Minimal attention heads
                 "module.backbone.depth_multiplier=1",
                 "module.backbone.mlp_ratio=1.0",
+                "module.embedder.emb_dim=8",
+                "module.embedder.out_emb_dim=16",
                 # Minimal test settings
                 "limit_val_batches=1",
                 "seed=42",
