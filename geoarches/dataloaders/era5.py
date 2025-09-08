@@ -251,7 +251,7 @@ class Era5Forecast(Era5Dataset):
 
     def __init__(
         self,
-        stats_cfg = None,
+        stats_cfg,
         path: str = "data/era5_240/full/",
         domain: str = "train",
         filename_filter: Callable | None = None,
