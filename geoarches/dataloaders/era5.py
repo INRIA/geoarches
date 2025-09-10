@@ -395,6 +395,8 @@ class Era5Forecast(Era5Dataset):
         out["state"] = super().__getitem__(
             i, interpolate_nans=self.interpolate_input, warning_on_nan=self.warning_on_nan
         )
+        out["state"] = out["state"]
+
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
 
@@ -407,6 +409,7 @@ class Era5Forecast(Era5Dataset):
                 interpolate_nans=self.interpolate_target,
                 warning_on_nan=self.warning_on_nan and self.interpolate_target,
             )
+            out["next_timestamp"] = out["next_state"]
 
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
@@ -420,6 +423,7 @@ class Era5Forecast(Era5Dataset):
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
+            out["future_states"] = out["future_states"]
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
@@ -427,6 +431,7 @@ class Era5Forecast(Era5Dataset):
                 interpolate_nans=self.interpolate_input,
                 warning_on_nan=self.warning_on_nan,
             )
+            out["prev_state"] = out["prev_state"]
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)
