@@ -177,22 +177,22 @@ class Era5Dataset(XarrayDataset):
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
-        coords = {"time": times}
+        coords = {self.time_dim_name: times}
 
         if self.latitude_dim_name in self.other_indexers:
             coords[self.latitude_dim_name] = self.dimension_indexers["latitude"][1]
         if self.longitude_dim_name in self.other_indexers:
             coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
         if self.level_dim_name in self.other_indexers:
-            coords["level"] = self.dimension_indexers["level"][1]
+            coords[self.level_dim_name] = self.dimension_indexers["level"][1]
 
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
                     v: (
                         [
-                            "time",
-                            "level",
+                            self.time_dim_name,
+                            self.level_dim_name,
                             self.latitude_dim_name,
                             self.longitude_dim_name,
                         ],
@@ -203,7 +203,7 @@ class Era5Dataset(XarrayDataset):
                 **{
                     v: (
                         [
-                            "time",
+                            self.time_dim_name,
                             self.latitude_dim_name,
                             self.longitude_dim_name,
                         ],
@@ -216,7 +216,8 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel(level=levels)
+            levels = {self.level_dim_name: levels}
+            xr_dataset = xr_dataset.sel(**levels)
 
         xr_dataset = xr_dataset.chunk(time=1)
         return xr_dataset
