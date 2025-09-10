@@ -177,22 +177,22 @@ class Era5Dataset(XarrayDataset):
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
-        coords = {self.time_dim_name: times}
+        coords = {"time": times}
 
         if self.latitude_dim_name in self.other_indexers:
             coords[self.latitude_dim_name] = self.dimension_indexers["latitude"][1]
         if self.longitude_dim_name in self.other_indexers:
             coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
         if self.level_dim_name in self.other_indexers:
-            coords[self.level_dim_name] = self.dimension_indexers["level"][1]
+            coords["level"] = self.dimension_indexers["level"][1]
 
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
                     v: (
                         [
-                            self.time_dim_name,
-                            self.level_dim_name,
+                            "time",
+                            "level",
                             self.latitude_dim_name,
                             self.longitude_dim_name,
                         ],
@@ -203,7 +203,7 @@ class Era5Dataset(XarrayDataset):
                 **{
                     v: (
                         [
-                            self.time_dim_name,
+                            "time",
                             self.latitude_dim_name,
                             self.longitude_dim_name,
                         ],
@@ -370,6 +370,8 @@ class Era5Forecast(Era5Dataset):
         out["state"] = super().__getitem__(
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
         )
+        out["state"] = out["state"]
+
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
 
@@ -380,6 +382,7 @@ class Era5Forecast(Era5Dataset):
             out["next_state"] = super().__getitem__(
                 i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
             )
+            out["next_timestamp"] = out["next_state"]
 
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
@@ -391,6 +394,7 @@ class Era5Forecast(Era5Dataset):
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
+            out["future_states"] = out["future_states"]
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
@@ -398,6 +402,7 @@ class Era5Forecast(Era5Dataset):
                 interpolate_nans=self.interpolate_nans,
                 warning_on_nan=self.warning_on_nan,
             )
+            out["prev_state"] = out["prev_state"]
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)

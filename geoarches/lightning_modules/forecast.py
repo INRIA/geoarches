@@ -86,7 +86,22 @@ class ForecastModule(BaseLightningModule):
 
         return out
 
-    def forward_multistep(self, batch, iters=None, return_format="tensordict", use_avg=True):
+    def compute_loop_batch(self, batch, pred, update_fnc=None):
+            
+            if update_fnc is not None:
+                loop_batch = update_fnc(batch, pred)
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"],
+                    state=pred,
+                    # Used only to obtain NaN mask (not true next state)
+                    next_state=loop_batch["next_state"],
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                )
+            
+            return loop_batch
+    
+    def forward_multistep(self, batch, iters=None, return_format="tensordict", use_avg=True, update_fnc=None):
         # multistep forward with gradient checkpointing to save GPU memory
         if use_avg and self.avg_modules is not None:
             out = self.forward_multistep(batch, iters=iters, use_avg=False)
@@ -104,17 +119,14 @@ class ForecastModule(BaseLightningModule):
             else:
                 pred = self.forward(loop_batch)
             preds_future.append(pred)
+
             # compute next batch
-            loop_batch = dict(
-                prev_state=loop_batch["state"],
-                state=pred,
-                # Used only to obtain NaN mask (not true next state)
-                next_state=loop_batch["next_state"],
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-            )
+            loop_batch = self.compute_loop_batch(batch, pred, update_fnc=update_fnc)
+
 
         if return_format == "list":
             return preds_future
+        
         preds_future = torch.stack(preds_future, dim=1)
 
         return preds_future
@@ -289,7 +301,7 @@ class ForecastModule(BaseLightningModule):
 
     def on_train_epoch_end(self, *args, **kwargs):
         dataset = self.trainer.train_dataloader.dataset
-        dataset.iteration_hook(self)
+        dataset.iteration_hook(self)        
 
     def configure_optimizers(self):
         decay_params = {
