@@ -38,7 +38,6 @@ class ForecastModule(BaseLightningModule):
         add_input_state=False,
         save_test_outputs=False,
         use_weatherbench_lat_coeffs=True,
-        lead_time_hours=24,
         rollout_iterations=1,
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
