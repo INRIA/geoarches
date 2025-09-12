@@ -362,7 +362,7 @@ class Era5Forecast(Era5Dataset):
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
         )
 
-        out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
+        out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
 
         # next obsi. has function of
         T = self.lead_time_hours  # multistep
