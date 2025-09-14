@@ -20,6 +20,7 @@ from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
+    empty=lambda x: False,
     last_train=lambda x: ("2018" in x),
     last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
     train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
@@ -31,12 +32,14 @@ filename_filters = dict(
     test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
     test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
     recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
-    empty=lambda x: False,
+    # AIMIP
+    aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
+    aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
 )
 
 default_dimension_indexers = {
-    "latitude": ("latitude", np.arange(90, -90 - 1e-6, -180 / 120)),  # decreasing lats
-    "longitude": ("longitude", np.arange(0, 360, 360 / 240)),
+    "latitude": ("latitude", slice(None)),  # decreasing lats
+    "longitude": ("longitude", slice(None)),
     "level": ("level", arches_default_pressure_levels),
 }
 
@@ -213,7 +216,8 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel(level=levels)
+            levels = {self.level_dim_name: levels}
+            xr_dataset = xr_dataset.sel(**levels)
 
         xr_dataset = xr_dataset.chunk(time=1)
         return xr_dataset
@@ -318,15 +322,21 @@ class Era5Forecast(Era5Dataset):
 
         # depending on domain, re-set timestamp bounds
 
-        if domain in ("val", "test", "test_z0012"):
+        if domain in ("val", "test", "test_z0012", "aimip_val"):
             # re-select timestamps
-            year = 2019 if domain.startswith("val") else 2020
+            if domain.startswith("val"):
+                year = 2019
+            elif domain.startswith("test"):
+                year = 2020
+            elif domain == "aimip_val":
+                year = 2014
             start_time = np.datetime64(f"{year}-01-01T00:00:00")
             if self.load_prev:
                 start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
-            end_time = np.datetime64(
-                f"{year + 1}-01-01T00:00:00"
-            ) + self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
+            # end_time is exclusive, so we add one more step.
+            end_time = np.datetime64(f"{year}-12-31T00:00:00") + self.multistep * (
+                self.lead_time_hours + 1
+            ) * np.timedelta64(1, "h")
             print("start time", start_time)
             super().set_timestamp_bounds(start_time, end_time)
 
@@ -376,6 +386,8 @@ class Era5Forecast(Era5Dataset):
         out["state"] = super().__getitem__(
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
         )
+        out["state"] = out["state"]
+
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
 
@@ -386,6 +398,7 @@ class Era5Forecast(Era5Dataset):
             out["next_state"] = super().__getitem__(
                 i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
             )
+            out["next_timestamp"] = out["next_state"]
 
         # Load multiple future timestamps if specified.
         if self.multistep > 1:
@@ -397,6 +410,7 @@ class Era5Forecast(Era5Dataset):
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
+            out["future_states"] = out["future_states"]
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
@@ -404,6 +418,7 @@ class Era5Forecast(Era5Dataset):
                 interpolate_nans=self.interpolate_nans,
                 warning_on_nan=self.warning_on_nan,
             )
+            out["prev_state"] = out["prev_state"]
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)

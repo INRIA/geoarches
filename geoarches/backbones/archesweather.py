@@ -11,6 +11,7 @@ from timm.layers.mlp import SwiGLU
 
 import geoarches.stats as geoarches_stats
 from geoarches.backbones.archesweather_layers import ICNR_init
+import warnings
 
 from .archesweather_layers import (
     CondBasicLayer,
@@ -44,6 +45,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         final_interpolation=False,
         forcings_embedding: ForcingsEmbedding | None = None,
         auto_move_to_device=True,
+        constant_mask_file="archesweather_constant_masks"
     ) -> None:
         """
         Args:
@@ -66,8 +68,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
-            geoarches_stats_path / "archesweather_constant_masks.pt", weights_only=True
+            geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
         )
+        self.constant_masks = self.constant_masks.half()
+
         constant_dims = self.constant_masks.shape[0]
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
@@ -178,6 +182,9 @@ class WeatherEncodeDecodeLayer(nn.Module):
 
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
+
+        if torch.isnan(surface).any() or torch.isnan(level).any():
+            warnings.warn("NaN detected in encoded features")
 
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
 

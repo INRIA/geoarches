@@ -117,7 +117,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         for fid, f in tqdm(enumerate(self.files)):
             with xr.open_dataset(f, **self.xr_options) as obs:
-                file_stamps = [(fid, i, t) for (i, t) in enumerate(obs.time.to_numpy())]
+                file_stamps = [(fid, i, t) for (i, t) in enumerate(obs.coords[self.time_dim_name].to_numpy())]
                 self.timestamps.extend(file_stamps)
             if (
                 limit_examples and len(self.timestamps) > limit_examples
@@ -207,7 +207,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_xrdataset = xr.open_dataset(self.files[file_id], **self.xr_options)
             self.cached_fileid = file_id
 
-        obsi = self.cached_xrdataset.isel(time=line_id)
+        obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
         if interpolate_nans:
             obsi = obsi.fillna(
                 value=obsi.mean(
