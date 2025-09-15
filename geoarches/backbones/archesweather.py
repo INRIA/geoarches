@@ -65,6 +65,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         """
         super().__init__()
         self.__dict__.update(locals())
+            
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
@@ -138,7 +139,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         """
         cond state is a condition state that is concatenated to the main state
         """
-        if forcings and self.forcings_embedding is not None:
+        if forcings is not None and self.forcings_embedding is None:
             raise ValueError("Passed forcings but typer of forcings_embedding is not set.")
         if self.forcings_embedding and forcings is None:
             raise ValueError(

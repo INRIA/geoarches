@@ -195,7 +195,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         return tdict
 
-    def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
+    def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None, debug=False):
         interpolate_nans = interpolate_nans or self.interpolate_nans
         warning_on_nan = warning_on_nan or self.warning_on_nan
 
@@ -219,7 +219,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 )
             )
 
-        tdict = self.convert_to_tensordict(obsi)
+        tdict = self.convert_to_tensordict(obsi, debug=debug)
 
         if warning_on_nan:
             if any([x.isnan().any().item() for x in tdict.values()]):

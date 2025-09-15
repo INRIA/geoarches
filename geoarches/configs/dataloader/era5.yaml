@@ -13,7 +13,6 @@ dataset:
       - ${stats.module.levels}
   warning_on_nan: True
   interpolate_nans: True. # Remove nans in the model input (ie. SST)
-
 validation_args:
   multistep: ${oc.select:module.val.rollout_iterations,1}
   domain: val

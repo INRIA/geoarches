@@ -9,6 +9,8 @@ import torch
 import xarray as xr
 from hydra.utils import instantiate
 
+import warnings
+
 from .era5_constants import (
     arches_default_level_variables,
     arches_default_pressure_levels,
@@ -121,14 +123,19 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
-    def convert_to_tensordict(self, xr_dataset):
+    def convert_to_tensordict(self, xr_dataset, debug=False):
         """
         input xarr should be a single time slice
         """
-        if self.slice_indexers:
-            xr_dataset = xr_dataset.sel(**self.slice_indexers)
-        if self.other_indexers:
-            xr_dataset = xr_dataset.sel(**self.other_indexers, method="nearest", tolerance=1e-6)
+        if debug:
+            print(list(xr_dataset.coords.keys()))
+
+        if not self.already_ran_index_selection:
+            if self.slice_indexers:
+                xr_dataset = xr_dataset.sel(**self.slice_indexers)
+            if self.other_indexers:
+                xr_dataset = xr_dataset.sel(**self.other_indexers, method="nearest", tolerance=1e-6)
+            
         #  Workaround to avoid calling sel() after transponse() to avoid OOM.
         self.already_ran_index_selection = True
         xr_dataset = xr_dataset.transpose(
@@ -258,6 +265,7 @@ class Era5Forecast(Era5Dataset):
         stats_cfg,
         path: str = "data/era5_240/full/",
         forcings_path: str = None,
+        forcings_stats_path: str = None,
         domain: str = "train",
         filename_filter: Callable | None = None,
         timedelta_hours: int = None,
@@ -318,8 +326,27 @@ class Era5Forecast(Era5Dataset):
             )
         if forcings_path is not None:
             self.forcings_ds = xr.open_dataset(forcings_path, **self.xr_options)
-            self.forcing_vars = forcing_vars
+            self.forcing_vars = list(forcing_vars)
 
+        if forcings_stats_path is not None:
+            self.forcings_stats_ds = xr.open_dataset(forcings_stats_path, **self.xr_options)
+            # check that all forcing vars are in stats ds
+            for var in self.forcing_vars:
+                if var not in self.forcings_stats_ds:
+                    raise ValueError(f"Forcing variable {var} not found in stats dataset.")
+            self.forcings_mean = torch.tensor(
+                self.forcings_stats_ds[self.forcing_vars].sel(statistic="mean").to_array().to_numpy()
+            ).float()
+            self.forcings_std = torch.tensor(
+                self.forcings_stats_ds[self.forcing_vars].sel(statistic="std").to_array().to_numpy()
+            ).float()
+        else:
+            warnings.warn(
+                "No forcings_stats_path provided. Forcings will not be normalized.", UserWarning
+            )
+            self.forcings_stats_ds = None
+            self.forcings_mean = None
+            self.forcings_std = None
         # depending on domain, re-set timestamp bounds
 
         if domain in ("val", "test", "test_z0012", "aimip_val"):
@@ -417,6 +444,7 @@ class Era5Forecast(Era5Dataset):
                 i - self.lead_time_hours // self.timedelta,
                 interpolate_nans=self.interpolate_nans,
                 warning_on_nan=self.warning_on_nan,
+                debug=False
             )
             out["prev_state"] = out["prev_state"]
 
@@ -447,9 +475,14 @@ class Era5Forecast(Era5Dataset):
         """
         first_day_of_month = timestamp.astype("datetime64[M]")
         np_array = (
-            self.forcings_ds[self.forcing_vars].sel(time=first_day_of_month).to_array().to_numpy()
+            self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest").to_array().to_numpy()
         )
-        return torch.from_numpy(np_array).float()
+        forcings = torch.from_numpy(np_array).float()
+
+        if self.forcings_stats_ds:
+            forcings = (forcings - self.forcings_mean[:, None, None]) / self.forcings_std[:, None, None]
+
+        return forcings
 
     def load_future_forcings(self, timestamp):
         """
