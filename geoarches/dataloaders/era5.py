@@ -279,6 +279,7 @@ class Era5Forecast(Era5Dataset):
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
             forcing_vars: List of forcing variables to load from forcings dataset (if forcings_path is set).
+            forcings_stats_path: Path to netcdf file holding mean and std statistics for forcing variables.
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
                 Used to select levels and lat/lon resolution.
             warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
