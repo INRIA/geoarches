@@ -122,7 +122,7 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
-    def convert_to_tensordict(self, xr_dataset, debug=False):
+    def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice
         """
@@ -457,7 +457,6 @@ class Era5Forecast(Era5Dataset):
                 i - self.lead_time_hours // self.timedelta,
                 interpolate_nans=self.interpolate_input,
                 warning_on_nan=self.warning_on_nan,
-                debug=False
             )
             out["prev_state"] = out["prev_state"]
 
