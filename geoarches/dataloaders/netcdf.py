@@ -169,8 +169,6 @@ class XarrayDataset(torch.utils.data.Dataset):
             e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
         # Optionally select dimensions.
-        print(self.slice_indexers)
-        print(self.other_indexers)
 
         # Apply sel for non-slice indexers with method and tolerance
         if self.other_indexers:
