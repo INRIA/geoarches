@@ -169,7 +169,6 @@ class XarrayDataset(torch.utils.data.Dataset):
             e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
         # Optionally select dimensions.
-        print(xr_dataset)
         print(self.slice_indexers)
         print(self.other_indexers)
 
