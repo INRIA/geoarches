@@ -169,18 +169,16 @@ class XarrayDataset(torch.utils.data.Dataset):
             e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
         # Optionally select dimensions.
-        if not self.already_ran_index_selection:
-            if debug:
-                print(xr_dataset)
-                print(self.slice_indexers)
-                print(self.other_indexers)
+        print(xr_dataset)
+        print(self.slice_indexers)
+        print(self.other_indexers)
 
-            # Apply sel for non-slice indexers with method and tolerance
-            if self.other_indexers:
-                xr_dataset = xr_dataset.sel(self.other_indexers, method="nearest", tolerance=1e-6)
-            # Apply sel for slice indexers without method and tolerance
-            if self.slice_indexers:
-                xr_dataset = xr_dataset.sel(self.slice_indexers)
+        # Apply sel for non-slice indexers with method and tolerance
+        if self.other_indexers:
+            xr_dataset = xr_dataset.sel(self.other_indexers, method="nearest", tolerance=1e-6)
+        # Apply sel for slice indexers without method and tolerance
+        if self.slice_indexers:
+            xr_dataset = xr_dataset.sel(self.slice_indexers)
 
         self.already_ran_index_selection = False  # Reset for next call.
 
