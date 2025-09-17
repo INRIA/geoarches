@@ -485,8 +485,10 @@ class Era5Forecast(Era5Dataset):
             }
 
         first_day_of_month = timestamp.astype("datetime64[M]")
+        forcings = self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest")
+        forcings = forcings.fillna(value=forcings.mean(skipna=True))
         np_array = (
-            self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest").to_array().to_numpy()
+            forcings.to_array().to_numpy()
         )
         forcings = torch.from_numpy(np_array).float()
 

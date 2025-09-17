@@ -178,6 +178,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         # Remove south pole if necessary.
         if forcings is not None and forcings.shape[-2] % 2:
             forcings = forcings[..., :-1, :]
+
         if self.forcings_embedding == ForcingsEmbedding.SURFACE:
             surface = torch.cat([surface, forcings], dim=1)
 
