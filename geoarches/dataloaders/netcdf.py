@@ -206,12 +206,21 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
         if interpolate_nans:
-            obsi = obsi.fillna(
+            """obsi = obsi.interpo(
                 value=obsi.mean(
                     dim=["latitude", "longitude"],
                     skipna=True,
                 )
+            )"""
+            lat = obsi[self.latitude_dim_name].to_numpy()
+            if lat[0] > lat[-1]:
+                obsi['latitude'] = obsi['latitude'][::-1]
+
+            obsi = obsi.interpolate_na(
+                dim=self.latitude_dim_name, method="linear", fill_value="extrapolate"
             )
+            
+            obsi["latitude"] = lat
 
         tdict = self.convert_to_tensordict(obsi)
 

@@ -486,12 +486,16 @@ class Era5Forecast(Era5Dataset):
 
         first_day_of_month = timestamp.astype("datetime64[M]")
         forcings = self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest")
-        forcings = forcings.fillna(value=forcings.mean(skipna=True))
+        lat = forcings[self.latitude_dim_name].to_numpy()
+        if lat[0] > lat[-1]:
+            forcings['latitude'] = forcings['latitude'][::-1]
+    
+        forcings = forcings.interpolate_na(dim=self.latitude_dim_name, method="linear", fill_value="extrapolate")
         np_array = (
             forcings.to_array().to_numpy()
         )
         forcings = torch.from_numpy(np_array).float()
-
+        
         if self.forcings_stats_ds:
             forcings = (forcings - self.forcings_mean[:, None, None]) / self.forcings_std[:, None, None]
 
