@@ -36,13 +36,14 @@ class WeatherEncodeDecodeLayer(nn.Module):
         n_concatenated_states=0,
         final_interpolation=False,
         auto_move_to_device=True,
+        constant_mask_file="archesweather_constant_masks",
     ) -> None:
         super().__init__()
         self.__dict__.update(locals())
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
-            geoarches_stats_path / "archesweather_constant_masks.pt", weights_only=True
+            geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
         )
         constant_dims = self.constant_masks.shape[0]
 
