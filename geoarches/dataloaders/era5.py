@@ -11,6 +11,8 @@ from hydra.utils import instantiate
 
 import warnings
 
+import matplotlib.pyplot as plt
+
 from .era5_constants import (
     arches_default_level_variables,
     arches_default_pressure_levels,
@@ -89,6 +91,7 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: bool = False,
+        fillby='zero',  # options are 'zero', or 'mean', 'interpolation'
     ):
         """
         Args:
@@ -120,6 +123,7 @@ class Era5Dataset(XarrayDataset):
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
+            fillby=fillby,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -134,9 +138,13 @@ class Era5Dataset(XarrayDataset):
         if "surface" in tdict and (len(tdict["surface"].shape) < len(tdict["level"].shape)):
             tdict["surface"] = tdict["surface"].unsqueeze(-3)
 
+
         # do we need to flip lats ?
         if xr_dataset.latitude[0] < xr_dataset.latitude[-1]:
             tdict = tdict.apply(lambda x: x.flip(-2))
+
+        plt.imshow(tdict['surface'][2,0, :,:])
+        plt.savefig('t2m_loaded.png')
 
         # focus on Europe
         data_shape = list(tdict.values())[0].shape
@@ -162,6 +170,7 @@ class Era5Dataset(XarrayDataset):
 
         # squeeze
         surface = tdict["surface"].squeeze(-3)
+        
         level = tdict["level"]
 
         # Xarray coordinates.
@@ -486,14 +495,20 @@ class Era5Forecast(Era5Dataset):
 
         first_day_of_month = timestamp.astype("datetime64[M]")
         forcings = self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest")
-        lat = forcings[self.latitude_dim_name].to_numpy()
-        if lat[0] > lat[-1]:
-            forcings['latitude'] = forcings['latitude'][::-1]
-    
-        forcings = forcings.interpolate_na(dim=self.latitude_dim_name, method="linear", fill_value="extrapolate")
+        forcings = forcings.fillna(
+                value=forcings.mean(
+                    dim=[
+                        self.dimension_indexers["latitude"][0],
+                        self.dimension_indexers["longitude"][0],
+                    ],
+                    skipna=True,
+                )
+            )
+
         np_array = (
             forcings.to_array().to_numpy()
         )
+        
         forcings = torch.from_numpy(np_array).float()
         
         if self.forcings_stats_ds:

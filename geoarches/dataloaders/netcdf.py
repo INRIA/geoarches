@@ -46,6 +46,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = False,
+        fillby: str = 'zero',  # options are 'zero', or 'mean', 'interpolation'
     ):
         """Initializes.
 
@@ -177,6 +178,24 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
 
         return tdict
+    
+    def interpolate_obsi(self, obsi):
+        if self.fillby == 'interpolation':
+                obsi = obsi.interpolate_na(
+                    dim=self.latitude_dim_name,
+                    method="linear",
+                    fill_value="extrapolate",
+                ).interpolate_na(
+                    dim=self.longitude_dim_name,
+                    method="linear",
+                    fill_value="extrapolate",
+                )
+        elif self.fillby == 'mean':
+            # Fill NaNs with mean across lat/lon
+            mean = obsi.mean(dim=[self.latitude_dim_name, self.longitude_dim_name], skipna=True)
+            obsi = obsi.fillna(
+                value=mean,
+            )
 
     def __getitem__(
         self,
@@ -205,22 +224,13 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_xrdataset = xrdataset
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
-        if interpolate_nans:
-            """obsi = obsi.interpo(
+        if interpolate_nans: 
+            obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=["latitude", "longitude"],
                     skipna=True,
                 )
-            )"""
-            lat = obsi[self.latitude_dim_name].to_numpy()
-            if lat[0] > lat[-1]:
-                obsi['latitude'] = obsi['latitude'][::-1]
-
-            obsi = obsi.interpolate_na(
-                dim=self.latitude_dim_name, method="linear", fill_value="extrapolate"
             )
-            
-            obsi["latitude"] = lat
 
         tdict = self.convert_to_tensordict(obsi)
 

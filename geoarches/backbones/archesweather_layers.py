@@ -408,7 +408,7 @@ class EarthSpecificBlock(nn.Module):
         if axis_attn:
             from axial_attention import AxialAttention, AxialPositionalEmbedding
 
-            self.axis_pos = AxialPositionalEmbedding(dim=dim, shape=(8,), emb_dim_index=-1)
+            self.axis_pos = AxialPositionalEmbedding(dim=dim, shape=(self.input_resolution[0],), emb_dim_index=-1)
             self.axis_attn = AxialAttention(
                 dim=dim,  # embedding dimension
                 dim_index=-1,  # where is the embedding dimension
