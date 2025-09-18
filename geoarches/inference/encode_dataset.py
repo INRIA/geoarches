@@ -85,12 +85,13 @@ current_year = 1979
 max_year = 1982
 xr_list = []
 
+lt = config.dataloader.dataset.lead_time_hours
 for i, batch in tqdm(enumerate(dl)):
     fname = Path(args.output_path).joinpath(f"{era5_p}_pred_{current_year}_0h.nc")
     if fname.exists():
         continue
 
-    next_year = pd.to_datetime(batch["timestamp"][0] + 6 * 3600, utc=True, unit="s").year
+    next_year = pd.to_datetime(batch["timestamp"][0] + lt * 3600, utc=True, unit="s").year
     print(pd.to_datetime(batch["timestamp"][0], utc=True, unit="s").tz_localize(None), next_year, current_year)
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for (k, v) in batch.items()}
     batch = {k: (v.float() if 'state' in k else v) for (k, v) in batch.items()}
