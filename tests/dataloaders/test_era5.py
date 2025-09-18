@@ -158,11 +158,9 @@ def write_val_test_data(tmp_path_factory):
     # Use tmp_path_factory to create a class-level temporary directory.
     test_dir = tmp_path_factory.mktemp("val_test_data")
 
-    # 1 file per year.
-    for year in range(2018, 2022):
+    def _write_data_per_year(start_date, end_date, year):
         file_path = test_dir / f"fake_era5_{year}.nc"
-        start_date = f"{year}-12-01" if year == 2018 else f"{year}-01-01"
-        end_date = f"{year}-01-31" if year == 2021 else f"{year}-12-31"
+
         time = pd.date_range(start=start_date, end=end_date, freq="24h")  # datetime64[ns]
 
         # Create some dummy data
@@ -188,6 +186,16 @@ def write_val_test_data(tmp_path_factory):
             },
         )
         ds.to_netcdf(file_path)
+
+    # Write 1 file per year.
+    for i, year in enumerate(range(2018, 2022)):
+        start_date = f"{year}-12-01" if i == 0 else f"{year}-01-01"
+        end_date = f"{year}-01-31" if i == 3 else f"{year}-12-31"
+        _write_data_per_year(start_date, end_date, year)
+    for i, year in enumerate(range(2013, 2016)):
+        start_date = f"{year}-12-01" if i == 0 else f"{year}-01-01"
+        end_date = f"{year}-01-31" if i == 2 else f"{year}-12-31"
+        _write_data_per_year(start_date, end_date, year)
 
     return test_dir
 
@@ -318,6 +326,13 @@ class TestEra5Forecast(TestBase):
                 np.datetime64("2019-12-31T00:00:00"),
                 np.datetime64("2021-01-01T00:00:00"),
             ),  # 2020
+            (
+                "aimip_val",
+                True,
+                10,
+                np.datetime64("2013-12-31T00:00:00"),
+                np.datetime64("2015-01-10T00:00:00"),
+            ),  # 2014
         ],
     )
     def test_reselect_timestamps(
