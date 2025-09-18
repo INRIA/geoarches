@@ -11,8 +11,6 @@ from hydra.utils import instantiate
 
 import warnings
 
-import matplotlib.pyplot as plt
-
 from .era5_constants import (
     arches_default_level_variables,
     arches_default_pressure_levels,
@@ -91,7 +89,6 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: bool = False,
-        fillby='zero',  # options are 'zero', or 'mean', 'interpolation'
     ):
         """
         Args:
@@ -123,7 +120,6 @@ class Era5Dataset(XarrayDataset):
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
-            fillby=fillby,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -142,9 +138,6 @@ class Era5Dataset(XarrayDataset):
         # do we need to flip lats ?
         if xr_dataset.latitude[0] < xr_dataset.latitude[-1]:
             tdict = tdict.apply(lambda x: x.flip(-2))
-
-        plt.imshow(tdict['surface'][2,0, :,:])
-        plt.savefig('t2m_loaded.png')
 
         # focus on Europe
         data_shape = list(tdict.values())[0].shape
@@ -311,6 +304,7 @@ class Era5Forecast(Era5Dataset):
         )
 
         self.forcings_ds = None
+        print('FORCINGS')
         if (forcings_path is not None) ^ (forcing_vars is not None):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
@@ -352,6 +346,7 @@ class Era5Forecast(Era5Dataset):
 
         # depending on domain, re-set timestamp bounds
 
+        print("DOMAIN")
         if domain in ("val", "test", "test_z0012", "aimip_val"):
             # re-select timestamps
             if domain.startswith("val"):
@@ -557,6 +552,7 @@ class Era5Forecast(Era5Dataset):
             return batch * stds + means
 
         out = {k: (v * stds + means if "state" in k else v) for k, v in batch.items()}
+        
         return out
 
     def iteration_hook(self, model):

@@ -138,6 +138,14 @@ class ForecastModule(BaseLightningModule):
                 future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
             )
 
+            if add_forcings:
+                loop_batch["forcings"] = loop_batch["future_forcings"][:, 0]
+                loop_batch["future_forcings"] = (
+                    loop_batch["future_forcings"][:, 1:]
+                    if loop_batch["future_forcings"].shape[1] > 1
+                    else None
+                )
+
         if return_format == "list":
             return preds_future
         
