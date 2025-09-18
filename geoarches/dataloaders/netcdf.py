@@ -45,6 +45,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = False,
+        fillby: str = 'zero',  # options are 'zero', or 'mean', 'interpolation'
     ):
         """
         Args:
@@ -66,6 +67,10 @@ class XarrayDataset(torch.utils.data.Dataset):
         """
         self.filename_filter = filename_filter
         self.variables = variables
+
+        if fillby not in ['zero', 'mean', 'interpolation']:
+            raise ValueError("fillby must be one of 'zero', 'mean', or 'interpolation'")
+        self.fillby = fillby
 
         self.dimension_indexers = default_dimension_indexers.copy()
         self.dimension_indexers.update(dimension_indexers or {})
@@ -189,7 +194,32 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
 
         return tdict
+    
+    def interpolate_obsi(self, obsi):
+        if self.fillby == 'interpolation':
+                obsi = obsi.interpolate_na(
+                    dim=self.latitude_dim_name,
+                    method="linear",
+                    fill_value="extrapolate",
+                ).interpolate_na(
+                    dim=self.longitude_dim_name,
+                    method="linear",
+                    fill_value="extrapolate",
+                )
+        elif self.fillby == 'mean':
+            # Fill NaNs with mean across lat/lon
+            mean = obsi.mean(dim=[self.latitude_dim_name, self.longitude_dim_name], skipna=True)
+            obsi = obsi.fillna(
+                value=mean,
+            )
 
+        elif self.fillby == 'zero':
+            obsi = obsi.fillna(value=0)
+        else:   
+            raise ValueError("fillby must be one of 'zero', 'mean', or 'interpolation'")
+        
+        return obsi
+    
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
         interpolate_nans = interpolate_nans or self.interpolate_nans
         warning_on_nan = warning_on_nan or self.warning_on_nan
@@ -203,8 +233,8 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
-        if interpolate_nans:
-            """obsi = obsi.interpo(
+        if interpolate_nans: 
+            obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=[
                         self.dimension_indexers["latitude"][0],
@@ -212,16 +242,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                     ],
                     skipna=True,
                 )
-            )"""
-            lat = obsi[self.latitude_dim_name].to_numpy()
-            if lat[0] > lat[-1]:
-                obsi['latitude'] = obsi['latitude'][::-1]
-
-            obsi = obsi.interpolate_na(
-                dim=self.latitude_dim_name, method="linear", fill_value="extrapolate"
             )
-            
-            obsi["latitude"] = lat
 
         tdict = self.convert_to_tensordict(obsi)
 
