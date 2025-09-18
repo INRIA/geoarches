@@ -38,6 +38,12 @@ filename_filters = dict(
     # We read the years before and after (see above comment for why).
     aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
     aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
+    all_from_1979=lambda x: any(str(y) in x for y in range(1979, 2025)),
+    all_from_1979_0h=lambda x: any(str(y) in x for y in range(1979, 2025)) and ("0h" in x),
+    all_from_1979_6h=lambda x: any(str(y) in x for y in range(1979, 2025)) and ("6h" in x),
+    all_from_1979_12h=lambda x: any(str(y) in x for y in range(1979, 2025)) and ("12h" in x),
+    all_from_1979_18h=lambda x: any(str(y) in x for y in range(1979, 2025)) and ("18h" in x),
+    
 )
 
 default_dimension_indexers = {

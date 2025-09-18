@@ -65,6 +65,7 @@ class DiffusionModule(BaseLightningModule):
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
+        stats = instantiate(stats_cfg.module)
 
         stats = instantiate(stats_cfg.module)
         pressure_levels = list(stats.levels)
@@ -95,6 +96,10 @@ class DiffusionModule(BaseLightningModule):
         area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
         area_weights = (area_weights / area_weights.mean())[:, None]
 
+        self.loss_coeffs, self.state_scaler = stats.compute_loss_coeffs(
+            **stats_cfg.compute_loss_coeffs_args, area_weights=area_weights)
+        
+
         # set up metrics
         self.val_metrics = nn.ModuleList(
             [instantiate(metric, **cfg.val.metrics_kwargs) for metric in cfg.val.metrics]
@@ -105,50 +110,7 @@ class DiffusionModule(BaseLightningModule):
                 for metric_name, metric in cfg.inference.metrics.items()
             }
         )
-        # define coeffs for loss
 
-        pressure_levels = torch.tensor(pressure_levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
-
-        # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
-
-        self.loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-        
-        # scaling loss or states
-        pangu_stats = torch.load(
-            geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
-        )
-        pangu_scaler = TensorDict(
-            level=pangu_stats["level_std"], surface=pangu_stats["surface_std"]
-        )
-
-        scaler = pangu_scaler
-
-        if state_normalization == "delta":
-            scaler = TensorDict(
-                level=torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
-            )
-
-        elif state_normalization == "pred":
-            scaler = TensorDict(
-                **torch.load(
-                    geoarches_stats_path / "deltapred24_aws_denorm.pt", weights_only=False
-                )
-            )
-            scaler["level"][-1] *= 3  # we don't care too much about vertical velocity
-
-        self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
 
         self.test_outputs = []
         self.validation_samples = {}

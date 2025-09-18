@@ -55,8 +55,9 @@ class ForecastModule(BaseLightningModule):
         self.variables = stats.variables
         self.levels = stats.levels
 
-        self.loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
-
+        loss_coeffs, state_scaler = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
+        self.loss_coeffs = loss_coeffs * state_scaler.pow(pow)
+        
         # Instantiate metric modules
         self.train_metrics = nn.ModuleList(
             [instantiate(metric, **cfg.train.metrics_kwargs) for metric in cfg.train.metrics]

@@ -35,6 +35,8 @@ parser.add_argument(
     help="Comma separated list of model uids, names of checkpoint folders stored under `modelstore/` dir.",
 )
 
+parser.add_argument("--hour", type=int, default=0, help="which hour to run (0, 6, 12, 18)")
+
 
 args = parser.parse_args()
 
@@ -52,21 +54,25 @@ Path(args.output_path).mkdir(parents=True, exist_ok=True)
 
 
 if len(model_uids) > 1:
-    module = AvgModule(model_uids).to(device).eval()
-    cfg = module.cfg
+    module = AvgModule(model_uids).to(device)
+    module.eval()
+    _, cfg = load_module(model_uids[0])
 else:
     module, cfg = load_module(model_uids[0])
-    module.to(device).eval()
+    module = module.to(device)
+    module.eval()
 
 
 # create dataset and dataloader
 ds = instantiate(
     cfg.dataloader.dataset,
-    path="data/era5_240/full/",
-    domain="all",
+    cfg.stats,
+    domain=f"all_from_1979_{args.hour}h",
 )
 
-
+p = cfg.dataloader.dataset.path
+era5_p  = p.split("/")[-2]
+print("ERA5 path:", era5_p)
 def collate_fn(lst):
     return {k: torch.stack([x[k] for x in lst]) for k in lst[0]}
 
@@ -76,15 +82,18 @@ dl = torch.utils.data.DataLoader(
 )
 
 current_year = 1979
+max_year = 1982
 xr_list = []
+
 for i, batch in tqdm(enumerate(dl)):
-    fname = Path(args.output_path).joinpath(f"era5_240_pred_{current_year}_0h.nc")
+    fname = Path(args.output_path).joinpath(f"{era5_p}_pred_{current_year}_0h.nc")
     if fname.exists():
         continue
 
     next_year = pd.to_datetime(batch["timestamp"][0] + 6 * 3600, utc=True, unit="s").year
-
+    print(pd.to_datetime(batch["timestamp"][0], utc=True, unit="s").tz_localize(None), next_year, current_year)
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for (k, v) in batch.items()}
+    batch = {k: (v.float() if 'state' in k else v) for (k, v) in batch.items()}
     out = module.forward(batch)
     denorm_out = ds.denormalize(out)
 
@@ -95,11 +104,13 @@ for i, batch in tqdm(enumerate(dl)):
         # save outputs
         xr_dataset = xr.concat(xr_list, dim="time")
 
-        for hour in (0, 6, 12, 18):
-            fname = f"era5_240_pred_{current_year}_{hour}h.nc"
-            xr_dataset.sel(time=(xr_dataset.time.dt.hour == hour)).to_netcdf(
-                Path(args.output_path) / fname,
-                encoding=dict(time=dict(units="hours since 2000-01-01")) if not i else None,
-            )
+        fname = f"{era5_p}_pred_{current_year}_{hour:02d}h.nc"
+        xr_dataset.sel(time=(xr_dataset.time.dt.hour == hour)).to_netcdf(
+            Path(args.output_path) / fname,
+            encoding=dict(time=dict(units="hours since 2000-01-01")) if not i else None,
+        )
         xr_list.clear()
         current_year = next_year
+
+        if current_year > max_year:
+            break

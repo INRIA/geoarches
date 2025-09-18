@@ -31,6 +31,8 @@ class NormalizationStatistics:
         variables: Dict[str, List[str]] = None,
         levels: List[int] = arches_default_pressure_levels,
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
+        stats_path: str | None = None,
+        diff_delta_stats_path: str | None = None,
     ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
@@ -83,6 +85,8 @@ class NormalizationStatistics:
 
         print(self.norm_file_path)
 
+        self.diff_delta_stats_path = diff_delta_stats_path
+
         # If passed through hydra, need to convert from OmegaConf objects to lists.
         self.variables = {k: list(vars) for k, vars in variables.items()}
         self.levels = list(levels)
@@ -91,7 +95,9 @@ class NormalizationStatistics:
 
         self.mean = None
         self.std = None
+        self.diff_std = None
         self.loss_coeffs = None
+
 
     def load_normalization_stats(self):
         with xr.open_dataset(self.norm_file_path) as stats_ds:
@@ -131,6 +137,8 @@ class NormalizationStatistics:
 
     def load_timedelta_stats(self):
         """Loads the standard deviation of the difference between successive states."""
+        
+        path = self.diff_delta_stats_path or self.norm_file_path # Default to norm file if no delta path provided
         with xr.open_dataset(self.norm_file_path) as stats_ds:
             surface_stds = torch.from_numpy(
                 stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
@@ -145,16 +153,19 @@ class NormalizationStatistics:
 
             return surface_stds, level_stds
 
-    def compute_loss_coeffs(
-        self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False
-    ):
-        compute_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
 
-        area_weights = compute_weights_fn(latitude)
+    def compute_loss_coeffs(
+        self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False, area_weights=None
+    ):  
+        if area_weights is None:
+            compute_weights_fn = (
+                compute_lat_weights_weatherbench
+                if use_weatherbench_lat_coeffs
+                else compute_lat_weights
+            )
+
+            area_weights = compute_weights_fn(latitude)
+
         pressure_levels = torch.tensor(self.levels).float()
         vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
 
@@ -184,7 +195,12 @@ class NormalizationStatistics:
             self.std = data_std
 
         if loss_delta_normalization:
-            delta_surface_stds, delta_level_stds = self.load_timedelta_stats()
+            
+            if self.diff_std is not None:
+                delta_surface_stds, delta_level_stds = self.diff_std
+            else:
+                delta_surface_stds, delta_level_stds = self.load_timedelta_stats()
+                self.diff_std = (delta_surface_stds, delta_level_stds)
 
             if data_std["surface"].shape[0] != delta_surface_stds.shape[0]:
                 raise ValueError(
@@ -200,14 +216,6 @@ class NormalizationStatistics:
                 level=data_std["level"] / delta_level_stds,
             )
 
-            loss_coeffs = loss_coeffs * loss_delta_scaler.pow(pow)
-
-        print(
-            f"Loss coefficients computed with normalization scheme:\
-            {self.norm_file_path}, pow: {pow}, delta normalization: {loss_delta_normalization},\
-            use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}"
-        )
-
         self.loss_coeffs = loss_coeffs
-
-        return loss_coeffs
+        
+        return loss_coeffs, loss_delta_scaler
