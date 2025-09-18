@@ -353,6 +353,6 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer4(x, cond_emb)
 
         output = x
-        output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+        output = output.transpose(1, 2).reshape(output.shape[0], -1, self.zdim, *self.layer1_shape)
 
         return output
