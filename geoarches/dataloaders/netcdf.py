@@ -45,7 +45,6 @@ class XarrayDataset(torch.utils.data.Dataset):
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
         interpolate_nans: bool = False,
-        fillby: str = 'zero',  # options are 'zero', or 'mean', 'interpolation'
     ):
         """
         Args:
@@ -68,10 +67,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.filename_filter = filename_filter
         self.variables = variables
 
-        if fillby not in ['zero', 'mean', 'interpolation']:
-            raise ValueError("fillby must be one of 'zero', 'mean', or 'interpolation'")
-        self.fillby = fillby
-
+        print(f"Indexers1")
         self.dimension_indexers = default_dimension_indexers.copy()
         self.dimension_indexers.update(dimension_indexers or {})
 
@@ -82,7 +78,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         # Separate indexers with slice and those without.
         indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
-        self.slice_indexers = {k: v for k, v in indexers.items() if isinstance(v, slice)}
+        self.slice_indexers = {k: v if isinstance(v, slice) else slice(None) for k, v in indexers.items() if isinstance(v, slice) or v is None}
         self.other_indexers = {k: list(v) for k, v in indexers.items() if not isinstance(v, slice)}
         if not self.slice_indexers:
             self.slice_indexers = None
@@ -173,10 +169,6 @@ class XarrayDataset(torch.utils.data.Dataset):
         By default, it uses a mapping key from self.variables,
             e.g. {surface:[data_var1, data_var2, ...], level:[...]}
         """
-        # Optionally select dimensions.
-        print(xr_dataset)
-        print(self.slice_indexers)
-        print(self.other_indexers)
 
         # Apply sel for non-slice indexers with method and tolerance
         if self.other_indexers:
@@ -197,31 +189,6 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
 
         return tdict
-    
-    def interpolate_obsi(self, obsi):
-        if self.fillby == 'interpolation':
-                obsi = obsi.interpolate_na(
-                    dim=self.latitude_dim_name,
-                    method="linear",
-                    fill_value="extrapolate",
-                ).interpolate_na(
-                    dim=self.longitude_dim_name,
-                    method="linear",
-                    fill_value="extrapolate",
-                )
-        elif self.fillby == 'mean':
-            # Fill NaNs with mean across lat/lon
-            mean = obsi.mean(dim=[self.latitude_dim_name, self.longitude_dim_name], skipna=True)
-            obsi = obsi.fillna(
-                value=mean,
-            )
-
-        elif self.fillby == 'zero':
-            obsi = obsi.fillna(value=0)
-        else:   
-            raise ValueError("fillby must be one of 'zero', 'mean', or 'interpolation'")
-        
-        return obsi
     
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
         interpolate_nans = interpolate_nans or self.interpolate_nans

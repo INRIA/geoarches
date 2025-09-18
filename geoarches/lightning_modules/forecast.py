@@ -124,16 +124,22 @@ class ForecastModule(BaseLightningModule):
 
             # compute next batch
             add_prev_state = "prev_state" in loop_batch
-            add_forcings = "future_forcings" in loop_batch
+            add_forcings = loop_batch.get("future_forcings") is not None
             loop_batch = dict(
                 prev_state=loop_batch["state"] if add_prev_state else None,
                 state=pred,
                 # Used only to obtain NaN mask (not true next state)
                 next_state=loop_batch["next_state"],
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-                forcings=loop_batch["future_forcings"][0] if add_forcings else None,
-                future_forcings=loop_batch["future_forcings"][1:] if add_forcings else None,
             )
+
+            if add_forcings:
+                loop_batch["forcings"] = loop_batch["future_forcings"][:, 0]
+                loop_batch["future_forcings"] = (
+                    loop_batch["future_forcings"][:, 1:]
+                    if loop_batch["future_forcings"].shape[1] > 1
+                    else None
+                )
 
         if return_format == "list":
             return preds_future

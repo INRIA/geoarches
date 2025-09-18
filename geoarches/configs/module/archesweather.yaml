@@ -60,7 +60,6 @@ embedder:
   level_ch: 6
   n_concatenated_states: 1
   final_interpolation: False
-  forcings_embedding: None
-  forcings_ch: 0
+
 
 
