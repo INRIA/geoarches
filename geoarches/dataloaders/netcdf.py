@@ -67,7 +67,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         self.filename_filter = filename_filter
         self.variables = variables
 
-        print(f"Indexers1")
+        print("Indexers1")
         self.dimension_indexers = default_dimension_indexers.copy()
         self.dimension_indexers.update(dimension_indexers or {})
 
@@ -78,7 +78,11 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         # Separate indexers with slice and those without.
         indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
-        self.slice_indexers = {k: v if isinstance(v, slice) else slice(None) for k, v in indexers.items() if isinstance(v, slice) or v is None}
+        self.slice_indexers = {
+            k: v if isinstance(v, slice) else slice(None)
+            for k, v in indexers.items()
+            if isinstance(v, slice) or v is None
+        }
         self.other_indexers = {k: list(v) for k, v in indexers.items() if not isinstance(v, slice)}
         if not self.slice_indexers:
             self.slice_indexers = None
@@ -118,7 +122,9 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         for fid, f in tqdm(enumerate(self.files)):
             with xr.open_dataset(f, **self.xr_options) as obs:
-                file_stamps = [(fid, i, t) for (i, t) in enumerate(obs.coords[self.time_dim_name].to_numpy())]
+                file_stamps = [
+                    (fid, i, t) for (i, t) in enumerate(obs.coords[self.time_dim_name].to_numpy())
+                ]
                 self.timestamps.extend(file_stamps)
             if (
                 limit_examples and len(self.timestamps) > limit_examples
@@ -189,9 +195,11 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
 
         return tdict
-    
+
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        interpolate_nans = interpolate_nans if interpolate_nans is not None else self.interpolate_nans
+        interpolate_nans = (
+            interpolate_nans if interpolate_nans is not None else self.interpolate_nans
+        )
         warning_on_nan = warning_on_nan if warning_on_nan is not None else self.warning_on_nan
 
         file_id, line_id, timestamp = self.id2pt[i]
@@ -203,7 +211,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
-        if interpolate_nans: 
+        if interpolate_nans:
             obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=[

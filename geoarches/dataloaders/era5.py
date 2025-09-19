@@ -1,3 +1,4 @@
+import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
@@ -8,8 +9,6 @@ import tensordict
 import torch
 import xarray as xr
 from hydra.utils import instantiate
-
-import warnings
 
 from .era5_constants import (
     arches_default_level_variables,
@@ -128,13 +127,14 @@ class Era5Dataset(XarrayDataset):
         input xarr should be a single time slice
         """
 
-
         if not self.already_ran_index_selection:
             if self.slice_indexers:
                 xr_dataset = xr_dataset.sel(**self.slice_indexers)
             if self.other_indexers:
-                xr_dataset = xr_dataset.sel(**self.other_indexers, method="nearest", tolerance=1e-6)
-            
+                xr_dataset = xr_dataset.sel(
+                    **self.other_indexers, method="nearest", tolerance=1e-6
+                )
+
         #  Workaround to avoid calling sel() after transponse() to avoid OOM.
         self.already_ran_index_selection = True
         xr_dataset = xr_dataset.transpose(
@@ -150,7 +150,6 @@ class Era5Dataset(XarrayDataset):
         # unsqueeze surface (important)
         if "surface" in tdict:
             tdict["surface"] = tdict["surface"].unsqueeze(-3)
-
 
         # do we need to flip lats ?
         if xr_dataset.latitude[0] < xr_dataset.latitude[-1]:
@@ -180,7 +179,7 @@ class Era5Dataset(XarrayDataset):
 
         # squeeze
         surface = tdict["surface"].squeeze(-3)
-        
+
         level = tdict["level"]
 
         # Xarray coordinates.
@@ -322,7 +321,7 @@ class Era5Forecast(Era5Dataset):
         )
 
         self.forcings_ds = None
-        print('FORCINGS')
+        print("FORCINGS")
         if (forcings_path is not None) ^ (forcing_vars is not None):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
@@ -338,10 +337,16 @@ class Era5Forecast(Era5Dataset):
                 if var not in self.forcings_stats_ds:
                     raise ValueError(f"Forcing variable {var} not found in stats dataset.")
             self.forcings_mean = torch.tensor(
-                self.forcings_stats_ds[self.forcing_vars].sel(statistic="mean").to_array().to_numpy()
+                self.forcings_stats_ds[self.forcing_vars]
+                .sel(statistic="mean")
+                .to_array()
+                .to_numpy()
             ).float()
             self.forcings_std = torch.tensor(
-                self.forcings_stats_ds[self.forcing_vars].sel(statistic="std").to_array().to_numpy()
+                self.forcings_stats_ds[self.forcing_vars]
+                .sel(statistic="std")
+                .to_array()
+                .to_numpy()
             ).float()
         else:
             warnings.warn(
@@ -378,7 +383,7 @@ class Era5Forecast(Era5Dataset):
         self.current_multistep = 1
 
         # Load normalization statistics.
-        print('STATS')
+        print("STATS")
         self.norm_scheme = None
         if stats_cfg:
             stats = instantiate(stats_cfg.module)
@@ -419,7 +424,6 @@ class Era5Forecast(Era5Dataset):
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
         )
         out["state"] = out["state"]
-
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
 
@@ -478,25 +482,27 @@ class Era5Forecast(Era5Dataset):
         Load forcings data for a given timestamp.
         """
         first_day_of_month = timestamp.astype("datetime64[M]")
-        forcings = self.forcings_ds[self.forcing_vars].sel({self.time_dim_name: first_day_of_month}, method="nearest")
-        forcings = forcings.fillna(
-                value=forcings.mean(
-                    dim=[
-                        self.dimension_indexers["latitude"][0],
-                        self.dimension_indexers["longitude"][0],
-                    ],
-                    skipna=True,
-                )
-            )
-
-        np_array = (
-            forcings.to_array().to_numpy()
+        forcings = self.forcings_ds[self.forcing_vars].sel(
+            {self.time_dim_name: first_day_of_month}, method="nearest"
         )
-        
+        forcings = forcings.fillna(
+            value=forcings.mean(
+                dim=[
+                    self.dimension_indexers["latitude"][0],
+                    self.dimension_indexers["longitude"][0],
+                ],
+                skipna=True,
+            )
+        )
+
+        np_array = forcings.to_array().to_numpy()
+
         forcings = torch.from_numpy(np_array).float()
-        
+
         if self.forcings_stats_ds:
-            forcings = (forcings - self.forcings_mean[:, None, None]) / self.forcings_std[:, None, None]
+            forcings = (forcings - self.forcings_mean[:, None, None]) / self.forcings_std[
+                :, None, None
+            ]
 
         return forcings
 
@@ -541,7 +547,7 @@ class Era5Forecast(Era5Dataset):
             return batch * stds + means
 
         out = {k: (v * stds + means if "state" in k else v) for k, v in batch.items()}
-        
+
         return out
 
     def iteration_hook(self, model):

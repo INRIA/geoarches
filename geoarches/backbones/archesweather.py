@@ -1,4 +1,5 @@
 import importlib
+import warnings
 from enum import Enum
 
 import numpy as np
@@ -11,7 +12,6 @@ from timm.layers.mlp import SwiGLU
 
 import geoarches.stats as geoarches_stats
 from geoarches.backbones.archesweather_layers import ICNR_init
-import warnings
 
 from .archesweather_layers import (
     CondBasicLayer,
@@ -45,7 +45,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         final_interpolation=False,
         forcings_embedding: ForcingsEmbedding | None = None,
         auto_move_to_device=True,
-        constant_mask_file="archesweather_constant_masks"
+        constant_mask_file="archesweather_constant_masks",
     ) -> None:
         """
         Args:
@@ -65,7 +65,6 @@ class WeatherEncodeDecodeLayer(nn.Module):
         """
         super().__init__()
         self.__dict__.update(locals())
-            
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
