@@ -166,7 +166,14 @@ class ForecastModule(BaseLightningModule):
                 .reshape(-1, 1, 1, 1, 1)
             )
 
-            loss_coeffs.apply(lambda x: x * future_coeffs)
+            loss_coeffs = loss_coeffs.apply(lambda x: x * future_coeffs)
+
+        # mask pred to 0 where gt is nan
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        pred = pred * mask
+        
+        # set nans in gt to 0
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
 
         # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
