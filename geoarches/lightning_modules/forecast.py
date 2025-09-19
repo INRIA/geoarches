@@ -135,8 +135,11 @@ class ForecastModule(BaseLightningModule):
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
 
         # Mask loss where gt is NaN.
-        target_valid = tensordict_apply(lambda x: torch.where(torch.isnan(x), 0.0, 1.0), gt)
-        masked_loss = (weighted_error * target_valid) / target_valid.mean()
+        target_valid = tensordict_apply(lambda x: ~torch.isnan(x), gt)
+        weighted_error = tensordict_apply(
+            lambda mask, val: torch.where(mask, val, 0.0), target_valid, weighted_error
+        )
+        masked_loss = (weighted_error) / target_valid.float().mean()
 
         loss = sum(masked_loss.mean().values())
 
