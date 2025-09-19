@@ -191,8 +191,8 @@ class XarrayDataset(torch.utils.data.Dataset):
         return tdict
     
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        interpolate_nans = interpolate_nans or self.interpolate_nans
-        warning_on_nan = warning_on_nan or self.warning_on_nan
+        interpolate_nans = interpolate_nans if interpolate_nans is not None else self.interpolate_nans
+        warning_on_nan = warning_on_nan if warning_on_nan is not None else self.warning_on_nan
 
         file_id, line_id, timestamp = self.id2pt[i]
 
@@ -207,11 +207,17 @@ class XarrayDataset(torch.utils.data.Dataset):
             obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=[
-                        self.dimension_indexers["latitude"][0],
                         self.dimension_indexers["longitude"][0],
                     ],
                     skipna=True,
                 )
+            )
+
+            # Antarctis is still none from -x to -90 degrees latitude
+            # apply ffill to the rest of the nans with the last valid value
+            obsi = obsi.ffill(
+                dim=self.dimension_indexers["latitude"][0],
+                limit=None,
             )
 
         tdict = self.convert_to_tensordict(obsi)
