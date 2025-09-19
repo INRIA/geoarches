@@ -177,9 +177,11 @@ class XarrayDataset(torch.utils.data.Dataset):
         )
 
         return tdict
-    
+
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        interpolate_nans = interpolate_nans if interpolate_nans is not None else self.interpolate_nans
+        interpolate_nans = (
+            interpolate_nans if interpolate_nans is not None else self.interpolate_nans
+        )
         warning_on_nan = warning_on_nan if warning_on_nan is not None else self.warning_on_nan
 
         file_id, line_id, timestamp = self.id2pt[i]
@@ -199,7 +201,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_xrdataset = xrdataset
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
-        if interpolate_nans: 
+        if interpolate_nans:
             obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=[
