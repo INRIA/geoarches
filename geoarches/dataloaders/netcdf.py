@@ -198,8 +198,8 @@ class XarrayDataset(torch.utils.data.Dataset):
         return tdict
 
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        interpolate_nans = interpolate_nans or self.interpolate_nans
-        warning_on_nan = warning_on_nan or self.warning_on_nan
+        interpolate_nans = self.interpolate_nans if interpolate_nans is None else interpolate_nans
+        warning_on_nan = self.warning_on_nan if warning_on_nan is None else warning_on_nan
 
         file_id, line_id, timestamp = self.id2pt[i]
 
