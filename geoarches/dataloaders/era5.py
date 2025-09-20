@@ -20,6 +20,7 @@ from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
+    empty=(lambda _: False),
     last_train=lambda x: ("2018" in x),
     last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
     train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
@@ -31,7 +32,10 @@ filename_filters = dict(
     test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
     test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
     recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
-    empty=lambda x: False,
+    # AIMIP requires train and val on 1979-2014. We choose val on 2014 and rest on train.
+    # We read the years before and after (see above comment for why).
+    aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
+    aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
 )
 
 default_dimension_indexers = {
@@ -304,15 +308,23 @@ class Era5Forecast(Era5Dataset):
 
         # depending on domain, re-set timestamp bounds
 
-        if domain in ("val", "test", "test_z0012"):
+        if domain in ("val", "test", "test_z0012", "aimip_val"):
             # re-select timestamps
-            year = 2019 if domain.startswith("val") else 2020
+            if domain.startswith("val"):
+                year = 2019
+            elif domain.startswith("test"):
+                year = 2020
+            elif domain == "aimip_val":
+                year = 2014
+            else:
+                raise ValueError(f"Unsupported domain for reselecting timestamp bounds: {domain}")
             start_time = np.datetime64(f"{year}-01-01T00:00:00")
             if self.load_prev:
                 start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
-            end_time = np.datetime64(
-                f"{year + 1}-01-01T00:00:00"
-            ) + self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
+            # end_time is exclusive, so we add one more step.
+            end_time = np.datetime64(f"{year}-12-31T00:00:00") + self.multistep * (
+                self.lead_time_hours + 1
+            ) * np.timedelta64(1, "h")
             print("start time", start_time)
             super().set_timestamp_bounds(start_time, end_time)
 
@@ -362,7 +374,7 @@ class Era5Forecast(Era5Dataset):
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
         )
 
-        out["lead_time_hours"] = torch.tensor(self.lead_time_hours * int(self.multistep)).int()
+        out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
 
         # next obsi. has function of
         T = self.lead_time_hours  # multistep
