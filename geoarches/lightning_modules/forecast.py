@@ -132,16 +132,15 @@ class ForecastModule(BaseLightningModule):
 
             loss_coeffs.apply(lambda x: x * future_coeffs)
 
-        # mask pred to 0 where gt is nan
+        # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
         pred = pred * mask
-
-        # set nans in gt to 0
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
 
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+        weighted_error = weighted_error.sum() / mask.sum()
 
-        loss = sum(weighted_error.mean().values())
+        loss = sum(weighted_error.values())
 
         return loss
 
