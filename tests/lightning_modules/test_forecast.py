@@ -41,7 +41,6 @@ class TestForecastModule:
         # using the instantiated self.DummyStats.
         forecast_module.to("cpu")
 
-        # Create dummy pred and gt tensordicts
         pred = TensorDict(
             {
                 "level": torch.zeros(1, 1, 2, 2),
@@ -50,7 +49,7 @@ class TestForecastModule:
             batch_size=[],
         )
 
-        # Create gt with NaNs
+        # Create gt with NaNs.
         gt = TensorDict(
             {
                 "level": torch.randn(1, 1, 2, 2),
@@ -61,8 +60,6 @@ class TestForecastModule:
         gt["level"][0, 0, 0, 0] = torch.nan
         gt["surface"][0, 0, 0, 0] = torch.nan
 
-        # Compute loss
         loss = forecast_module.loss(pred, gt)
 
-        # Assert that the loss is not NaN
         assert not torch.isnan(loss)
