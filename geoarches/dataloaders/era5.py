@@ -217,9 +217,9 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel(level=levels)
+            xr_dataset = xr_dataset.sel({self.level_dim_name: levels})
 
-        xr_dataset = xr_dataset.chunk(time=1)
+        xr_dataset = xr_dataset.chunk({self.time_dim_name: 1})
         return xr_dataset
 
     def convert_trajectory_to_xarray(

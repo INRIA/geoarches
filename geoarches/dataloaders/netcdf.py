@@ -214,8 +214,8 @@ class XarrayDataset(torch.utils.data.Dataset):
             obsi = obsi.fillna(
                 value=obsi.mean(
                     dim=[
-                        self.dimension_indexers["latitude"][0],
-                        self.dimension_indexers["longitude"][0],
+                        self.latitude_dim_name,
+                        self.latitude_dim_name,
                     ],
                     skipna=True,
                 )
@@ -228,7 +228,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
 
         if return_timestamp or self.return_timestamp:
-            timestamp = self.cached_xrdataset.time[line_id].values.item()
+            timestamp = self.cached_xrdataset[self.time_dim_name][line_id].values.item()
             timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int64)
             return tdict, timestamp
 
