@@ -170,7 +170,7 @@ def write_val_test_data(tmp_path_factory):
     def _write_data_per_year(start_date, end_date, year):
         file_path = test_dir / f"fake_era5_{year}.nc"
 
-        time = pd.date_range(start=start_date, end=end_date, freq="24h")  # datetime64[ns]
+        time = pd.date_range(start=start_date, end=end_date, freq="12h")  # datetime64[ns]
 
         # Create some dummy data
         level_var_data = np.zeros((len(time), LEVEL, LON, LAT))  # Lon first.
@@ -199,11 +199,11 @@ def write_val_test_data(tmp_path_factory):
     # Write 1 file per year.
     for i, year in enumerate(range(2018, 2022)):
         start_date = f"{year}-12-01" if i == 0 else f"{year}-01-01"
-        end_date = f"{year}-01-31" if i == 3 else f"{year}-12-31"
+        end_date = f"{year}-01-31" if i == 3 else f"{year}-12-31 12:00:00"
         _write_data_per_year(start_date, end_date, year)
     for i, year in enumerate(range(2013, 2016)):
         start_date = f"{year}-12-01" if i == 0 else f"{year}-01-01"
-        end_date = f"{year}-01-31" if i == 2 else f"{year}-12-31"
+        end_date = f"{year}-01-31" if i == 2 else f"{year}-12-31 12:00:00"
         _write_data_per_year(start_date, end_date, year)
 
     return test_dir
@@ -312,35 +312,55 @@ class TestEra5Forecast(TestBase):
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
     @pytest.mark.parametrize(
-        "domain, load_prev, multistep, expected_start_time, expected_end_time",
+        (
+            "domain, load_prev, multistep, lead_time_hours, expected_start_time,"
+            " expected_end_time, expected_len"
+        ),
         [
             (
                 "val",
                 True,
                 2,
+                24,
                 np.datetime64("2018-12-31T00:00:00"),
-                np.datetime64("2020-01-02T00:00:00"),
+                np.datetime64("2020-01-02T12:00:00"),
+                365 * 2,  # 12h steps for non-leap year
             ),  # 2019
             (
                 "val",
                 False,
                 2,
+                24,
                 np.datetime64("2019-01-01T00:00:00"),
-                np.datetime64("2020-01-02T00:00:00"),
+                np.datetime64("2020-01-02T12:00:00"),
+                365 * 2,  # 12h steps for non-leap year
             ),  # 2019
             (
                 "test",
                 True,
                 1,
+                24,
                 np.datetime64("2019-12-31T00:00:00"),
-                np.datetime64("2021-01-01T00:00:00"),
+                np.datetime64("2021-01-01T12:00:00"),
+                366 * 2,  # 12h steps for leap year
+            ),  # 2020
+            (
+                "test",
+                True,
+                1,  # multistep
+                48,  # 2 days lead time
+                np.datetime64("2019-12-30T00:00:00"),
+                np.datetime64("2021-01-02T12:00:00"),
+                366 * 2,  # 12h steps for leap year
             ),  # 2020
             (
                 "aimip_val",
                 True,
                 10,
+                24,
                 np.datetime64("2013-12-31T00:00:00"),
-                np.datetime64("2015-01-10T00:00:00"),
+                np.datetime64("2015-01-10T12:00:00"),
+                365 * 2,  # 12h steps for non-leap year
             ),  # 2014
         ],
     )
@@ -350,14 +370,17 @@ class TestEra5Forecast(TestBase):
         domain,
         load_prev,
         multistep,
+        lead_time_hours,
         expected_start_time,
         expected_end_time,
+        expected_len,
     ):
         ds = era5.Era5Forecast(
             stats_cfg=None,
             path=str(write_val_test_data),
             domain=domain,
-            lead_time_hours=24,
+            lead_time_hours=lead_time_hours,  # lead time to load.
+            timedelta_hours=12,  # step between timestamps in data.
             multistep=multistep,
             load_prev=load_prev,
             load_clim=False,
@@ -371,6 +394,7 @@ class TestEra5Forecast(TestBase):
 
         assert ds.timestamps[0][-1] == expected_start_time
         assert ds.timestamps[-1][-1] == expected_end_time
+        assert len(ds) == expected_len
 
     def test_interpolate_nans(self):
         # NaNs are introduced at the first timestamp of the second file (t2).

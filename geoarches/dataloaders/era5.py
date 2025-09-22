@@ -321,10 +321,10 @@ class Era5Forecast(Era5Dataset):
             start_time = np.datetime64(f"{year}-01-01T00:00:00")
             if self.load_prev:
                 start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
-            # end_time is exclusive, so we add one more step.
-            end_time = np.datetime64(f"{year}-12-31T00:00:00") + self.multistep * (
-                self.lead_time_hours + 1
-            ) * np.timedelta64(1, "h")
+            # end_time is exclusive.
+            end_time = np.datetime64(
+                f"{year + 1}-01-01T00:00:00"
+            ) + self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
             print("start time", start_time)
             super().set_timestamp_bounds(start_time, end_time)
 
