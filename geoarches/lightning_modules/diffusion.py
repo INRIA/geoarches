@@ -51,6 +51,8 @@ class DiffusionModule(BaseLightningModule):
         num_cycles=0.5,
         learn_residual=False,
         sd3_timestep_sampling=True,
+        noise_scheduler=None,
+        inference_scheduler=None,
         **kwargs,
     ):
         """
@@ -80,11 +82,11 @@ class DiffusionModule(BaseLightningModule):
         self.hour_embedder = TimestepEmbedder(cond_dim)
         self.timestep_embedder = TimestepEmbedder(cond_dim)
 
-        self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
+        self.noise_scheduler = noise_scheduler or FlowMatchEulerDiscreteScheduler(
             num_train_timesteps=num_train_timesteps
         )
 
-        self.inference_scheduler = deepcopy(self.noise_scheduler)
+        self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
         area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
         area_weights = (area_weights / area_weights.mean())[:, None]
@@ -123,6 +125,8 @@ class DiffusionModule(BaseLightningModule):
             level=pangu_stats["level_std"], surface=pangu_stats["surface_std"]
         )
 
+        scaler = pangu_scaler
+
         if state_normalization == "delta":
             scaler = TensorDict(
                 level=torch.tensor(
@@ -139,7 +143,7 @@ class DiffusionModule(BaseLightningModule):
             )
             scaler["level"][-1] *= 3  # we don't care too much about vertical velocity
 
-            self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
+        self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
 
         self.test_outputs = []
         self.validation_samples = {}
@@ -193,7 +197,7 @@ class DiffusionModule(BaseLightningModule):
             0, self.noise_scheduler.config.num_train_timesteps, (bs,), device=device
         ).long()
 
-        noise = torch.randn_like(batch["next_state"])  # amazing it works
+        noise = tensordict_apply(torch.randn_like, batch["next_state"])
 
         # by default
         next_state = batch["next_state"]
@@ -225,7 +229,7 @@ class DiffusionModule(BaseLightningModule):
             device=device, dtype=next(iter(batch["state"].values())).dtype
         )
 
-        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
+        step_indices = torch.searchsorted(schedule_timesteps, timesteps)
         sigma = sigmas[step_indices].flatten()[:, None, None, None, None]  # shape (bs,)
 
         noisy_next_state = noise.apply(lambda x: x * sigma) + next_state.apply(
