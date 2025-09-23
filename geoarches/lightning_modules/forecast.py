@@ -104,12 +104,16 @@ class ForecastModule(BaseLightningModule):
                 pred = self.forward(loop_batch)
             preds_future.append(pred)
             # compute next batch
+            times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
+            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
             loop_batch = dict(
                 prev_state=loop_batch["state"],
                 state=pred,
                 # Used only to obtain NaN mask (not true next state)
                 next_state=loop_batch["next_state"],
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                month=torch.tensor(next_month).to(self.device),
             )
 
         if return_format == "list":
@@ -358,14 +362,10 @@ class ForecastModuleWithCond(ForecastModule):
             self.strict_loading = False
 
     def forward(self, batch, use_avg=True):
-        device = batch["state"].device
         # convert time into str
 
-        times = pd.to_datetime(batch["timestamp"].cpu().numpy(), unit="s").tz_localize(None)
-        month = torch.tensor(times.month).to(device)
-        month_emb = self.month_embedder(month)
-        hour = torch.tensor(times.hour).to(device)
-        hour_emb = self.hour_embedder(hour)
+        month_emb = self.month_embedder(batch["month"])
+        hour_emb = self.hour_embedder(batch["hour_of_day"])
 
         cond_emb = month_emb + hour_emb
 
