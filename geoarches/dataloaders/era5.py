@@ -362,13 +362,19 @@ class Era5Forecast(Era5Dataset):
         out = {}
         # Shift index forward if need to load previous timestamp.
         i = i + self.load_prev * self.lead_time_hours // self.timedelta
+        datetime = self.id2pt[i][2]
 
-        out = dict()
         #  load current state
+        timestamp_seconds = datetime.item() // 10**9
         out["timestamp"] = torch.tensor(
-            self.id2pt[i][2].item() // 10**9,  # how to convert to tensor ?
+            timestamp_seconds,
             dtype=torch.int64,
-        )  # time in seconds
+        )
+        timestamp = pd.Timestamp(datetime)
+        out["hour_of_day"] = torch.tensor(timestamp.hour)
+        out["day_of_month"] = torch.tensor(timestamp.day)
+        out["day_of_year"] = torch.tensor(timestamp.dayofyear)
+        out["month"] = torch.tensor(timestamp.month)
 
         out["state"] = super().__getitem__(
             i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
@@ -404,12 +410,7 @@ class Era5Forecast(Era5Dataset):
 
         if self.load_clim:
             clim_xr = xr.open_dataset(self.clim_path)
-            timestamp = self.id2pt[i][2]
-            doy = np.datetime64(timestamp, "D") - np.datetime64(timestamp, "Y") + 1
-            hour = (timestamp.astype("datetime64[h]") - timestamp.astype("datetime64[D]")).astype(
-                int
-            ) % 24
-            climi = clim_xr.sel(dayofyear=doy.astype("int"), hour=hour)
+            climi = clim_xr.sel(dayofyear=timestamp.dayofyear, hour=timestamp.hour)
             out["clim_state"] = self.convert_to_tensordict(climi)
             clim_xr.close()
 
