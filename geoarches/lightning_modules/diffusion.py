@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
 from geoarches.backbones.dit import TimestepEmbedder
-from geoarches.dataloaders import era5, zarr
+from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
@@ -29,6 +29,7 @@ class DiffusionModule(BaseLightningModule):
     def __init__(
         self,
         cfg,
+        stats_cfg,
         name="diffusion",
         cond_dim=32,
         num_train_timesteps=1000,
@@ -64,6 +65,9 @@ class DiffusionModule(BaseLightningModule):
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
+
+        stats = instantiate(stats_cfg.module)
+        pressure_levels = list(stats.levels)
 
         self.det_model = None
         if load_deterministic_model:
@@ -103,7 +107,7 @@ class DiffusionModule(BaseLightningModule):
         )
         # define coeffs for loss
 
-        pressure_levels = torch.tensor(era5.pressure_levels).float()
+        pressure_levels = torch.tensor(pressure_levels).float()
         vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
 
         # define relative surface and level weights
