@@ -234,6 +234,8 @@ class TestEra5Forecast(TestBase):
         assert len(ds) == expected_len
         # Current state
         assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
+        assert example["hour_of_day"] == 0
+        assert example["month"] == 1
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         # Next state
@@ -266,6 +268,8 @@ class TestEra5Forecast(TestBase):
         assert len(ds) == expected_len
         # Current state
         assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
+        assert example["hour_of_day"] == 0
+        assert example["month"] == 1
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         # Next state
@@ -299,6 +303,8 @@ class TestEra5Forecast(TestBase):
         assert len(ds) == expected_len
         # Current state
         assert example["timestamp"] == 1704088800  # 2024-01-01-06-00
+        assert example["hour_of_day"] == 6
+        assert example["month"] == 1
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         # Next state
