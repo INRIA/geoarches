@@ -57,7 +57,9 @@ def tensordict_apply(f, *args, **kwargs):
     tdicts = [a for a in args if isinstance(a, TensorDict)]
     tdicts += [v for v in kwargs.values() if isinstance(v, TensorDict)]
     # check that all found tdicts have same keys
-    assert all(set(tdict.keys()) == set(tdicts[0].keys()) for tdict in tdicts), "All TensorDicts must have the same keys"
+    assert all(set(tdict.keys()) == set(tdicts[0].keys()) for tdict in tdicts), (
+        "All TensorDicts must have the same keys"
+    )
     return TensorDict(
         {
             k: f(

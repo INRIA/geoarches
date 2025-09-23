@@ -149,8 +149,6 @@ class DiffusionModule(BaseLightningModule):
         self.validation_samples = {}
 
     def forward(self, batch, noisy_next_state, timesteps, is_sampling=False):
-        device = batch["state"].device
-
         input_state = noisy_next_state
         conditional_keys = self.conditional.split("+")  # all the things we condition on
 
@@ -166,11 +164,8 @@ class DiffusionModule(BaseLightningModule):
             input_state = tensordict_cat([pred_state, input_state], dim=1)
 
         # conditional by default
-        times = pd.to_datetime(batch["timestamp"].cpu().numpy() * 10**9).tz_localize(None)
-        month = torch.tensor(times.month).to(device)
-        month_emb = self.month_embedder(month)
-        hour = torch.tensor(times.hour).to(device)
-        hour_emb = self.hour_embedder(hour)
+        month_emb = self.month_embedder(batch["month"])
+        hour_emb = self.hour_embedder(batch["hour_of_day"])
         timestep_emb = self.timestep_embedder(timesteps)
 
         cond_emb = month_emb + hour_emb + timestep_emb
@@ -367,10 +362,14 @@ class DiffusionModule(BaseLightningModule):
             seed_i = member + 1000 * i + batch_nb * 10**6
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
+            times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
+            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
             loop_batch = dict(
                 prev_state=loop_batch["state"],
                 state=sample,
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                month=torch.tensor(next_month).to(self.device),
             )
 
         if return_format == "list":
