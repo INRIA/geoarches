@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from hydra.utils import instantiate
+from rich.pretty import pretty_repr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
@@ -16,6 +17,7 @@ import geoarches.stats as geoarches_stats
 from geoarches.backbones.dit import TimestepEmbedder
 from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
+from geoarches.utils.logging_utils import setup_logger
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
 geoarches_stats_path = importlib.resources.files(geoarches_stats)
@@ -61,6 +63,7 @@ class DiffusionModule(BaseLightningModule):
         """
         super().__init__()
         self.__dict__.update(locals())
+        self.console_logger = setup_logger(__name__, "INFO")
 
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
@@ -408,7 +411,7 @@ class DiffusionModule(BaseLightningModule):
         for metric in self.val_metrics:
             scores = metric.compute()
             self.log_dict(scores, sync_dist=True)  # dont put on_epoch = True here
-            print(scores)
+            self.console_logger.info(pretty_repr(scores))
             metric.reset()
         self.validation_samples.clear()
 
@@ -495,7 +498,7 @@ class DiffusionModule(BaseLightningModule):
             self.zarr_writer.to_netcdf(dump_id="final")
 
     def configure_optimizers(self):
-        print("configure optimizers")
+        self.console_logger.info("Configuring optimizers...")
         opt = torch.optim.AdamW(
             self.parameters(),
             lr=self.lr,

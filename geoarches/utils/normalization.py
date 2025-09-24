@@ -12,6 +12,7 @@ from geoarches.dataloaders.era5_constants import (
     arches_default_surface_variables,
 )
 from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
+from geoarches.utils.logging_utils import setup_logger
 
 # Stats path
 geoarches_stats_path = importlib.resources.files(geoarches_stats)
@@ -95,16 +96,18 @@ class NormalizationStatistics:
         The default pressure levels for the 'pangu' normalization scheme are:
         - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
         """
+        self.console_logger = setup_logger(__name__, "INFO")
 
-        print("##### NORM SCHEME: ", norm_scheme, " #####")
+        self.console_logger.info(f"Using '{norm_scheme}' normalization scheme.")
 
         if variables is None:
             variables = {
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             }
-        print("##### VARIABLES: ", variables, " #####")
-        print("##### LEVELS: ", levels, " #####")
+
+        self.console_logger.info("Using variables:\n{variables}")
+        self.console_logger.info("Using levels:\n{levels}")
 
         if norm_scheme and norm_scheme not in ["graphcast", "pangu"]:
             raise ValueError(
@@ -258,7 +261,7 @@ class NormalizationStatistics:
 
             loss_coeffs = loss_coeffs * loss_delta_scaler.pow(pow)
 
-        print(
+        self.console_logger.info(
             f"Loss coefficients computed with normalization scheme:\
             {self.norm_scheme}, pow: {pow}, delta normalization: {loss_delta_normalization},\
             use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}"

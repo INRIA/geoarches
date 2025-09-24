@@ -23,6 +23,10 @@ from hydra.utils import instantiate
 from lightning.pytorch.callbacks import TQDMProgressBar
 from omegaconf import DictConfig, OmegaConf
 
+from geoarches.utils.logging_utils import setup_logger
+
+console_logger = setup_logger("geoarches.main_hydra", "INFO")
+
 
 def get_random_code():
     import random
@@ -75,7 +79,7 @@ class CheckpointEveryNSteps(L.Callback):
 
     def save(self, *args, trainer=None, **kwargs):
         if trainer is None and not hasattr(self, "trainer"):
-            print("No trainer !")
+            console_logger.error("No trainer!")
             return
         if trainer is None:
             trainer = self.trainer
@@ -86,9 +90,9 @@ class CheckpointEveryNSteps(L.Callback):
         else:
             filename = f"{self.prefix}_{global_step=}.ckpt"
         ckpt_path = Path(self.dirpath) / "checkpoints"
-        print("saving checkpoint to", ckpt_path / filename)
         ckpt_path.mkdir(exist_ok=True, parents=True)
         trainer.save_checkpoint(ckpt_path / filename)
+        console_logger.info(f"Checkpoint saved to: {ckpt_path / filename}.")
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
@@ -99,10 +103,10 @@ def main(cfg: DictConfig):
         pass
 
     warnings.simplefilter(action="ignore", category=FutureWarning)
-    print("Working dir", os.getcwd())
+    console_logger.info(f"Working directory: {os.getcwd()}")
 
     main_node = int(os.environ.get("SLURM_PROCID", 0)) == 0
-    print("is main node", main_node)
+    console_logger.info(f"Main node status: {main_node}")
 
     # init some variables
     logger = None
@@ -111,20 +115,21 @@ def main(cfg: DictConfig):
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
     # first, check if exp exists
+    console_logger.info("Checking if experiment exists...")
     ckpt_dir = Path(cfg.exp_dir).joinpath("checkpoints")
     if ckpt_dir.exists():
-        print("Experiment already exists. Trying to resume it.")
+        console_logger.info("Experiment already exists: trying to resume it.")
         exp_cfg = OmegaConf.load(Path(cfg.exp_dir) / "config.yaml")
         if cfg.resume or cfg.mode == "test":
             # we just copy cluster info
             cfg.module = exp_cfg.module
             cfg.dataloader = exp_cfg.dataloader
             # then we update we cli overrides
-            print("hydra config", cfg)
+            console_logger.info(f"Hydra config:\n{cfg}")
             try:
                 # if not submitit
                 cli_overrides = HydraConfig.get().overrides.task
-                print("got cli arguments from direct launch")
+                console_logger.info("Got CLI arguments from direct launch.")
             except:  # noqa E722
                 cli_overrides = getattr(cfg, "cli_overrides", [])
 
@@ -133,7 +138,7 @@ def main(cfg: DictConfig):
             OmegaConf.set_struct(cfg, False)  # to merge
             cfg.merge_with_dotlist(cli_overrides)
 
-            print("updated cfg", cfg)
+            console_logger.info(f"Updated config:\n{cfg}")
             # normally commented code useless
             # cli_cfg = compose(overrides=cli_overrides)
             # OmegaConf.set_struct(cfg, False)  # to merge
@@ -143,28 +148,32 @@ def main(cfg: DictConfig):
             # check that new config and old config match
             OmegaConf.resolve(cfg)
             if OmegaConf.to_yaml(cfg.module) != OmegaConf.to_yaml(exp_cfg.module):
-                print("Module config mismatch. Exiting")
-                print("Old config", OmegaConf.to_yaml(exp_cfg.module))
-                print("New config", OmegaConf.to_yaml(cfg.module))
+                console_logger.error("Module config mismatch. Exiting...")
+                console_logger.error(f"Old config:\n{exp_cfg.module}")
+                console_logger.error(f"New config:\n{cfg.module}")
+                return
 
             if OmegaConf.to_yaml(cfg.dataloader) != OmegaConf.to_yaml(exp_cfg.dataloader):
-                print("Dataloader config mismatch. Exiting.")
-                print("Old config", OmegaConf.to_yaml(exp_cfg.dataloader))
-                print("New config", OmegaConf.to_yaml(cfg.dataloader))
+                console_logger.error("Dataloader config mismatch. Exiting...")
+                console_logger.error(f"Old config:\n{exp_cfg.dataloader}")
+                console_logger.error(f"New config:\n{cfg.dataloader}")
                 return
 
         # trying to find checkpoints
         ckpts = list(sorted(ckpt_dir.iterdir(), key=os.path.getmtime))
         if len(ckpts):
-            print("Found checkpoints", ckpts)
+            console_logger.info(f"Found checkpoints: {ckpts}")
             if hasattr(cfg, "ckpt_filename_match"):
                 ckpts = [x for x in ckpts if str(cfg.ckpt_filename_match) in x.name]
-            print("Using checkpoint", ckpts[-1])
             ckpt_path = ckpts[-1]
+            console_logger.info(f"Using checkpoint: {ckpts[-1]}")
 
     if cfg.log:
-        print("wandb mode", cfg.cluster.wandb_mode)
-        print("wandb service", os.environ.get("WANDB_DISABLE_SERVICE", "variable unset"))
+        console_logger.info("Setting up WandB logger...")
+        console_logger.info(f"WandB mode: {cfg.cluster.wandb_mode}")
+        console_logger.info(
+            f"WandB service status: {os.environ.get('WANDB_DISABLE_SERVICE', 'variable unset')}"
+        )
         run_id = cfg.name + "-" + get_random_code() if cfg.cluster.use_custom_requeue else cfg.name
         logger = L.pytorch.loggers.WandbLogger(
             **(dict(entity=cfg.entity) if hasattr(cfg, "entity") and cfg.entity else {}),
@@ -176,43 +185,44 @@ def main(cfg: DictConfig):
         )
 
     if cfg.log and main_node and not Path(cfg.exp_dir).joinpath("checkpoints").exists():
-        print("registering exp on main node")
+        console_logger.info("Registering experiment on main node.")
         hparams = OmegaConf.to_container(cfg, resolve=True)
-        print(hparams)
+        console_logger.info(f"Experiment hyperparameters:\n{hparams}")
         logger.log_hyperparams(hparams)
         Path(cfg.exp_dir).mkdir(exist_ok=True, parents=True)
         with open(Path(cfg.exp_dir) / "config.yaml", "w") as f:
             f.write(OmegaConf.to_yaml(cfg, resolve=True))
 
     if cfg.mode == "train":
+        console_logger.info("Setting up validation dataloader...")
         val_args = getattr(cfg.dataloader, "validation_args", {})
-        valset = instantiate(cfg.dataloader.dataset, cfg.stats, **val_args)
-        trainset = instantiate(
-            # will automatically pickup cfg split
-            cfg.dataloader.dataset,
-            cfg.stats,
-        )
+        val_set = instantiate(cfg.dataloader.dataset, cfg.stats, **val_args)
 
         val_loader = torch.utils.data.DataLoader(
-            valset,
+            val_set,
             batch_size=cfg.batch_size,
             num_workers=cfg.cluster.cpus,
             shuffle=True,
             collate_fn=collate_fn,
         )  # to viz shuffle samples
 
+        console_logger.info("Setting up training dataloader...")
+        train_set = instantiate(
+            cfg.dataloader.dataset, cfg.stats
+        )  # will automatically pickup cfg split
         train_loader = torch.utils.data.DataLoader(
-            trainset,
+            train_set,
             batch_size=cfg.batch_size,
             num_workers=cfg.cluster.cpus,
             shuffle=True,
             collate_fn=collate_fn,
         )
     elif cfg.mode == "test":
+        console_logger.info("Setting up test dataloader...")
         test_args = getattr(cfg.dataloader, "test_args", {})
-        testset = instantiate(cfg.dataloader.dataset, cfg.stats, **test_args)
+        test_set = instantiate(cfg.dataloader.dataset, cfg.stats, **test_args)
         test_loader = torch.utils.data.DataLoader(
-            testset,
+            test_set,
             batch_size=cfg.batch_size,
             num_workers=cfg.cluster.cpus,
             shuffle=True,  # otherwise correlated batches
@@ -239,10 +249,10 @@ def main(cfg: DictConfig):
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
     if cfg.cluster.use_custom_requeue and main_node:
-        print("setting up custom slurm requeuing")
+        console_logger.info("Setting up custom SLURM requeuing...")
 
         def handler(*args, **kwargs):
-            print("GCO: SIGTERM signal received. Requeueing job on main node.")
+            console_logger.info("GCO: SIGTERM signal received. Requeueing job on main node.")
             if not hasattr(checkpointer, "is_handled"):
                 checkpointer.is_handled = True
                 checkpointer.save()
@@ -279,6 +289,7 @@ def main(cfg: DictConfig):
         breakpoint()
 
     if cfg.mode == "train":
+        console_logger.info("Starting training...")
         trainer.fit(pl_module, train_loader, val_loader, ckpt_path=ckpt_path)
     elif cfg.mode == "test":
         trainer.test(pl_module, test_loader, ckpt_path=ckpt_path)
