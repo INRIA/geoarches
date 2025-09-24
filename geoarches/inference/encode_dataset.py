@@ -34,6 +34,7 @@ parser.add_argument(
     type=str,
     help="Comma separated list of model uids, names of checkpoint folders stored under `modelstore/` dir.",
 )
+parser.add_argument("--input-path", default="data/era5_240/full/", help="where to load inputs from")
 
 
 args = parser.parse_args()
@@ -62,7 +63,7 @@ else:
 # create dataset and dataloader
 ds = instantiate(
     cfg.dataloader.dataset,
-    path="data/era5_240/full/",
+    path=args.input_path,
     domain="all",
 )
 
