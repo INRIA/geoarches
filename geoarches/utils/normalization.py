@@ -74,8 +74,6 @@ class NormalizationStatistics:
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             }
-        print("##### VARIABLES: ", variables, " #####")
-        print("##### LEVELS: ", levels, " #####")
 
         self.norm_file_path = norm_file
         if not Path(norm_file).is_absolute():
@@ -97,6 +95,7 @@ class NormalizationStatistics:
         self.std = None
         self.diff_std = None
         self.loss_coeffs = None
+        print('##### NORM MODULE INIT DONE #####')
 
 
     def load_normalization_stats(self):

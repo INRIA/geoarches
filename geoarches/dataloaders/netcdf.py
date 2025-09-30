@@ -45,7 +45,8 @@ class XarrayDataset(torch.utils.data.Dataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
-        interpolate_nans: bool = False,
+        interpolate_input: bool = False,
+        interpolate_target: bool = False,
     ):
         """Initializes.
 
@@ -70,7 +71,8 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
-        self.interpolate_nans = interpolate_nans
+        self.interpolate_input = interpolate_input
+        self.interpolate_target = interpolate_target
 
         self.transpose_order = transpose_order
 
@@ -179,9 +181,9 @@ class XarrayDataset(torch.utils.data.Dataset):
         return tdict
 
     def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        interpolate_nans = (
-            interpolate_nans if interpolate_nans is not None else self.interpolate_nans
-        )
+        if interpolate_nans is None:
+            interpolate_nans = self.interpolate_input or self.interpolate_target
+
         warning_on_nan = warning_on_nan if warning_on_nan is not None else self.warning_on_nan
 
         file_id, line_id, timestamp = self.id2pt[i]
@@ -201,22 +203,18 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_xrdataset = xrdataset
 
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
+
         if interpolate_nans:
-            obsi = obsi.fillna(
-                value=obsi.mean(
+            obsi['sea_surface_temperature'] = obsi['sea_surface_temperature'].fillna(
+                value=obsi['sea_surface_temperature'].mean(
                     dim=[
                         self.dimension_indexers["longitude"][0],
                     ],
                     skipna=True,
                 )
-            )
+            ).ffill('latitude', limit=None)
 
-            # Antarctis is still none from -x to -90 degrees latitude
-            # apply ffill to the rest of the nans with the last valid value
-            obsi = obsi.ffill(
-                dim=self.dimension_indexers["latitude"][0],
-                limit=None,
-            )
+            obsi['sea_ice_cover'] = obsi['sea_ice_cover'].fillna(0.)
 
         tdict = self.convert_to_tensordict(obsi)
 

@@ -93,7 +93,8 @@ class Era5Dataset(XarrayDataset):
         transpose_order: tuple[Any, ...] = (..., "level", "latitude", "longitude"),
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_input: bool = False,
+        interpolate_target: bool = False,
     ):
         """
         Args:
@@ -124,7 +125,8 @@ class Era5Dataset(XarrayDataset):
             transpose_order=transpose_order,
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
-            interpolate_nans=interpolate_nans,
+            interpolate_input=interpolate_input,
+            interpolate_target=interpolate_target,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -308,7 +310,7 @@ class Era5Forecast(Era5Dataset):
         )
 
         self.forcings_ds = None
-        print("FORCINGS")
+
         if (forcings_path is not None) ^ (forcing_vars is not None):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
@@ -356,7 +358,6 @@ class Era5Forecast(Era5Dataset):
 
         # depending on domain, re-set timestamp bounds
 
-        print("DOMAIN")
         if domain in ("val", "test", "test_z0012", "aimip_val"):
             # re-select timestamps
             if domain.startswith("val"):
@@ -499,18 +500,29 @@ class Era5Forecast(Era5Dataset):
             }
 
         first_day_of_month = timestamp.astype("datetime64[M]")
+
         forcings = self.forcings_ds[self.forcing_vars].sel(
             {self.time_dim_name: first_day_of_month}, method="nearest"
         )
-        forcings = forcings.fillna(
-            value=forcings.mean(
+
+        # First fix sst
+        sst = forcings['sea_surface_temperature']
+        sst = sst.fillna(
+            value=sst.mean(
                 dim=[
-                    self.dimension_indexers["latitude"][0],
                     self.dimension_indexers["longitude"][0],
                 ],
                 skipna=True,
             )
+        ).ffill(dim='latitude')
+        forcings['sea_surface_temperature'] = sst
+
+        # Fix sic 
+        sic = forcings['sea_ice_cover']
+        sic = sic.fillna(
+            value=0
         )
+        forcings['sea_ice_cover'] = sic
 
         np_array = forcings.to_array().to_numpy()
 
