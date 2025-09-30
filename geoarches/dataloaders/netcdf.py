@@ -215,7 +215,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 value=obsi.mean(
                     dim=[
                         self.latitude_dim_name,
-                        self.latitude_dim_name,
+                        self.longitude_dim_name,
                     ],
                     skipna=True,
                 )
