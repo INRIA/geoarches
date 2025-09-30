@@ -181,11 +181,11 @@ class Era5Dataset(XarrayDataset):
         coords = {self.time_dim_name: times}
 
         if self.latitude_dim_name in self.other_indexers:
-            coords[self.latitude_dim_name] = self.dimension_indexers["latitude"][1]
+            coords[self.latitude_dim_name] = list(self.dimension_indexers["latitude"][1])
         if self.longitude_dim_name in self.other_indexers:
-            coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
+            coords[self.longitude_dim_name] = list(self.dimension_indexers["longitude"][1])
         if self.level_dim_name in self.other_indexers:
-            coords[self.level_dim_name] = self.dimension_indexers["level"][1]
+            coords[self.level_dim_name] = list(self.dimension_indexers["level"][1])
 
         xr_dataset = xr.Dataset(
             data_vars=dict(

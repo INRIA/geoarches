@@ -4,11 +4,28 @@ import fasteners
 import xarray as xr
 
 
+class _NoOpContext:
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 class ZarrIterativeWriter:
-    def __init__(self, path, force=True):
+    def __init__(self, path, force=True, use_synchronizer=True):
+        """
+        Args:
+            path: The path to the Zarr dataset.
+            force: Whether to delete the dataset if it already exists.
+            use_synchronizer: Whether to use a synchronizer to ensure thread-safety.
+        """
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.synchronizer = fasteners.InterProcessLock(str(path.parent) + "/.lock")
+        if use_synchronizer:
+            self.synchronizer = fasteners.InterProcessLock(path.parent / ".lock")
+        else:
+            self.synchronizer = _NoOpContext()
         print("Creating ZarrIterativeWriter")
         with self.synchronizer:
             if path.exists() and force:
@@ -21,7 +38,7 @@ class ZarrIterativeWriter:
             args = (
                 dict(append_dim=append_dim)
                 if is_initialized
-                else dict(encoding=dict(time=dict(units="hours since 2000-01-01")))
+                else dict(encoding=dict({append_dim: dict(units="hours since 2000-01-01")}))
             )
 
             xr_dataset.to_zarr(self.path, **args)
