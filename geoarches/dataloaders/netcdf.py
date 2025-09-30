@@ -205,16 +205,20 @@ class XarrayDataset(torch.utils.data.Dataset):
         obsi = self.cached_xrdataset.isel({self.time_dim_name: line_id})
 
         if interpolate_nans:
-            obsi['sea_surface_temperature'] = obsi['sea_surface_temperature'].fillna(
-                value=obsi['sea_surface_temperature'].mean(
-                    dim=[
-                        self.dimension_indexers["longitude"][0],
-                    ],
-                    skipna=True,
+            obsi["sea_surface_temperature"] = (
+                obsi["sea_surface_temperature"]
+                .fillna(
+                    value=obsi["sea_surface_temperature"].mean(
+                        dim=[
+                            self.dimension_indexers["longitude"][0],
+                        ],
+                        skipna=True,
+                    )
                 )
-            ).ffill('latitude', limit=None)
+                .ffill("latitude", limit=None)
+            )
 
-            obsi['sea_ice_cover'] = obsi['sea_ice_cover'].fillna(0.)
+            obsi["sea_ice_cover"] = obsi["sea_ice_cover"].fillna(0.0)
 
         tdict = self.convert_to_tensordict(obsi)
 

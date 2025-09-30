@@ -95,7 +95,7 @@ class NormalizationStatistics:
         self.std = None
         self.diff_std = None
         self.loss_coeffs = None
-        print('##### NORM MODULE INIT DONE #####')
+        print("##### NORM MODULE INIT DONE #####")
 
 
     def load_normalization_stats(self):

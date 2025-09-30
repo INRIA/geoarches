@@ -506,7 +506,7 @@ class Era5Forecast(Era5Dataset):
         )
 
         # First fix sst
-        sst = forcings['sea_surface_temperature']
+        sst = forcings["sea_surface_temperature"]
         sst = sst.fillna(
             value=sst.mean(
                 dim=[
@@ -514,15 +514,13 @@ class Era5Forecast(Era5Dataset):
                 ],
                 skipna=True,
             )
-        ).ffill(dim='latitude')
-        forcings['sea_surface_temperature'] = sst
+        ).ffill(dim="latitude")
+        forcings["sea_surface_temperature"] = sst
 
-        # Fix sic 
-        sic = forcings['sea_ice_cover']
-        sic = sic.fillna(
-            value=0
-        )
-        forcings['sea_ice_cover'] = sic
+        # Fix sic
+        sic = forcings["sea_ice_cover"]
+        sic = sic.fillna(value=0)
+        forcings["sea_ice_cover"] = sic
 
         np_array = forcings.to_array().to_numpy()
 
