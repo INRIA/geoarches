@@ -88,22 +88,8 @@ class ForecastModule(BaseLightningModule):
 
         return out
 
-    def compute_loop_batch(self, batch, pred, update_fnc=None):
-        if update_fnc is not None:
-            loop_batch = update_fnc(batch, pred)
-        else:
-            loop_batch = dict(
-                prev_state=loop_batch["state"],
-                state=pred,
-                # Used only to obtain NaN mask (not true next state)
-                next_state=loop_batch["next_state"],
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-            )
-
-        return loop_batch
-
     def forward_multistep(
-        self, batch, iters=None, return_format="tensordict", use_avg=True, update_fnc=None
+        self, batch, iters=None, return_format="tensordict", use_avg=True, update_fnc=None, return_loop_batch=False
     ):
         # multistep forward with gradient checkpointing to save GPU memory
         if use_avg and self.avg_modules is not None:
@@ -121,33 +107,40 @@ class ForecastModule(BaseLightningModule):
                 )
             else:
                 pred = self.forward(loop_batch)
+                
             preds_future.append(pred)
 
-            # compute next batch
-            add_prev_state = "prev_state" in loop_batch
-            add_forcings = loop_batch.get("future_forcings") is not None
-            loop_batch = dict(
-                prev_state=loop_batch["state"] if add_prev_state else None,
-                state=pred,
-                # Used only to obtain NaN mask (not true next state)
-                next_state=loop_batch["next_state"],
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-            )
+            if update_fnc is not None:
+                # allow user to modify pred before updating loop batch
+                loop_batch = update_fnc(pred, loop_batch)
+            else:
+                # compute next batch
+                add_prev_state = "prev_state" in loop_batch
+                add_forcings = loop_batch.get("future_forcings") is not None
 
-            if add_forcings:
-                loop_batch["forcings"] = loop_batch["future_forcings"][:, 0]
-                loop_batch["future_forcings"] = (
-                    loop_batch["future_forcings"][:, 1:]
-                    if loop_batch["future_forcings"].shape[1] > 1
-                    else None
-                )
 
-        if return_format == "list":
+                if add_forcings:
+                    loop_batch["forcings"] = loop_batch["future_forcings"][:, 0]
+                    loop_batch["future_forcings"] = (
+                        loop_batch["future_forcings"][:, 1:]
+                        if loop_batch["future_forcings"].shape[1] > 1
+                        else None
+                    )
+
+                loop_batch["prev_state"] = loop_batch["state"] if add_prev_state else None
+                loop_batch['state'] = pred
+                loop_batch["timestamp"] = loop_batch["timestamp"] + batch["lead_time_hours"] * 3600
+                loop_batch["lead_time_hours"] = batch["lead_time_hours"]
+                loop_batch["next_state"] = loop_batch["next_state"]  # Used only to obtain NaN mask (not true next state)
+
+
+        if return_format == "tensordict":
+            preds_future = torch.stack(preds_future, dim=1)
+        
+        if return_loop_batch:
+            return preds_future, loop_batch
+        else:
             return preds_future
-
-        preds_future = torch.stack(preds_future, dim=1)
-
-        return preds_future
 
     def loss(self, pred, gt, multistep=False, **kwargs):
         loss_coeffs = self.loss_coeffs.to(self.device)
@@ -163,15 +156,19 @@ class ForecastModule(BaseLightningModule):
 
             loss_coeffs = loss_coeffs.apply(lambda x: x * future_coeffs)
 
-        # mask pred to 0 where gt is nan
+        # mask pred to 0 where gt is nan 
+        # - depends on interpolation behaviour in dataloader
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        print(torch.any(~mask['surface']).item(), "nans in gt")
         pred = pred * mask
 
         # set nans in gt to 0
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
-
+        
+        # Weighted error calculation
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
 
+        # loss 
         loss = sum(weighted_error.mean().values())
 
         return loss

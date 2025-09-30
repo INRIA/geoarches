@@ -85,7 +85,8 @@ class Era5Dataset(XarrayDataset):
         dimension_indexers: Dict[str, Tuple[str, Any]] = default_dimension_indexers,
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_input: bool = False,
+        interpolate_target: bool = False,
     ):
         """
         Args:
@@ -119,7 +120,8 @@ class Era5Dataset(XarrayDataset):
             dimension_indexers=all_indexers,
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
-            interpolate_nans=interpolate_nans,
+            interpolate_input=interpolate_input,
+            interpolate_target=interpolate_target,
         )
 
     def convert_to_tensordict(self, xr_dataset):
@@ -188,11 +190,20 @@ class Era5Dataset(XarrayDataset):
 
         if self.latitude_dim_name in self.other_indexers:
             coords[self.latitude_dim_name] = self.dimension_indexers["latitude"][1]
+        else:
+            coords[self.latitude_dim_name] = np.linspace(
+                -90, 90, tdict["surface"].shape[-2], dtype=np.float32
+            )  
         if self.longitude_dim_name in self.other_indexers:
             coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
+        else:
+            coords[self.longitude_dim_name] = np.linspace(
+                0, 360, tdict["surface"].shape[-1], dtype=np.float32
+            ) 
+
         if self.level_dim_name in self.other_indexers:
             coords[self.level_dim_name] = self.dimension_indexers["level"][1]
-
+        
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
@@ -227,6 +238,7 @@ class Era5Dataset(XarrayDataset):
             xr_dataset = xr_dataset.sel(**levels)
 
         xr_dataset = xr_dataset.chunk(**{self.time_dim_name: 1})
+        
         return xr_dataset
 
     def convert_trajectory_to_xarray(
@@ -278,7 +290,8 @@ class Era5Forecast(Era5Dataset):
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_input: bool = False,
+        interpolate_target: bool = False,
     ):
         """
         Args:
@@ -317,11 +330,12 @@ class Era5Forecast(Era5Dataset):
             variables=variables,
             dimension_indexers=all_indexers,
             warning_on_nan=warning_on_nan,
-            interpolate_nans=interpolate_nans,
+            interpolate_input=interpolate_input,
+            interpolate_target=interpolate_target,
         )
 
         self.forcings_ds = None
-        print("FORCINGS")
+
         if (forcings_path is not None) ^ (forcing_vars is not None):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
@@ -357,7 +371,6 @@ class Era5Forecast(Era5Dataset):
             self.forcings_std = None
         # depending on domain, re-set timestamp bounds
 
-        print("DOMAIN")
         if domain in ("val", "test", "test_z0012", "aimip_val"):
             # re-select timestamps
             if domain.startswith("val"):
@@ -383,7 +396,7 @@ class Era5Forecast(Era5Dataset):
         self.current_multistep = 1
 
         # Load normalization statistics.
-        print("STATS")
+
         self.norm_scheme = None
         if stats_cfg:
             stats = instantiate(stats_cfg.module)
@@ -421,7 +434,7 @@ class Era5Forecast(Era5Dataset):
         )  # time in seconds
 
         out["state"] = super().__getitem__(
-            i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
+            i, interpolate_nans=self.interpolate_input, warning_on_nan=self.warning_on_nan
         )
         out["state"] = out["state"]
 
@@ -432,7 +445,7 @@ class Era5Forecast(Era5Dataset):
 
         if self.multistep > 0:
             out["next_state"] = super().__getitem__(
-                i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                i + T // self.timedelta, interpolate_nans=self.interpolate_target, warning_on_nan=False
             )
             out["next_timestamp"] = out["next_state"]
 
@@ -442,7 +455,7 @@ class Era5Forecast(Era5Dataset):
             for k in range(1, self.multistep + 1):
                 future_states.append(
                     super().__getitem__(
-                        i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                        i + k * T // self.timedelta, interpolate_nans=self.interpolate_target, warning_on_nan=False
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
@@ -451,7 +464,7 @@ class Era5Forecast(Era5Dataset):
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
                 i - self.lead_time_hours // self.timedelta,
-                interpolate_nans=self.interpolate_nans,
+                interpolate_nans=self.interpolate_input,
                 warning_on_nan=self.warning_on_nan,
             )
             out["prev_state"] = out["prev_state"]
@@ -468,10 +481,15 @@ class Era5Forecast(Era5Dataset):
             clim_xr.close()
 
         if self.forcings_ds is not None:
+                
+            self.print = True
             out["forcings"] = self.load_forcings(timestamp)
             if self.multistep > 1:
                 out["future_forcings"] = self.load_future_forcings(timestamp)
-
+                if self.print:
+                    print('Loaded future forcings')
+                    self.print = False
+                    
         if normalize and self.norm_scheme:
             out = self.normalize(out)
 
@@ -482,18 +500,29 @@ class Era5Forecast(Era5Dataset):
         Load forcings data for a given timestamp.
         """
         first_day_of_month = timestamp.astype("datetime64[M]")
+
         forcings = self.forcings_ds[self.forcing_vars].sel(
             {self.time_dim_name: first_day_of_month}, method="nearest"
         )
-        forcings = forcings.fillna(
-            value=forcings.mean(
+
+        # First fix sst
+        sst = forcings['sea_surface_temperature']
+        sst = sst.fillna(
+            value=sst.mean(
                 dim=[
-                    self.dimension_indexers["latitude"][0],
                     self.dimension_indexers["longitude"][0],
                 ],
                 skipna=True,
             )
+        ).ffill(dim='latitude')
+        forcings['sea_surface_temperature'] = sst
+
+        # Fix sic 
+        sic = forcings['sea_ice_cover']
+        sic = sic.fillna(
+            value=0
         )
+        forcings['sea_ice_cover'] = sic
 
         np_array = forcings.to_array().to_numpy()
 

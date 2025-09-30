@@ -26,11 +26,11 @@ default_var_weights = {
 class NormalizationStatistics:
     def __init__(
         self,
+        norm_file: str  = None,
         variables: Dict[str, List[str]] = None,
         levels: List[int] = arches_default_pressure_levels,
         norm_scheme: str = "pangu",
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
-        stats_path: str | None = None,
     ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
@@ -96,26 +96,28 @@ class NormalizationStatistics:
         - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
         """
 
-        print("##### NORM SCHEME: ", norm_scheme, " #####")
+        print('##### NORM MODULE INIT #####')
 
         if variables is None:
             variables = {
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             }
-        print("##### VARIABLES: ", variables, " #####")
-        print("##### LEVELS: ", levels, " #####")
 
-        if norm_scheme and norm_scheme not in ["graphcast", "pangu"]:
-            raise ValueError(
-                f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
-            )
+
         self.norm_scheme = norm_scheme
-
-        if self.norm_scheme == "pangu":
-            self.norm_file_path = stats_path or geoarches_stats_path / "pangu_norm_stats.nc"
-        elif self.norm_scheme == "graphcast":
-            self.norm_file_path = stats_path or geoarches_stats_path / "graphcast_norm_stats.nc"
+        if norm_file is None:
+            assert norm_scheme is not None, "If no normalization file is provided, a normalization scheme must be specified."
+            assert norm_scheme in ["graphcast", "pangu"], f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
+            if self.norm_scheme == "graphcast":
+                print("Using GraphCast normalization scheme.")
+                self.norm_file_path = geoarches_stats_path / "graphcast_norm_stats.nc"
+            elif self.norm_scheme == "pangu":
+                print("Using Pangu normalization scheme.")
+                self.norm_file_path = geoarches_stats_path / "pangu_norm_stats.nc"
+        else:
+            print(f"Using custom normalization file: {norm_file}")
+            self.norm_file_path = geoarches_stats_path / norm_file
 
         # If passed through hydra, need to convert from OmegaConf objects to lists.
         self.variables = {k: list(vars) for k, vars in variables.items()}
@@ -145,6 +147,7 @@ class NormalizationStatistics:
         self.mean = None
         self.std = None
         self.loss_coeffs = None
+        print('##### NORM MODULE INIT DONE #####')
 
     def load_normalization_stats(self):
         if self.norm_scheme is None:
@@ -257,12 +260,6 @@ class NormalizationStatistics:
             )
 
             loss_coeffs = loss_coeffs * loss_delta_scaler.pow(pow)
-
-        print(
-            f"Loss coefficients computed with normalization scheme:\
-            {self.norm_scheme}, pow: {pow}, delta normalization: {loss_delta_normalization},\
-            use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}"
-        )
 
         self.loss_coeffs = loss_coeffs
 
