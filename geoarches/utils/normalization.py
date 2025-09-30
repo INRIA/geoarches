@@ -26,7 +26,7 @@ default_var_weights = {
 class NormalizationStatistics:
     def __init__(
         self,
-        norm_file: str  = None,
+        norm_file: str = None,
         variables: Dict[str, List[str]] = None,
         levels: List[int] = arches_default_pressure_levels,
         norm_scheme: str = "pangu",
@@ -96,7 +96,7 @@ class NormalizationStatistics:
         - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
         """
 
-        print('##### NORM MODULE INIT #####')
+        print("##### NORM MODULE INIT #####")
 
         if variables is None:
             variables = {
@@ -104,11 +104,14 @@ class NormalizationStatistics:
                 "level": arches_default_level_variables,
             }
 
-
         self.norm_scheme = norm_scheme
         if norm_file is None:
-            assert norm_scheme is not None, "If no normalization file is provided, a normalization scheme must be specified."
-            assert norm_scheme in ["graphcast", "pangu"], f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
+            assert norm_scheme is not None, (
+                "If no normalization file is provided, a normalization scheme must be specified."
+            )
+            assert norm_scheme in ["graphcast", "pangu"], (
+                f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
+            )
             if self.norm_scheme == "graphcast":
                 print("Using GraphCast normalization scheme.")
                 self.norm_file_path = geoarches_stats_path / "graphcast_norm_stats.nc"
@@ -147,7 +150,7 @@ class NormalizationStatistics:
         self.mean = None
         self.std = None
         self.loss_coeffs = None
-        print('##### NORM MODULE INIT DONE #####')
+        print("##### NORM MODULE INIT DONE #####")
 
     def load_normalization_stats(self):
         if self.norm_scheme is None:

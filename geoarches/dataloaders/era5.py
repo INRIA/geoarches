@@ -193,17 +193,17 @@ class Era5Dataset(XarrayDataset):
         else:
             coords[self.latitude_dim_name] = np.linspace(
                 -90, 90, tdict["surface"].shape[-2], dtype=np.float32
-            )  
+            )
         if self.longitude_dim_name in self.other_indexers:
             coords[self.longitude_dim_name] = self.dimension_indexers["longitude"][1]
         else:
             coords[self.longitude_dim_name] = np.linspace(
                 0, 360, tdict["surface"].shape[-1], dtype=np.float32
-            ) 
+            )
 
         if self.level_dim_name in self.other_indexers:
             coords[self.level_dim_name] = self.dimension_indexers["level"][1]
-        
+
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
@@ -238,7 +238,7 @@ class Era5Dataset(XarrayDataset):
             xr_dataset = xr_dataset.sel(**levels)
 
         xr_dataset = xr_dataset.chunk(**{self.time_dim_name: 1})
-        
+
         return xr_dataset
 
     def convert_trajectory_to_xarray(
@@ -445,7 +445,9 @@ class Era5Forecast(Era5Dataset):
 
         if self.multistep > 0:
             out["next_state"] = super().__getitem__(
-                i + T // self.timedelta, interpolate_nans=self.interpolate_target, warning_on_nan=False
+                i + T // self.timedelta,
+                interpolate_nans=self.interpolate_target,
+                warning_on_nan=False,
             )
             out["next_timestamp"] = out["next_state"]
 
@@ -455,7 +457,9 @@ class Era5Forecast(Era5Dataset):
             for k in range(1, self.multistep + 1):
                 future_states.append(
                     super().__getitem__(
-                        i + k * T // self.timedelta, interpolate_nans=self.interpolate_target, warning_on_nan=False
+                        i + k * T // self.timedelta,
+                        interpolate_nans=self.interpolate_target,
+                        warning_on_nan=False,
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
@@ -481,15 +485,14 @@ class Era5Forecast(Era5Dataset):
             clim_xr.close()
 
         if self.forcings_ds is not None:
-                
             self.print = True
             out["forcings"] = self.load_forcings(timestamp)
             if self.multistep > 1:
                 out["future_forcings"] = self.load_future_forcings(timestamp)
                 if self.print:
-                    print('Loaded future forcings')
+                    print("Loaded future forcings")
                     self.print = False
-                    
+
         if normalize and self.norm_scheme:
             out = self.normalize(out)
 
@@ -506,7 +509,7 @@ class Era5Forecast(Era5Dataset):
         )
 
         # First fix sst
-        sst = forcings['sea_surface_temperature']
+        sst = forcings["sea_surface_temperature"]
         sst = sst.fillna(
             value=sst.mean(
                 dim=[
@@ -514,15 +517,13 @@ class Era5Forecast(Era5Dataset):
                 ],
                 skipna=True,
             )
-        ).ffill(dim='latitude')
-        forcings['sea_surface_temperature'] = sst
+        ).ffill(dim="latitude")
+        forcings["sea_surface_temperature"] = sst
 
-        # Fix sic 
-        sic = forcings['sea_ice_cover']
-        sic = sic.fillna(
-            value=0
-        )
-        forcings['sea_ice_cover'] = sic
+        # Fix sic
+        sic = forcings["sea_ice_cover"]
+        sic = sic.fillna(value=0)
+        forcings["sea_ice_cover"] = sic
 
         np_array = forcings.to_array().to_numpy()
 
