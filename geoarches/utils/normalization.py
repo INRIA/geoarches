@@ -96,8 +96,6 @@ class NormalizationStatistics:
         - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
         """
 
-        print("##### NORM SCHEME: ", norm_scheme, " #####")
-
         if variables is None:
             variables = {
                 "surface": arches_default_surface_variables,
@@ -106,16 +104,23 @@ class NormalizationStatistics:
         print("##### VARIABLES: ", variables, " #####")
         print("##### LEVELS: ", levels, " #####")
 
-        if norm_scheme and norm_scheme not in ["graphcast", "pangu"]:
+        if norm_scheme and norm_scheme not in ["graphcast", "pangu", "aimip"]:
             raise ValueError(
-                f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu']"
+                f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu', aimip']"
             )
         self.norm_scheme = norm_scheme
 
-        if self.norm_scheme == "pangu":
-            self.norm_file_path = stats_path or geoarches_stats_path / "pangu_norm_stats.nc"
-        elif self.norm_scheme == "graphcast":
-            self.norm_file_path = stats_path or geoarches_stats_path / "graphcast_norm_stats.nc"
+        self.norm_file_path = stats_path
+        if not stats_path:
+            if self.norm_scheme == "pangu":
+                self.norm_file_path = geoarches_stats_path / "pangu_norm_stats.nc"
+            elif self.norm_scheme == "graphcast":
+                self.norm_file_path = geoarches_stats_path / "graphcast_norm_stats.nc"
+            elif self.norm_scheme == "aimip":
+                self.norm_file_path = geoarches_stats_path / "aimip_norm_stats.nc"
+
+        print("##### NORM SCHEME: ", norm_scheme, " #####")
+        print(self.norm_file_path)
 
         # If passed through hydra, need to convert from OmegaConf objects to lists.
         self.variables = {k: list(vars) for k, vars in variables.items()}
