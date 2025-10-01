@@ -1,4 +1,5 @@
 import importlib
+from enum import Enum
 
 import numpy as np
 import torch
@@ -20,6 +21,11 @@ from .archesweather_layers import (
 )
 
 
+class ForcingsEmbedding(str, Enum):
+    SURFACE = "surface"
+    SEPARATE = "separate"
+
+
 class WeatherEncodeDecodeLayer(nn.Module):
     """
     gathers layers for the encoder and decoder
@@ -33,11 +39,29 @@ class WeatherEncodeDecodeLayer(nn.Module):
         patch_size=(2, 2, 2),
         surface_ch=4,
         level_ch=6,
+        forcings_ch=0,
         n_concatenated_states=0,
         final_interpolation=False,
+        forcings_embedding: ForcingsEmbedding | None = None,
         auto_move_to_device=True,
         constant_mask_file="archesweather_constant_masks",
     ) -> None:
+        """
+        Args:
+            img_size: (levels, lat, lon)
+            emb_dim: Hidden embedding dimension.
+            out_emb_dim: Output embedding dimension.
+            patch_size: Patch size for the 2D and 3D convolutions.
+            surface_ch: Number of channels for 2D variables.
+            level_ch: Number of channels for 3D variables (with level dimension).
+            forcings_ch: Number of channels for the forcing variables.
+            n_concatenated_states: Number of input states concatenated with the input state.
+            final_interpolation: Whether to interpolate the output to the original image size.
+            forcings_embedding: How to embed the forcings.
+                SURFACE: Concatenate forcings to the surface and use the same surface projection.
+                SEPARATE: Add a separate projection for forcings.
+            auto_move_to_device: Whether to automatically move the constant masks to the device.
+        """
         super().__init__()
         self.__dict__.update(locals())
 
@@ -48,6 +72,8 @@ class WeatherEncodeDecodeLayer(nn.Module):
         constant_dims = self.constant_masks.shape[0]
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
+        if self.forcings_embedding == ForcingsEmbedding.SURFACE:
+            surface_ch_in += forcings_ch
         level_ch_in = level_ch + n_concatenated_states * level_ch
 
         if torch.backends.mps.is_available():
@@ -63,6 +89,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.surface_proj = nn.Conv2d(
             surface_ch_in, emb_dim, kernel_size=patch_size[1:], stride=patch_size[1:]
         )
+        if forcings_embedding == ForcingsEmbedding.SEPARATE:
+            self.forcings_proj = nn.Conv2d(
+                forcings_ch, emb_dim, kernel_size=patch_size[1:], stride=patch_size[1:]
+            )
 
         l_pad = patch_size[0] - img_size[0] % patch_size[0]
         level_pads = [l_pad // 2, l_pad - l_pad // 2]
@@ -99,18 +129,27 @@ class WeatherEncodeDecodeLayer(nn.Module):
             upscale_factor=patch_size[-1],
         )
 
-    def encode(self, state: TensorDict, cond_state: TensorDict = None):
+    def encode(
+        self, state: TensorDict, cond_state: TensorDict = None, forcings: torch.Tensor = None
+    ):
         """
         cond state is a condition state that is concatenated to the main state
         """
+        if forcings is not None and self.forcings_embedding is None:
+            raise ValueError("Passed forcings but typer of forcings_embedding is not set.")
+        if self.forcings_embedding and forcings is None:
+            raise ValueError(
+                "Expected forcings (self.forcings_embedding is set) but not forcings passed as input."
+            )
+
         bs = state.shape[0]
         device = state.device
         if self.auto_move_to_device and (self.constant_masks.device != device):
             self.constant_masks = self.constant_masks.to(device)
 
         # embed
-        level = state["level"]
-        surface = state["surface"].squeeze(-3)
+        level = state["level"]  # B, Var, Lev, Lat, Lon
+        surface = state["surface"].squeeze(-3)  # B, Var, Lat, Lon
 
         # remove south pole if necessary
         if surface.shape[-2] % 2:
@@ -125,16 +164,28 @@ class WeatherEncodeDecodeLayer(nn.Module):
             cond_surface = cond_state["surface"].squeeze(-3)
             cond_level = cond_state["level"]
 
+            # Remove south pole if necessary.
             if cond_state["surface"].shape[-2] % 2:
                 cond_surface = cond_surface[..., :-1, :]
                 cond_level = cond_level[..., :-1, :]
             surface = torch.cat([surface, cond_surface], dim=1)
             level = torch.cat([level, cond_level], dim=1)
 
+        # Remove south pole if necessary.
+        if forcings is not None and forcings.shape[-2] % 2:
+            forcings = forcings[..., :-1, :]
+        if self.forcings_embedding == ForcingsEmbedding.SURFACE:
+            surface = torch.cat([surface, forcings], dim=1)
+
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
 
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
+
+        if self.forcings_embedding == ForcingsEmbedding.SEPARATE:
+            forcings = self.forcings_proj(forcings)
+            x = torch.concat([forcings.unsqueeze(2), x], dim=2)
+
         return x
 
     def decode(self, x):
