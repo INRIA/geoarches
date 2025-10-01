@@ -1,3 +1,4 @@
+import functools
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
@@ -89,7 +90,7 @@ class Era5Dataset(XarrayDataset):
     ):
         """
         Args:
-            path: Single filepath or directory holding files.
+            path: Single filepath or directory holding files (prognostic vars).
             domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..).
                 Used if `filename_filter` is None.
             filename_filter: To filter files within `path` based on filename.  If set, does not use `domain` param.
@@ -143,7 +144,7 @@ class Era5Dataset(XarrayDataset):
         # we don't do operations on xr datasets since it takes more time than on tensors
 
         # unsqueeze surface (important)
-        if "surface" in tdict:
+        if "surface" in tdict and (len(tdict["surface"].shape) < len(tdict["level"].shape)):
             tdict["surface"] = tdict["surface"].unsqueeze(-3)
 
         # do we need to flip lats ?
@@ -257,10 +258,12 @@ class Era5Forecast(Era5Dataset):
         self,
         stats_cfg,
         path: str = "data/era5_240/full/",
+        forcings_path: str = None,
         domain: str = "train",
         filename_filter: Callable | None = None,
         timedelta_hours: int = None,
         variables: Dict[str, List[str]] | None = None,
+        forcing_vars: List[str] | None = None,
         dimension_indexers: Dict[str, list] = default_dimension_indexers,
         lead_time_hours: int = 24,
         multistep: int = 1,
@@ -274,6 +277,8 @@ class Era5Forecast(Era5Dataset):
         Args:
             stats_cfg: Configuration for normalization statistics. None if no normalization is needed.
             path: Single filepath or directory holding files.
+            forcings_path: Single filepath or directory holding forcing files.
+                If None, no forcing files are loaded.
             domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..)
             filename_filter: To filter files within `path` based on filename. If set, does not use `domain` param.
                 If None, filters files based on `domain`.
@@ -285,6 +290,7 @@ class Era5Forecast(Era5Dataset):
                              default is 6 or 12, depending on domain.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
+            forcing_vars: List of forcing variables to load from forcings dataset (if forcings_path is set).
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
                 Used to select levels and lat/lon resolution.
             warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
@@ -305,6 +311,13 @@ class Era5Forecast(Era5Dataset):
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
         )
+
+        if (forcings_path is not None) ^ (forcing_vars is not None):
+            raise ValueError(
+                "Either both forcings_path and forcing_vars must be set, or neither must be set."
+            )
+        self.forcings_path = forcings_path
+        self.forcing_vars = list(forcing_vars) if forcing_vars is not None else None
 
         # depending on domain, re-set timestamp bounds
 
@@ -414,10 +427,65 @@ class Era5Forecast(Era5Dataset):
             out["clim_state"] = self.convert_to_tensordict(climi)
             clim_xr.close()
 
+        if self.forcings_ds:
+            out["forcings"] = self.load_forcings(datetime)
+            if self.multistep > 1:
+                out["future_forcings"] = self.load_future_forcings(datetime)
+
         if normalize and self.norm_scheme:
             out = self.normalize(out)
 
         return out
+
+    @functools.cached_property
+    def forcings_ds(self):
+        if self.forcings_path is not None:
+            return xr.open_dataset(self.forcings_path, **self.xr_options)
+        return None
+
+    # TODO(singhren): Refactor so that ops in convert_to_tensordict() is applied to forcings as well.
+    def load_forcings(self, timestamp: np.datetime64):
+        """
+        Load forcings data for a given timestamp.
+        """
+        first_day_of_month = timestamp.astype("datetime64[M]")
+        forcings = self.forcings_ds[self.forcing_vars].sel(
+            {self.time_dim_name: first_day_of_month}
+        )
+
+        if self.interpolate_nans:
+            forcings = forcings.fillna(
+                value=forcings.mean(
+                    dim=[
+                        self.latitude_dim_name,
+                        self.longitude_dim_name,
+                    ],
+                    skipna=True,
+                )
+            )
+
+        np_array = forcings.to_array().to_numpy()
+        forcings = torch.from_numpy(np_array).float()
+
+        if (
+            self.forcings_ds[self.latitude_dim_name][0]
+            < self.forcings_ds[self.latitude_dim_name][-1]
+        ):
+            forcings = forcings.flip(-2)
+
+        return forcings
+
+    def load_future_forcings(self, timestamp: np.datetime64):
+        """
+        Load all future forcings data for multistep.
+        """
+        future_forcings = []
+        for k in range(1, self.multistep + 1):
+            future_forcings.append(
+                self.load_forcings(timestamp + np.timedelta64(k * self.lead_time_hours, "h"))
+            )
+        future_forcings = torch.stack(future_forcings, dim=0)
+        return future_forcings
 
     def normalize(self, batch):
         if self.norm_scheme is None:
