@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from geoarches.dataloaders import era5, netcdf
+from geoarches.dataloaders import era5
 
 
 class Era5ForecastWithPrediction(era5.Era5Forecast):
@@ -22,20 +22,29 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         load_prev=False,
         load_hard_neg=False,
         variables=None,
+        pred_dimension_indexers=None,
         **kwargs,
     ):
-        """
-        Args:
-            path: Single filepath or directory holding groundtruth files.
-            domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..).
-            filename_filter: To filter files within `path` based on filename.  If set, does not use `domain` param.
-                If None, filters files based on `domain`.
-            lead_time_hours: Time difference between current state and previous and future states.
-            pred_path: Single filepath or directory holding model prediction files to also load.
-            load_prev: Whether to load state at previous timestamp (current time - lead_time_hours).
-            load_hard_neg: Whether to additionallty load hard negative example for contrastive learning.
-            variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
-                e.g. {surface:[...], level:[...] By default uses standard 6 level and 4 surface vars.
+        """Args:
+
+        path: Single filepath or directory holding groundtruth files.
+        domain: Specify data split for the default filename filters (eg. train,
+        val, test, testz0012..).
+        filename_filter: To filter files within `path` based on filename.  If
+        set, does not use `domain` param.
+            If None, filters files based on `domain`.
+        lead_time_hours: Time difference between current state and previous and
+        future states.
+        pred_path: Single filepath or directory holding model prediction files
+        to also load.
+        load_prev: Whether to load state at previous timestamp (current time -
+        lead_time_hours).
+        load_hard_neg: Whether to additionallty load hard negative example for
+        contrastive learning.
+        variables: Variables to load from dataset. Dict holding variable lists
+        mapped by their keys to be processed into tensordict.
+            e.g. {surface:[...], level:[...] By default uses standard 6 level
+            and 4 surface vars.
         """
         super().__init__(
             stats_cfg=stats_cfg,
@@ -55,12 +64,12 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
                     f"Prediction path for deterministic model outputs '{pred_path}' does not exist. "
                     "Run `python -m geoarches.inference.encode_dataset` to store predictions for residual training."
                 )
-            self.pred_ds = netcdf.XarrayDataset(
+            self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
+                dimension_indexers=pred_dimension_indexers,
                 filename_filter=self.filename_filter,
                 variables=self.variables,
             )
-            self.pred_ds.convert_to_tensordict = self.convert_to_tensordict
 
             if domain in ("val", "test", "test_z0012"):
                 # re-select timestamps
