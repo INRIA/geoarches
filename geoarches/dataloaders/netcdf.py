@@ -78,11 +78,11 @@ class XarrayDataset(torch.utils.data.Dataset):
         # Separate indexers with slice and those without.
         indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
         self.slice_indexers = {k: v for k, v in indexers.items() if isinstance(v, slice)}
-        self.other_indexers = {k: list(v) for k, v in indexers.items() if not isinstance(v, slice)}
-        if not self.slice_indexers:
-            self.slice_indexers = None
-        if not self.other_indexers:
-            self.other_indexers = None
+        self.other_indexers = {
+            k: (list(v) if isinstance(v, tuple) else v)
+            for k, v in indexers.items()
+            if not isinstance(v, slice)
+        }
 
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan

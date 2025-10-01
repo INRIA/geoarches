@@ -174,7 +174,7 @@ class DiffusionModule(BaseLightningModule):
 
         cond_emb = month_emb + hour_emb + timestep_emb
 
-        x = self.embedder.encode(batch["state"], input_state)
+        x = self.embedder.encode(batch["state"], input_state, batch.get("forcings", None))
 
         x = self.backbone(x, cond_emb)
         out = self.embedder.decode(x)  # we get tdict
@@ -228,7 +228,9 @@ class DiffusionModule(BaseLightningModule):
             device=device, dtype=next(iter(batch["state"].values())).dtype
         )
 
-        step_indices = torch.searchsorted(schedule_timesteps, timesteps)
+        # search in indices, needs to take minus because schedule_timesteps is
+        # in descending order.
+        step_indices = torch.searchsorted(-schedule_timesteps, -timesteps)
         sigma = sigmas[step_indices].flatten()[:, None, None, None, None]  # shape (bs,)
 
         noisy_next_state = noise.apply(lambda x: x * sigma) + next_state.apply(
@@ -366,6 +368,7 @@ class DiffusionModule(BaseLightningModule):
             seed_i = member + 1000 * i + batch_nb * 10**6
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
+            add_forcings = "future_forcings" in loop_batch
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
             loop_batch = dict(
@@ -374,6 +377,8 @@ class DiffusionModule(BaseLightningModule):
                 timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
                 hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
                 month=torch.tensor(next_month).to(self.device),
+                forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
             )
 
         if return_format == "list":
