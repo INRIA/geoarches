@@ -31,7 +31,7 @@ def get_random_code():
     # generate random code that alternates letters and numbers
     chars = random.choices(string.ascii_lowercase, k=3)
     nums = random.choices(string.digits, k=3)
-    return "".join([f"{chars}{num}" for char, num in zip(chars, nums)])
+    return "".join([f"{char}{num}" for char, num in zip(chars, nums)])
 
 
 def collate_fn(lst):
