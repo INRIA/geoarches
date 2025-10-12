@@ -98,11 +98,11 @@ class ForecastModule(BaseLightningModule):
         return_loop_batch=False,
     ):
         # multistep forward with gradient checkpointing to save GPU memory
-        if use_avg and self.avg_modules is not None:
-            out = self.forward_multistep(batch, iters=iters, use_avg=False)
-            for m in self.avg_modules:
-                out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
-            return out / (1 + len(self.avg_modules))
+        """if use_avg and self.avg_modules is not None:
+        out = self.forward_multistep(batch, iters=iters, use_avg=False)
+        for m in self.avg_modules:
+            out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
+        return out / (1 + len(self.avg_modules))"""
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
@@ -112,7 +112,16 @@ class ForecastModule(BaseLightningModule):
                     self.forward, loop_batch, use_reentrant=False
                 )
             else:
-                pred = self.forward(loop_batch)
+                if use_avg and self.avg_modules is not None:
+                    print("Using average of models for rollout")
+                    # average predictions of different models
+                    pred = self.forward(loop_batch)
+                    for m in self.avg_modules:
+                        x = m.forward(loop_batch)
+                        pred = pred + x
+                    pred = pred / (1 + len(self.avg_modules))
+                else:
+                    pred = self.forward(loop_batch)
 
             preds_future.append(pred)
 
@@ -404,6 +413,7 @@ class ForecastModuleWithCond(ForecastModule):
         if avg_with_modules:
             from geoarches.lightning_modules.base_module import load_module
 
+            print(f"Loading avg modules: {avg_with_modules}")
             self.avg_modules = nn.ModuleList(
                 [load_module(m, return_config=False) for m in avg_with_modules]
             )
