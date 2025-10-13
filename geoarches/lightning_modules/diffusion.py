@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from hydra.utils import instantiate
-from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
@@ -97,8 +96,8 @@ class DiffusionModule(BaseLightningModule):
         area_weights = (area_weights / area_weights.mean())[:, None]
 
         self.loss_coeffs, self.state_scaler = stats.compute_loss_coeffs(
-            **stats_cfg.compute_loss_coeffs_args, area_weights=area_weights)
-        
+            **stats_cfg.compute_loss_coeffs_args, area_weights=area_weights
+        )
 
         # set up metrics
         self.val_metrics = nn.ModuleList(
@@ -110,7 +109,6 @@ class DiffusionModule(BaseLightningModule):
                 for metric_name, metric in cfg.inference.metrics.items()
             }
         )
-
 
         self.test_outputs = []
         self.validation_samples = {}
@@ -226,8 +224,15 @@ class DiffusionModule(BaseLightningModule):
             snr_weights = snr_weights.to(self.device)[:, None, None, None, None]
             loss_coeffs = loss_coeffs.apply(lambda x: x * snr_weights)
 
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        pred = pred * mask
+
+        # set nans in gt to 0
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
+
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
         loss = sum(weighted_error.mean().values())
+
         return loss
 
     def sample(
