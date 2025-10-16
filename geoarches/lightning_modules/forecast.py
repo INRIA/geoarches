@@ -142,22 +142,6 @@ class ForecastModule(BaseLightningModule):
                 future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
             )
 
-                if add_forcings:
-                    loop_batch["forcings"] = loop_batch["future_forcings"][:, 0]
-                    loop_batch["future_forcings"] = (
-                        loop_batch["future_forcings"][:, 1:]
-                        if loop_batch["future_forcings"].shape[1] > 1
-                        else None
-                    )
-
-                loop_batch["prev_state"] = loop_batch["state"] if add_prev_state else None
-                loop_batch["state"] = pred
-                loop_batch["timestamp"] = loop_batch["timestamp"] + batch["lead_time_hours"] * 3600
-                loop_batch["lead_time_hours"] = batch["lead_time_hours"]
-                loop_batch["next_state"] = loop_batch[
-                    "next_state"
-                ]  # Used only to obtain NaN mask (not true next state)
-
         if return_format == "tensordict":
             preds_future = torch.stack(preds_future, dim=1)
 
