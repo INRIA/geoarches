@@ -29,7 +29,6 @@ from torch.utils.data import default_collate
 from tqdm import tqdm
 
 from geoarches.dataloaders import era5
-from geoarches.dataloaders.netcdf import default_dimension_indexers
 from geoarches.metrics.label_wrapper import convert_metric_dict_to_xarray
 
 from . import metric_registry
@@ -238,8 +237,7 @@ def main():
     print(f"Computing: {metrics.keys()}")
 
     # Groundtruth.
-    dimension_indexers = default_dimension_indexers.copy()
-    dimension_indexers["level"] = ("level", [500, 700, 850])  # Use only these pressure levels.
+    dimension_indexers = dict(level=[500, 700, 850])  # Use only these pressure levels.
     ds_test = era5.Era5Forecast(
         stats_cfg=None,  # No normalization.
         path=args.groundtruth_path,
@@ -267,10 +265,9 @@ def main():
         return True
 
     if not args.eval_clim:
-        dimension_indexers["prediction_timedelta"] = (
-            "prediction_timedelta",
-            [timedelta(days=i) for i in range(1, args.multistep + 1)],
-        )
+        dimension_indexers["prediction_timedelta"] = [
+            timedelta(days=i) for i in range(1, args.multistep + 1)
+        ]
 
         # Load predictions.
         ds_pred = era5.Era5Dataset(

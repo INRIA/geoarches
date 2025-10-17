@@ -30,7 +30,7 @@ from geoarches.dataloaders.era5 import Era5Forecast
 ds = Era5Forecast(
     path="path/to/era5",
     load_prev=True,
-    norm_scheme="pangu",
+    norm_file='pangu_norm_stats.nc',
 )
 ```
 
