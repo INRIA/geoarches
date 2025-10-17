@@ -36,7 +36,6 @@ def create_fake_stats_ds(variables, levels, stats_path):
 
 def test_init_defaults():
     norm_stats = normalization.NormalizationStatistics()
-    assert norm_stats.norm_scheme == "pangu"
     assert norm_stats.variables["surface"] == arches_default_surface_variables
     assert norm_stats.variables["level"] == arches_default_level_variables
     assert norm_stats.levels == arches_default_pressure_levels
@@ -50,65 +49,51 @@ def test_init_graphcast():
     }
     levels = [500, 850]
     norm_stats = normalization.NormalizationStatistics(
-        variables=variables, levels=levels, norm_scheme="graphcast"
+        variables=variables, levels=levels, norm_file="graphcast_norm_stats.nc"
     )
-    assert norm_stats.norm_scheme == "graphcast"
     assert norm_stats.variables == variables
     assert norm_stats.levels == levels
 
 
 def test_init_invalid_scheme():
     with pytest.raises(ValueError):
-        normalization.NormalizationStatistics(norm_scheme="invalid")
-
-
-def test_init_pangu_invalid_vars():
-    variables = {
-        "surface": ["T2m", "U10m"],
-        "level": ["Z", "U"],
-    }
-    with pytest.raises(AssertionError):
-        normalization.NormalizationStatistics(variables=variables, norm_scheme="pangu")
+        normalization.NormalizationStatistics(norm_file="invalid.nc")
 
 
 @pytest.mark.parametrize(
-    "norm_scheme, variables, levels, stats_path_arg",
+    "stats_path, variables, levels",
     [
         (
-            "pangu",
+            "pangu_norm_stats.nc",
             {
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             },
             arches_default_pressure_levels,
-            None,
         ),
         (
-            "pangu",
-            {
-                "surface": arches_default_surface_variables,
-                "level": arches_default_level_variables,
-            },
-            arches_default_pressure_levels,
             "fake_pangu.nc",
+            {
+                "surface": arches_default_surface_variables,
+                "level": arches_default_level_variables,
+            },
+            arches_default_pressure_levels,
         ),
         (
-            "graphcast",
+            "graphcast_norm_stats.nc",
             {
                 "surface": ["2m_temperature", "10m_u_component_of_wind"],
                 "level": ["geopotential", "u_component_of_wind"],
             },
             [500, 850],
-            None,
         ),
         (
-            "graphcast",
-            {
-                "surface": ["2m_temperature", "10m_u_component_of_wind"],
-                "level": ["geopotential", "u_component_of_wind"],
-            },
-            [500, 850],
             "fake_graphcast.nc",
+            {
+                "surface": ["2m_temperature", "10m_u_component_of_wind"],
+                "level": ["geopotential", "u_component_of_wind"],
+            },
+            [500, 850],
         ),
     ],
     ids=[
@@ -120,21 +105,19 @@ def test_init_pangu_invalid_vars():
 )
 def test_load_normalization_stats(
     tmp_path,
-    norm_scheme,
+    stats_path,
     variables,
     levels,
-    stats_path_arg,
 ):
-    stats_path = None
-    if stats_path_arg is not None:
-        stats_path = tmp_path / stats_path_arg
+    if "fake" in stats_path:
+        stats_path = tmp_path / stats_path
         create_fake_stats_ds(variables, levels, stats_path)
     num_surface_vars = len(variables["surface"])
     num_level_vars = len(variables["level"])
     num_levels = len(levels)
 
     norm_stats = normalization.NormalizationStatistics(
-        norm_scheme=norm_scheme, variables=variables, levels=levels, stats_path=stats_path
+        norm_file=stats_path, variables=variables, levels=levels
     )
 
     mean, std = norm_stats.load_normalization_stats()
@@ -157,7 +140,7 @@ def test_load_graphcast_timedelta_stats():
     }
     levels = [500, 850]
     norm_stats = normalization.NormalizationStatistics(
-        variables=variables, levels=levels, norm_scheme="graphcast"
+        variables=variables, levels=levels, norm_file="graphcast_norm_stats.nc"
     )
     surface_stds, level_stds = norm_stats.load_timedelta_stats()
     assert surface_stds.shape == (2, 1, 1, 1)
@@ -166,7 +149,7 @@ def test_load_graphcast_timedelta_stats():
 
 def test_load_pangu_timedelta_stats():
     """Tests that the pangu timedelta stats are loaded correctly."""
-    norm_stats = normalization.NormalizationStatistics(norm_scheme="pangu")
+    norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
     surface_stds, level_stds = norm_stats.load_timedelta_stats()
 
     expected_surface_stds = torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1)
@@ -183,7 +166,7 @@ def test_load_pangu_timedelta_stats():
 
 
 def test_compute_loss_coeffs_shape_pangu():
-    norm_stats = normalization.NormalizationStatistics(norm_scheme="pangu")
+    norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
     loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs
@@ -194,7 +177,9 @@ def test_compute_loss_coeffs_shape_pangu():
 
 def test_compute_loss_coeffs_shape_graphcast():
     levels = [500, 850]
-    norm_stats = normalization.NormalizationStatistics(levels=levels, norm_scheme="graphcast")
+    norm_stats = normalization.NormalizationStatistics(
+        levels=levels, norm_file="graphcast_norm_stats.nc"
+    )
     loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs
@@ -204,7 +189,7 @@ def test_compute_loss_coeffs_shape_graphcast():
 
 
 def test_compute_loss_coeffs_pangu_no_delta():
-    norm_stats = normalization.NormalizationStatistics(norm_scheme="pangu")
+    norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
     loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT, loss_delta_normalization=False)
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs

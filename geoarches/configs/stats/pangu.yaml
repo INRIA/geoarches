@@ -1,5 +1,6 @@
 module:
   _target_: geoarches.utils.normalization.NormalizationStatistics
+  norm_file: pangu_norm_stats.nc
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
   variables: 
@@ -21,7 +22,6 @@ module:
   # Note: If you change number of levels,
   # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
-  norm_scheme: pangu
 
 compute_loss_coeffs_args:
   latitude: 121
