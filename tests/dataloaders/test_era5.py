@@ -344,8 +344,7 @@ class TestEra5Forecast(TestBase):
         assert ds.timestamps[-1][-1] == expected_end_time
         assert len(ds) == expected_len
 
-    def test_interpolate_nans(self):
-        # NaNs are introduced at the first timestamp of the second file (t2).
+    def test_interpolate_nans_in_inputs(self):
         ds = era5.Era5Forecast(
             stats_cfg=None,
             path=str(self.test_dir),
@@ -354,7 +353,7 @@ class TestEra5Forecast(TestBase):
             multistep=1,
             load_prev=True,
             load_clim=False,
-            interpolate_nans=True,  # Interpolate NaNs in input (prev_state and state).
+            interpolate_input=True,  # Interpolate NaNs in input (prev_state and state).
             dimension_indexers={
                 "level": all_levels,
                 "latitude": slice(None),
@@ -399,6 +398,56 @@ class TestEra5Forecast(TestBase):
         # next_state should have NaNs.
         assert np.isnan(example1["next_state"]["level"].numpy()).any()
         assert np.isnan(example1["next_state"]["surface"].numpy()).any()
+
+    def test_interpolate_nans_in_inputs_and_targets(self):
+        # NaNs are introduced at the first timestamp of the second file (t2).
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(self.test_dir),
+            domain="all",
+            lead_time_hours=6,
+            multistep=1,
+            load_prev=True,
+            load_clim=False,
+            interpolate_input=True,  # Interpolate NaNs in input (prev_state and state).
+            interpolate_target=True,  # Interpolate NaNs in target (next_state).
+            dimension_indexers={
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
+            },
+        )
+
+        # example = ds[0]: prev=t0, state=t1, next=t2.
+        # t2 has NaNs
+        example0 = ds[0]
+        # next_state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example0["next_state"]["level"].numpy()).any()
+        assert not np.isnan(example0["next_state"]["surface"].numpy()).any()
+
+        # example = ds[1]: prev=t1, state=t2, next=t3.
+        # t2 and t3 has NaNs.
+        example1 = ds[1]
+        # state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["state"]["level"].numpy()).any()
+        assert not np.isnan(example1["state"]["surface"].numpy()).any()
+        # next_state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["next_state"]["level"].numpy()).any()
+        assert not np.isnan(example1["next_state"]["surface"].numpy()).any()
+
+        # example = ds[2]: prev=t2, state=t3, next=t4.
+        # t2, t3 and t4 has NaNs. Since interpolate_nans is True,
+        # # prev_state and state should be interpolated.
+        example1 = ds[2]
+        # prev_state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["prev_state"]["level"].numpy()).any()
+        assert not np.isnan(example1["prev_state"]["surface"].numpy()).any()
+        # state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["state"]["level"].numpy()).any()
+        assert not np.isnan(example1["state"]["surface"].numpy()).any()
+        # next_state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["next_state"]["level"].numpy()).any()
+        assert not np.isnan(example1["next_state"]["surface"].numpy()).any()
 
 
 class TestEra5ForecastWithGraphcastNormalization(TestBase):
@@ -748,7 +797,7 @@ class TestEra5ForecastWithForcings:
                 "longitude": slice(None),
             },
             forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
-            interpolate_nans=True,
+            interpolate_input=True,
         )
 
         example = ds[0]

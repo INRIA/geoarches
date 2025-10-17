@@ -255,7 +255,8 @@ class Era5Forecast(Era5Dataset):
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_input: bool = False,
+        interpolate_target: bool = False,
     ):
         """
         Args:
@@ -278,7 +279,8 @@ class Era5Forecast(Era5Dataset):
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
                 Used to select levels and lat/lon resolution.
             warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
-            interpolate_nans: Whether to interpolate NaN values for model input (prev and current state).
+            interpolate_input: Whether to interpolate NaN values for model input (prev and current state).
+            interpolate_target: Whether to interpolate NaN values for model target (next state).
         """
         self.__dict__.update(locals())
         # TODO(geco): remove this dict update and add variable manually.
@@ -292,7 +294,7 @@ class Era5Forecast(Era5Dataset):
             variables=variables,
             dimension_indexers=(default_dimension_indexers | (dimension_indexers or {})),
             warning_on_nan=warning_on_nan,
-            interpolate_nans=interpolate_nans,
+            interpolate_nans=None,  # uses interpolate_input and interpolate_target
         )
 
         self.forcings_ds = None
@@ -309,7 +311,7 @@ class Era5Forecast(Era5Dataset):
                 dimension_indexers={k: i for k, i in dimension_indexers.items() if k != "level"},
                 transpose_order=(..., "latitude", "longitude"),
                 warning_on_nan=warning_on_nan,
-                interpolate_nans=interpolate_nans,
+                interpolate_nans=interpolate_input,
             )
 
         # depending on domain, re-set timestamp bounds
@@ -391,7 +393,7 @@ class Era5Forecast(Era5Dataset):
         out["month"] = torch.tensor(timestamp.month)
 
         out["state"] = super().__getitem__(
-            i, interpolate_nans=self.interpolate_nans, warning_on_nan=self.warning_on_nan
+            i, interpolate_nans=self.interpolate_input, warning_on_nan=self.warning_on_nan
         )
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
@@ -401,7 +403,9 @@ class Era5Forecast(Era5Dataset):
 
         if self.multistep > 0:
             out["next_state"] = super().__getitem__(
-                i + T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                i + T // self.timedelta,
+                interpolate_nans=self.interpolate_target,
+                warning_on_nan=self.warning_on_nan and self.interpolate_target,
             )
 
         # Load multiple future timestamps if specified.
@@ -410,7 +414,9 @@ class Era5Forecast(Era5Dataset):
             for k in range(1, self.multistep + 1):
                 future_states.append(
                     super().__getitem__(
-                        i + k * T // self.timedelta, interpolate_nans=False, warning_on_nan=False
+                        i + k * T // self.timedelta,
+                        interpolate_nans=self.interpolate_target,
+                        warning_on_nan=self.warning_on_nan and self.interpolate_target,
                     )
                 )
             out["future_states"] = tensordict.stack(future_states, dim=0)
@@ -418,7 +424,7 @@ class Era5Forecast(Era5Dataset):
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
                 i - self.lead_time_hours // self.timedelta,
-                interpolate_nans=self.interpolate_nans,
+                interpolate_nans=self.interpolate_input,
                 warning_on_nan=self.warning_on_nan,
             )
 
