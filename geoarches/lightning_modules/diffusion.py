@@ -280,7 +280,6 @@ class DiffusionModule(BaseLightningModule):
         with torch.no_grad():
             for t in tqdm(scheduler.timesteps, disable=disable_tqdm):
                 # 1. predict noise model_output
-                print(noisy_state["surface"].shape)
                 pred = self.forward(
                     loop_batch,
                     noisy_state,
@@ -297,15 +296,12 @@ class DiffusionModule(BaseLightningModule):
                         scheduler._step_index = step_index
                     return out.prev_sample
 
-                print(noisy_state["surface"].shape)
-                print(noisy_state["level"].shape)
                 noisy_state = tensordict_apply(
                     scheduler_step, pred, t, noisy_state, **scheduler_kwargs
                 )
 
-                if noisy_state["surface"].ndim == 5:
-                    noisy_state["surface"] = noisy_state["surface"][:, :, 0, ...].squeeze(2)
-                print(noisy_state["level"].shape)
+                # if noisy_state['surface'].ndim == 5:
+                #    noisy_state['surface'] = noisy_state['surface'][:, :, 0, ...].squeeze()
 
                 # at the end
                 if step_index is not None:
@@ -355,7 +351,6 @@ class DiffusionModule(BaseLightningModule):
 
         for i in tqdm(range(iterations), disable=disable_tqdm):
             seed_i = member + 1000 * i + batch_nb * 10**6
-            print(f"Sampling iteration {i + 1}/{iterations}, seed={seed_i}")
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
             add_forcings = "future_forcings" in loop_batch
