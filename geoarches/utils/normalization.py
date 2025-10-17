@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 from typing import Dict, List
 
 import torch
@@ -26,11 +27,10 @@ default_var_weights = {
 class NormalizationStatistics:
     def __init__(
         self,
+        norm_file: str = "pangu_norm_stats.nc",
         variables: Dict[str, List[str]] = None,
         levels: List[int] = arches_default_pressure_levels,
-        norm_scheme: str = "pangu",
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
-        stats_path: str | None = None,
     ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
@@ -52,6 +52,9 @@ class NormalizationStatistics:
 
         Parameters
         ----------
+        norm_file : str
+            The path to the normalization statistics file. Can either be a relative path with respect to
+            geoarches/stats, or an absolute path.
         variables : dict, optional
             A dictionary containing the variables to be normalized. The keys should be 'surface' and 'level',
             and the values should be lists of variable names. If None, the default surface and level variables
@@ -59,43 +62,11 @@ class NormalizationStatistics:
         levels : list, optional
             A list of pressure levels to be used for normalization. If None, the default pressure levels
             of archesweather will be used.
-        norm_scheme : str, optional
-            The normalization scheme to be used. It can be either 'graphcast' or 'pangu'.
-            If None, no normalization will be applied.
         loss_weight_per_variable : dict, optional
             A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
             and the values should be lists of corresponding weights (in the same order as the variable lists).
             If None, the default weights defined in `default_var_weights` will be used.
-        stats_path : str, optional
-            The path to the normalization statistics files. If None, the default statistics files
-            from geoarches/stats/ will be used.
-
-        Raises
-        ------
-        ValueError
-            If the provided normalization scheme is not supported. Supported schemes are 'graphcast' and '
-            'pangu'.
-        AssertionError
-            If the normalization scheme is 'pangu' and the provided variables or levels do not match
-            the default values required for this scheme.
-        Notes
-        -----
-        The default surface variables for the 'pangu' normalization scheme are:
-        - 10m_u_component_of_wind
-        - 10m_v_component_of_wind
-        - 2m_temperature
-        - mean_sea_level_pressure
-        The default level variables for the 'pangu' normalization scheme are:
-        - geopotential
-        - u_component_of_wind
-        - v_component_of_wind
-        - temperature
-        - specific_humidity
-        - vertical_velocity
-        The default pressure levels for the 'pangu' normalization scheme are:
-        - 50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000
         """
-
         if variables is None:
             variables = {
                 "surface": arches_default_surface_variables,
@@ -104,46 +75,17 @@ class NormalizationStatistics:
         print("##### VARIABLES: ", variables, " #####")
         print("##### LEVELS: ", levels, " #####")
 
-        if norm_scheme and norm_scheme not in ["graphcast", "pangu", "aimip"]:
-            raise ValueError(
-                f"Normalization scheme {norm_scheme} not supported. Choose from ['graphcast', 'pangu', aimip']"
-            )
-        self.norm_scheme = norm_scheme
+        self.norm_file_path = norm_file
+        if not Path(norm_file).is_absolute():
+            self.norm_file_path = geoarches_stats_path / norm_file
+        if not Path(self.norm_file_path).exists():
+            raise ValueError(f"Normalization file {self.norm_file_path} does not exist.")
 
-        self.norm_file_path = stats_path
-        if not stats_path:
-            if self.norm_scheme == "pangu":
-                self.norm_file_path = geoarches_stats_path / "pangu_norm_stats.nc"
-            elif self.norm_scheme == "graphcast":
-                self.norm_file_path = geoarches_stats_path / "graphcast_norm_stats.nc"
-            elif self.norm_scheme == "aimip":
-                self.norm_file_path = geoarches_stats_path / "aimip_norm_stats.nc"
-
-        print("##### NORM SCHEME: ", norm_scheme, " #####")
         print(self.norm_file_path)
 
         # If passed through hydra, need to convert from OmegaConf objects to lists.
         self.variables = {k: list(vars) for k, vars in variables.items()}
         self.levels = list(levels)
-
-        if norm_scheme == "pangu":
-            assert set(self.variables["surface"]).issubset(
-                set(arches_default_surface_variables)
-            ), (
-                "Pangu normalization scheme requires subset of the default surface variables./n"
-                "Surf. Vars: 10m_u_component_of_wind, 10m_v_component_of_wind, 2m_temperature, "
-                f"mean_sea_level_pressure. Provided: {self.variables['surface']}"
-            )
-            assert set(self.variables["level"]).issubset(set(arches_default_level_variables)), (
-                "Pangu normalization scheme requires subset of the default level variables./n"
-                "Level Vars: geopotential, u_component_of_wind, v_component_of_wind, "
-                f"temperature, specific_humidity, vertical_velocity. Provided: {self.variables['level']}"
-            )
-            assert set(self.levels).issubset(set(arches_default_pressure_levels)), (
-                "Pangu normalization scheme requires subset of the default pressure levels./n"
-                "Pressure Levels: 50, 100, 150, 200, 250, 300, 400, "
-                f"500, 600, 700, 850, 925, 1000. Provided: {self.levels}"
-            )
 
         self.loss_weight_per_variable = loss_weight_per_variable
 
@@ -152,9 +94,6 @@ class NormalizationStatistics:
         self.loss_coeffs = None
 
     def load_normalization_stats(self):
-        if self.norm_scheme is None:
-            return None, None
-
         with xr.open_dataset(self.norm_file_path) as stats_ds:
             stats = {
                 "surface_mean": torch.from_numpy(
@@ -265,7 +204,7 @@ class NormalizationStatistics:
 
         print(
             f"Loss coefficients computed with normalization scheme:\
-            {self.norm_scheme}, pow: {pow}, delta normalization: {loss_delta_normalization},\
+            {self.norm_file_path}, pow: {pow}, delta normalization: {loss_delta_normalization},\
             use_weatherbench_lat_coeffs: {use_weatherbench_lat_coeffs}"
         )
 

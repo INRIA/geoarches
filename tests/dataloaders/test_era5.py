@@ -14,9 +14,9 @@ class TestEra5Dataset(TestBase):
             domain="all",
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -32,9 +32,9 @@ class TestEra5Dataset(TestBase):
             return_timestamp=True,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example, timestamp = ds[0]
@@ -51,9 +51,9 @@ class TestEra5Dataset(TestBase):
             # Filter by level only.
             (
                 {
-                    "level": ("level", all_levels[3:]),
-                    "latitude": ("latitude", slice(None)),
-                    "longitude": ("longitude", slice(None)),
+                    "level": all_levels[3:],
+                    "latitude": slice(None),
+                    "longitude": slice(None),
                 },
                 LAT,
                 LON,
@@ -61,9 +61,9 @@ class TestEra5Dataset(TestBase):
             # Filter by level and latitude.
             (
                 {
-                    "level": ("level", all_levels[3:]),
-                    "latitude": ("latitude", np.arange(0, LAT - 1)),
-                    "longitude": ("longitude", slice(None)),
+                    "level": all_levels[3:],
+                    "latitude": np.arange(0, LAT - 1),
+                    "longitude": slice(None),
                 },
                 LAT - 1,
                 LON,
@@ -71,9 +71,9 @@ class TestEra5Dataset(TestBase):
             # Filter by level and longitude.
             (
                 {
-                    "level": ("level", all_levels[3:]),
-                    "latitude": ("latitude", slice(None)),
-                    "longitude": ("longitude", np.arange(0, LON - 1)),
+                    "level": all_levels[3:],
+                    "latitude": slice(None),
+                    "longitude": np.arange(0, LON - 1),
                 },
                 LAT,
                 LON - 1,
@@ -97,7 +97,7 @@ class TestEra5Dataset(TestBase):
         )  #  (var, 1, lat, lon)
         assert example["level"].shape == (
             6,
-            len(indexers["level"][1]),
+            len(indexers["level"]),
             expected_lat,
             expected_lon,
         )  #  (var, lev, lat, lon)
@@ -166,9 +166,9 @@ class TestEra5Forecast(TestBase):
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -200,9 +200,9 @@ class TestEra5Forecast(TestBase):
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -235,9 +235,9 @@ class TestEra5Forecast(TestBase):
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -334,9 +334,9 @@ class TestEra5Forecast(TestBase):
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
 
@@ -356,9 +356,9 @@ class TestEra5Forecast(TestBase):
             load_clim=False,
             interpolate_nans=True,  # Interpolate NaNs in input (prev_state and state).
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": all_levels,
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
 
@@ -407,7 +407,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         [(6, 5), (12, 4), (24, 2)],
     )
     def test_load_current_and_next_state(self, lead_time_hours, expected_len):
-        cfg.stats.module.norm_scheme = "graphcast"
+        cfg.stats.module.norm_file = "graphcast_norm_stats.nc"
         ds = era5.Era5Forecast(
             stats_cfg=cfg.stats,
             path=str(self.test_dir),
@@ -417,13 +417,11 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
-
-        assert ds.norm_scheme == "graphcast"
 
         assert len(ds) == expected_len
         # Current state
@@ -445,7 +443,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
 
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
-        cfg.stats.module.norm_scheme = "graphcast"
+        cfg.stats.module.norm_file = "graphcast_norm_stats.nc"
         ds = era5.Era5Forecast(
             stats_cfg=cfg.stats,
             path=str(self.test_dir),
@@ -456,13 +454,11 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
-
-        assert ds.norm_scheme == "graphcast"
 
         assert len(ds) == expected_len
         # Current state
@@ -480,7 +476,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
 
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
-        cfg.stats.module.norm_scheme = "graphcast"
+        cfg.stats.module.norm_file = "graphcast_norm_stats.nc"
         ds = era5.Era5Forecast(
             stats_cfg=cfg.stats,
             path=str(self.test_dir),
@@ -491,13 +487,11 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
         example = ds[0]
-
-        assert ds.norm_scheme == "graphcast"
 
         assert len(ds) == expected_len
         # Current state
@@ -521,7 +515,7 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
         [(6, 5), (12, 4), (24, 2)],
     )
     def test_load_current_and_next_state(self, lead_time_hours, expected_len):
-        cfg.stats.module.norm_scheme = "pangu"
+        cfg.stats.module.norm_file = "pangu_norm_stats.nc"
         ds = era5.Era5Forecast(
             stats_cfg=cfg.stats,
             path=str(self.test_dir),
@@ -531,14 +525,12 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
         )
 
         example = ds[0]
-
-        assert ds.norm_scheme == "pangu"
 
         assert len(ds) == expected_len
         # Current state
@@ -603,15 +595,20 @@ class TestEra5ForecastWithForcings:
 
         file_path = self.test_forcings_dir / "fake_forcings.nc"
 
+        sea_ice_cover_data = np.random.rand(len(time), LAT, LON)
+        sea_ice_cover_data[:, :, 0] = np.nan
+        sea_surface_temperature_data = np.random.rand(len(time), LAT, LON)
+        sea_surface_temperature_data[:, :, 0] = np.nan
+
         ds = xr.Dataset(
             data_vars={
                 "sea_ice_cover": (
                     ("time", "latitude", "longitude"),
-                    np.random.rand(len(time), LAT, LON),
+                    sea_ice_cover_data,
                 ),
                 "sea_surface_temperature": (
                     ("time", "latitude", "longitude"),
-                    np.random.rand(len(time), LAT, LON),
+                    sea_surface_temperature_data,
                 ),
             },
             coords={
@@ -637,9 +634,9 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
             forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
         )
@@ -673,9 +670,9 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
             forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
         )
@@ -710,9 +707,9 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": ("level", all_levels),
-                "latitude": ("latitude", slice(None)),
-                "longitude": ("longitude", slice(None)),
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
             },
             forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
         )
@@ -734,3 +731,26 @@ class TestEra5ForecastWithForcings:
         # Prev state
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
+
+    def test_interpolate_nans(self):
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(self.test_dir),
+            forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
+            domain="all",
+            lead_time_hours=6,
+            load_prev=False,
+            load_clim=False,
+            # Select all values in each dimension.
+            dimension_indexers={
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
+            },
+            forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
+            interpolate_nans=True,
+        )
+
+        example = ds[0]
+
+        assert not np.isnan(example["forcings"].numpy()).any()

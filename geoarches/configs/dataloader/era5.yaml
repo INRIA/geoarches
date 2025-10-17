@@ -8,9 +8,7 @@ dataset:
     surface: ${stats.module.variables.surface}
     level: ${stats.module.variables.level}
   dimension_indexers:
-    level:
-      - 'level'
-      - ${stats.module.levels}
+    level: ${stats.module.levels}
   warning_on_nan: True
   interpolate_nans: True. # Remove nans in the model input (ie. SST)
 

@@ -1,7 +1,6 @@
-import functools
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -40,9 +39,9 @@ filename_filters = dict(
 )
 
 default_dimension_indexers = {
-    "latitude": ("latitude", np.arange(90, -90 - 1e-6, -180 / 120)),  # decreasing lats
-    "longitude": ("longitude", np.arange(0, 360, 360 / 240)),
-    "level": ("level", arches_default_pressure_levels),
+    "latitude": np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
+    "longitude": np.arange(0, 360, 360 / 240),
+    "level": arches_default_pressure_levels,
 }
 
 
@@ -83,7 +82,8 @@ class Era5Dataset(XarrayDataset):
         domain: str = "train",
         filename_filter: Callable | None = None,
         variables: Dict[str, List[str]] | None = None,
-        dimension_indexers: Dict[str, Tuple[str, Any]] = default_dimension_indexers,
+        dimension_indexers: Dict[str, Any] = default_dimension_indexers,
+        transpose_order: tuple[Any, ...] = (..., "level", "latitude", "longitude"),
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         interpolate_nans: bool = False,
@@ -97,9 +97,8 @@ class Era5Dataset(XarrayDataset):
                 If None, filters files based on `domain`.
             variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
                 e.g. {surface:[...], level:[...]}. By default uses standard 6 level and 4 surface vars.
-            dimension_indexers: Dict of tuples of dimensions to select using Dataset.sel().
-                Used to select levels and lat/lon resolution.
-                First element is the dimension name in the xr dataset, second is the indexer used in Dataset.sel(indexer).
+            dimension_indexers: Dict of dimensions to select using Dataset.sel().
+                And used to convert tensordicts back to xarray dataset in convert_to_xarray().
             return_timestamp: Whether to return tuple of (example, timestamp) from __getitem__().
         """
         if filename_filter is None:
@@ -110,14 +109,12 @@ class Era5Dataset(XarrayDataset):
                 surface=arches_default_surface_variables, level=arches_default_level_variables
             )
 
-        all_indexers = default_dimension_indexers.copy()
-        all_indexers.update(dimension_indexers or {})
-
         super().__init__(
             path,
             filename_filter=filename_filter,
             variables=variables,
-            dimension_indexers=all_indexers,
+            dimension_indexers=dimension_indexers,
+            transpose_order=transpose_order,
             return_timestamp=return_timestamp,
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
@@ -127,18 +124,6 @@ class Era5Dataset(XarrayDataset):
         """
         input xarr should be a single time slice
         """
-        if self.slice_indexers:
-            xr_dataset = xr_dataset.sel(**self.slice_indexers)
-        if self.other_indexers:
-            xr_dataset = xr_dataset.sel(**self.other_indexers, method="nearest", tolerance=1e-6)
-        #  Workaround to avoid calling sel() after transponse() to avoid OOM.
-        self.already_ran_index_selection = True
-        xr_dataset = xr_dataset.transpose(
-            ...,
-            self.level_dim_name,
-            self.latitude_dim_name,
-            self.longitude_dim_name,
-        )
 
         tdict = super().convert_to_tensordict(xr_dataset)
         # we don't do operations on xr datasets since it takes more time than on tensors
@@ -179,24 +164,23 @@ class Era5Dataset(XarrayDataset):
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
-        coords = {self.time_dim_name: times}
 
-        if self.latitude_dim_name in self.other_indexers:
-            coords[self.latitude_dim_name] = list(self.dimension_indexers["latitude"][1])
-        if self.longitude_dim_name in self.other_indexers:
-            coords[self.longitude_dim_name] = list(self.dimension_indexers["longitude"][1])
-        if self.level_dim_name in self.other_indexers:
-            coords[self.level_dim_name] = list(self.dimension_indexers["level"][1])
+        # TODO(geco): what if we have things like slices ?
+
+        coords = {
+            k: list(v) for k, v in self.dimension_indexers.items() if not isinstance(v, slice)
+        }
+        coords = coords | {"time": times}
 
         xr_dataset = xr.Dataset(
             data_vars=dict(
                 **{
                     v: (
                         [
-                            self.time_dim_name,
-                            self.level_dim_name,
-                            self.latitude_dim_name,
-                            self.longitude_dim_name,
+                            "time",
+                            "level",
+                            "latitude",
+                            "longitude",
                         ],
                         level[:, i],
                     )
@@ -205,9 +189,9 @@ class Era5Dataset(XarrayDataset):
                 **{
                     v: (
                         [
-                            self.time_dim_name,
-                            self.latitude_dim_name,
-                            self.longitude_dim_name,
+                            "time",
+                            "latitude",
+                            "longitude",
                         ],
                         surface[:, i],
                     )
@@ -218,9 +202,9 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel({self.level_dim_name: levels})
+            xr_dataset = xr_dataset.sel({"level": levels})
 
-        xr_dataset = xr_dataset.chunk({self.time_dim_name: 1})
+        xr_dataset = xr_dataset.chunk({"time": 1})
         return xr_dataset
 
     def convert_trajectory_to_xarray(
@@ -264,7 +248,7 @@ class Era5Forecast(Era5Dataset):
         timedelta_hours: int = None,
         variables: Dict[str, List[str]] | None = None,
         forcing_vars: List[str] | None = None,
-        dimension_indexers: Dict[str, list] = default_dimension_indexers,
+        dimension_indexers: Dict[str, Any] = default_dimension_indexers,
         lead_time_hours: int = 24,
         multistep: int = 1,
         load_prev: bool = True,
@@ -297,27 +281,36 @@ class Era5Forecast(Era5Dataset):
             interpolate_nans: Whether to interpolate NaN values for model input (prev and current state).
         """
         self.__dict__.update(locals())
-        del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
+        # TODO(geco): remove this dict update and add variable manually.
 
-        all_indexers = default_dimension_indexers.copy()
-        all_indexers.update(dimension_indexers or {})
+        del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
 
         super().__init__(
             path,
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            dimension_indexers=all_indexers,
+            dimension_indexers=(default_dimension_indexers | (dimension_indexers or {})),
             warning_on_nan=warning_on_nan,
             interpolate_nans=interpolate_nans,
         )
 
+        self.forcings_ds = None
         if (forcings_path is not None) ^ (forcing_vars is not None):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
             )
-        self.forcings_path = forcings_path
-        self.forcing_vars = list(forcing_vars) if forcing_vars is not None else None
+        if forcings_path:
+            print("##### FORCINGS: ", forcing_vars, " #####")
+            self.forcings_ds = Era5Dataset(
+                forcings_path,
+                domain="all",
+                variables=dict(forcings=forcing_vars),
+                dimension_indexers={k: i for k, i in dimension_indexers.items() if k != "level"},
+                transpose_order=(..., "latitude", "longitude"),
+                warning_on_nan=warning_on_nan,
+                interpolate_nans=interpolate_nans,
+            )
 
         # depending on domain, re-set timestamp bounds
 
@@ -348,19 +341,27 @@ class Era5Forecast(Era5Dataset):
         self.current_multistep = 1
 
         # Load normalization statistics.
-        self.norm_scheme = None
+        self.norm_scheme = False
         if stats_cfg:
             stats = instantiate(stats_cfg.module)
             self.data_mean, self.data_std = stats.load_normalization_stats()
-            self.norm_scheme = stats.norm_scheme
+            self.norm_scheme = True
 
-            # Check levels.
-            dataset_levels = self.dimension_indexers["level"][1]
-            stats_levels = stats.levels
-            if not np.equal(dataset_levels, stats_levels).all():
+            # Check variables and levels.
+            dataset_levels = self.dimension_indexers["level"]
+            if not np.equal(dataset_levels, stats.levels).all():
                 raise ValueError(
                     "Levels in normalization statistics do not match levels in dataset dimension indexers.\n"
-                    f"Dataset levels: {dataset_levels}\nStatistics levels: {stats_levels}"
+                    f"Dataset levels: {dataset_levels}\nStatistics levels: {stats.levels}"
+                )
+            # Compare variables in dataset and in normalization statistics,
+            # converting self.variables since they are stored with different
+            # types (tuple vs tuple and ImmutableDict vs dict).
+            self_variables = {k: list(v) for k, v in self.variables.items()}
+            if self_variables != stats.variables:
+                raise ValueError(
+                    "Variables in normalization statistics do not match variables in dataset.\n"
+                    f"Dataset variables: {self.variables}\nStatistics variables: {stats.variables}"
                 )
 
         # Load climatology.
@@ -437,43 +438,17 @@ class Era5Forecast(Era5Dataset):
 
         return out
 
-    @functools.cached_property
-    def forcings_ds(self):
-        if self.forcings_path is not None:
-            return xr.open_dataset(self.forcings_path, **self.xr_options)
-        return None
-
-    # TODO(singhren): Refactor so that ops in convert_to_tensordict() is applied to forcings as well.
     def load_forcings(self, timestamp: np.datetime64):
-        """
-        Load forcings data for a given timestamp.
-        """
+        """Load forcings data for a given timestamp."""
+        if not hasattr(self.forcings_ds, "timestamp_to_idx"):
+            timestamp_values = [t[2] for t in self.forcings_ds.timestamps]
+            self.forcings_ds.timestamp_to_idx = {
+                str(t.astype("datetime64[M]")): i for i, t in enumerate(timestamp_values)
+            }
+
         first_day_of_month = timestamp.astype("datetime64[M]")
-        forcings = self.forcings_ds[self.forcing_vars].sel(
-            {self.time_dim_name: first_day_of_month}
-        )
-
-        if self.interpolate_nans:
-            forcings = forcings.fillna(
-                value=forcings.mean(
-                    dim=[
-                        self.latitude_dim_name,
-                        self.longitude_dim_name,
-                    ],
-                    skipna=True,
-                )
-            )
-
-        np_array = forcings.to_array().to_numpy()
-        forcings = torch.from_numpy(np_array).float()
-
-        if (
-            self.forcings_ds[self.latitude_dim_name][0]
-            < self.forcings_ds[self.latitude_dim_name][-1]
-        ):
-            forcings = forcings.flip(-2)
-
-        return forcings
+        index = self.forcings_ds.timestamp_to_idx[str(first_day_of_month)]
+        return self.forcings_ds[index]["forcings"]
 
     def load_future_forcings(self, timestamp: np.datetime64):
         """
@@ -488,7 +463,7 @@ class Era5Forecast(Era5Dataset):
         return future_forcings
 
     def normalize(self, batch):
-        if self.norm_scheme is None:
+        if not self.norm_scheme:
             return batch
 
         device = list(batch.values())[0].device
@@ -504,7 +479,7 @@ class Era5Forecast(Era5Dataset):
         return out
 
     def denormalize(self, batch):
-        if self.norm_scheme is None:
+        if not self.norm_scheme:
             return batch
 
         device = list(batch.values())[0].device
