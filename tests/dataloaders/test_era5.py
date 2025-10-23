@@ -5,21 +5,15 @@ import xarray as xr
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
-from geoarches.dataloaders import era5
-
 from geoarches.dataloaders import era5, era5_constants
 from tests.fixtures.era5 import LAT, LEVEL, LON, TestBase, all_levels, cfg
-
-from hydra import compose
-from hydra.utils import initialize
-
-from omegaconf import OmegaConf
 
 with initialize(version_base=None, config_path="../../geoarches/configs", job_name="test"):
     cfg = compose(config_name="config")
     print(OmegaConf.to_yaml(cfg))
 
     OmegaConf.resolve(cfg)
+
 
 class TestEra5Dataset(TestBase):
     def test_load_current_state(self):
