@@ -75,6 +75,16 @@ class TestDiffusionModule:
                         24,
                     ]
                 ),
+                "month": torch.tensor(
+                    [
+                        0,
+                    ]
+                ),
+                "hour_of_day": torch.tensor(
+                    [
+                        0,
+                    ]
+                ),
             },
             batch_size=[1],
         )
@@ -135,6 +145,7 @@ class TestDiffusionModule:
                     "surface": torch.randn(1, surf_ch, 1, *img_size[-2:]),
                 },
                 "forcings": torch.randn(1, forc_ch, *img_size[-2:]),
+                "future_forcings": torch.randn(1, 12, forc_ch, *img_size[-2:]),
                 "timestamp": torch.tensor(
                     [
                         0,
@@ -143,6 +154,16 @@ class TestDiffusionModule:
                 "lead_time_hours": torch.tensor(
                     [
                         24,
+                    ]
+                ),
+                "month": torch.tensor(
+                    [
+                        0,
+                    ]
+                ),
+                "hour_of_day": torch.tensor(
+                    [
+                        0,
                     ]
                 ),
             },
@@ -173,6 +194,7 @@ class TestDiffusionModule:
                     "surface": torch.randn(1, surf_ch, 1, *img_size[-2:]),
                 },
                 "forcings": torch.randn(1, forc_ch, *img_size[-2:]),
+                "future_forcings": torch.randn(1, 12, forc_ch, *img_size[-2:]),
                 "timestamp": torch.tensor(
                     [
                         0,
@@ -181,6 +203,16 @@ class TestDiffusionModule:
                 "lead_time_hours": torch.tensor(
                     [
                         24,
+                    ]
+                ),
+                "month": torch.tensor(
+                    [
+                        0,
+                    ]
+                ),
+                "hour_of_day": torch.tensor(
+                    [
+                        0,
                     ]
                 ),
             },
@@ -193,7 +225,13 @@ class TestDiffusionModule:
             batch["prev_state"] = batch["state"].clone()
             batch["state"] = sample
             batch["timestamp"] = batch["timestamp"] + batch["lead_time_hours"] * 3600
-            batch["forcings"] = batch["forcings"] + 0.05  # Arbitrary modification to forcing
+
+            if "future_forcings" in batch:
+                batch["forcings"] = batch["future_forcings"][:, iteration, ...]
+                batch["future_forcings"] = batch["future_forcings"][
+                    :, 1:
+                ]  # Arbitrary modification to forcings
+
             return batch
 
         rollout = module.sample_rollout(batch, iterations=2, update_fnc=custom_update)

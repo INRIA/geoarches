@@ -167,7 +167,7 @@ def test_load_pangu_timedelta_stats():
 
 def test_compute_loss_coeffs_shape_pangu():
     norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
-    loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
+    loss_coeffs, scaler = norm_stats.compute_loss_coeffs(latitude=LAT)
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs
     assert "level" in loss_coeffs
@@ -180,7 +180,7 @@ def test_compute_loss_coeffs_shape_graphcast():
     norm_stats = normalization.NormalizationStatistics(
         levels=levels, norm_file="graphcast_norm_stats.nc"
     )
-    loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
+    loss_coeffs, scaler = norm_stats.compute_loss_coeffs(latitude=LAT)
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs
     assert "level" in loss_coeffs
@@ -190,7 +190,9 @@ def test_compute_loss_coeffs_shape_graphcast():
 
 def test_compute_loss_coeffs_pangu_no_delta():
     norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
-    loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT, loss_delta_normalization=False)
+    loss_coeffs, scaler = norm_stats.compute_loss_coeffs(
+        latitude=LAT, loss_delta_normalization=False
+    )
     assert isinstance(loss_coeffs, TensorDict)
     assert "surface" in loss_coeffs
     assert "level" in loss_coeffs

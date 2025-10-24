@@ -31,7 +31,6 @@ class NormalizationStatistics:
         variables: Dict[str, List[str]] = None,
         levels: List[int] = arches_default_pressure_levels,
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
-        stats_path: str | None = None,
         diff_delta_stats_path: str | None = None,
     ):
         """
@@ -74,6 +73,8 @@ class NormalizationStatistics:
                 "surface": arches_default_surface_variables,
                 "level": arches_default_level_variables,
             }
+        print("##### VARIABLES: ", variables, " #####")
+        print("##### LEVELS: ", levels, " #####")
 
         self.norm_file_path = norm_file
         if not Path(norm_file).is_absolute():
@@ -82,7 +83,6 @@ class NormalizationStatistics:
             raise ValueError(f"Normalization file {self.norm_file_path} does not exist.")
 
         print(self.norm_file_path)
-
         self.diff_delta_stats_path = diff_delta_stats_path
 
         # If passed through hydra, need to convert from OmegaConf objects to lists.
@@ -95,8 +95,6 @@ class NormalizationStatistics:
         self.std = None
         self.diff_std = None
         self.loss_coeffs = None
-        print("##### NORM MODULE INIT DONE #####")
-
 
     def load_normalization_stats(self):
         with xr.open_dataset(self.norm_file_path) as stats_ds:
@@ -136,9 +134,11 @@ class NormalizationStatistics:
 
     def load_timedelta_stats(self):
         """Loads the standard deviation of the difference between successive states."""
-        
-        path = self.diff_delta_stats_path or self.norm_file_path # Default to norm file if no delta path provided
-        with xr.open_dataset(self.norm_file_path) as stats_ds:
+
+        path = (
+            self.diff_delta_stats_path or self.norm_file_path
+        )  # Default to norm file if no delta path provided
+        with xr.open_dataset(path) as stats_ds:
             surface_stds = torch.from_numpy(
                 stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
             )[..., None, None, None]
@@ -152,10 +152,14 @@ class NormalizationStatistics:
 
             return surface_stds, level_stds
 
-
     def compute_loss_coeffs(
-        self, latitude=121, pow=2, loss_delta_normalization=True, use_weatherbench_lat_coeffs=False, area_weights=None
-    ):  
+        self,
+        latitude=121,
+        pow=2,
+        loss_delta_normalization=True,
+        use_weatherbench_lat_coeffs=False,
+        area_weights=None,
+    ):
         if area_weights is None:
             compute_weights_fn = (
                 compute_lat_weights_weatherbench
@@ -194,7 +198,6 @@ class NormalizationStatistics:
             self.std = data_std
 
         if loss_delta_normalization:
-            
             if self.diff_std is not None:
                 delta_surface_stds, delta_level_stds = self.diff_std
             else:
@@ -214,7 +217,12 @@ class NormalizationStatistics:
                 surface=data_std["surface"] / delta_surface_stds,
                 level=data_std["level"] / delta_level_stds,
             )
+        else:
+            loss_delta_scaler = TensorDict(
+                surface=torch.ones_like(loss_coeffs["surface"]),
+                level=torch.ones_like(loss_coeffs["level"]),
+            )
 
         self.loss_coeffs = loss_coeffs
-        
+
         return loss_coeffs, loss_delta_scaler

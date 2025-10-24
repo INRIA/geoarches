@@ -691,7 +691,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -727,7 +727,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -764,7 +764,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -800,7 +800,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },

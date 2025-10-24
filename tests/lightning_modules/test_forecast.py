@@ -1,7 +1,11 @@
 import torch
+from hydra import compose, initialize
 from tensordict.tensordict import TensorDict
 
 from geoarches.lightning_modules.forecast import ForecastModule
+
+with initialize(config_path="../../geoarches/configs"):
+    cfg = compose(config_name="test_awdet.yaml")
 
 
 class TestForecastModule:
@@ -27,24 +31,23 @@ class TestForecastModule:
 
     def test_loss_with_nans_in_gt(self):
         # Create a dummy ForecastModule
-        stats_cfg = self.DummyCfg()
         # To make DummyStats instantiable by Hydra, wrap it in a dict with _target_
-        stats_cfg.module = {"_target_": self.DummyStats}
-        module_cfg = self.DummyCfg()
-        module_cfg.backbone = None
-        module_cfg.embedder = None
+
         forecast_module = ForecastModule(
-            cfg=module_cfg,
-            stats_cfg=stats_cfg,
+            cfg=cfg.module,
+            stats_cfg=cfg.stats,
         )
         # The loss_coeffs will be computed within ForecastModule.__init__
         # using the instantiated self.DummyStats.
         forecast_module.to("cpu")
+        img_size = cfg.module.embedder.img_size
+        surf_ch = len(cfg.stats.module.variables["surface"])
+        level_ch = len(cfg.stats.module.variables["level"])
 
         pred = TensorDict(
             {
-                "level": torch.zeros(1, 1, 2, 2),
-                "surface": torch.zeros(1, 1, 2, 2),
+                "level": torch.zeros(1, level_ch, *img_size),
+                "surface": torch.zeros(1, surf_ch, *img_size[-2:]),
             },
             batch_size=[],
         )
@@ -52,8 +55,8 @@ class TestForecastModule:
         # Create gt with NaNs.
         gt = TensorDict(
             {
-                "level": torch.randn(1, 1, 2, 2),
-                "surface": torch.randn(1, 1, 2, 2),
+                "level": torch.zeros(1, level_ch, *img_size),
+                "surface": torch.zeros(1, surf_ch, *img_size[-2:]),
             },
             batch_size=[],
         )
