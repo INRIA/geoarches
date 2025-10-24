@@ -12,6 +12,7 @@ with initialize(version_base="1.2", config_path="../../geoarches/configs"):
             "module.module.load_deterministic_model=Null",
             "module.embedder.forcings_ch=2",
             "module.embedder.forcings_embedding=surface",
+            "module.inference.num_steps=2",
         ],
     )
 
