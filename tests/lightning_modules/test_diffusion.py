@@ -12,13 +12,22 @@ with initialize(version_base="1.2", config_path="../../geoarches/configs"):
             "module.module.load_deterministic_model=Null",
             "module.embedder.forcings_ch=2",
             "module.embedder.forcings_embedding=surface",
-            "module.inference.num_steps=2",
+            "module.inference.num_steps=1",
+            "module.embedder.emb_dim=48",
+            "module.embedder.out_emb_dim=96",
+            "module.backbone.emb_dim=48",
         ],
     )
 
     det_cfg = compose(
         config_name="test_awdet",
-        overrides=["module.embedder.forcings_ch=2", "module.embedder.forcings_embedding=surface"],
+        overrides=[
+            "module.embedder.forcings_ch=2",
+            "module.embedder.forcings_embedding=surface",
+            "module.embedder.emb_dim=48",
+            "module.embedder.out_emb_dim=96",
+            "module.backbone.emb_dim=48",
+        ],
     )
 
 
@@ -123,8 +132,8 @@ class TestDiffusionModule:
             batch_size=[],
         )
         lat_half, lon_half = img_size[-2] // 2, img_size[-1] // 2
-        gt["level"][0, 0, lat_half - 10 : lat_half, lon_half - 10 : lon_half] = torch.nan
-        gt["surface"][0, 0, lat_half - 10 : lat_half, lon_half - 10 : lon_half] = torch.nan
+        gt["level"][0, 0, lat_half - 2 : lat_half, lon_half - 2 : lon_half] = torch.nan
+        gt["surface"][0, 0, lat_half - 2 : lat_half, lon_half - 2 : lon_half] = torch.nan
 
         loss = module.loss(pred, gt, timesteps=torch.tensor([0.5], dtype=torch.float32))
 
@@ -182,6 +191,7 @@ class TestDiffusionModule:
     def test_sample_rollout_w_forcings_custom_update(self):
         module, det_module = self.build_model(build_det_model=True)
         surf_ch, lvl_ch, forc_ch, img_size = self.get_dims()
+        print(img_size)
         module.det_model = det_module  # Manually set the deterministic model
 
         batch = TensorDict(
