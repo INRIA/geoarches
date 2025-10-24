@@ -57,7 +57,7 @@ class ForecastModule(BaseLightningModule):
 
         loss_coeffs, state_scaler = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
         self.loss_coeffs = loss_coeffs * state_scaler.pow(pow)
-        
+
         # Instantiate metric modules
         self.train_metrics = nn.ModuleList(
             [instantiate(metric, **cfg.train.metrics_kwargs) for metric in cfg.train.metrics]
@@ -193,9 +193,9 @@ class ForecastModule(BaseLightningModule):
             # standard prediction
 
             for k, v in batch.items():
-                if k == 'state' or k == 'prev_state':
-                    print(k, 'level: ', torch.isnan(v['level']).any().item())
-                    print(k, 'surface: ', torch.isnan(v['surface']).any().item())
+                if k == "state" or k == "prev_state":
+                    print(k, "level: ", torch.isnan(v["level"]).any().item())
+                    print(k, "surface: ", torch.isnan(v["surface"]).any().item())
             pred = self.forward(batch)
             loss = self.loss(pred, batch["next_state"])
             self.mylog(loss=loss)
