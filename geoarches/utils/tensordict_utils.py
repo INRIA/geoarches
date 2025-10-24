@@ -60,7 +60,8 @@ def tensordict_apply(f, *args, **kwargs):
     assert all(set(tdict.keys()) == set(tdicts[0].keys()) for tdict in tdicts), (
         "All TensorDicts must have the same keys"
     )
-    return TensorDict(
+
+    td = TensorDict(
         {
             k: f(
                 *[(a[k] if isinstance(a, TensorDict) else a) for a in args],
@@ -70,6 +71,8 @@ def tensordict_apply(f, *args, **kwargs):
         },
         device=tdicts[0].device,
     ).auto_batch_size_()
+
+    return td
 
 
 def tensordict_cat(tdict_list, dim=0, **kwargs):
@@ -86,4 +89,3 @@ def tensordict_cat(tdict_list, dim=0, **kwargs):
         ),
         device=tdict_list[0].device,
     ).auto_batch_size_()
-
