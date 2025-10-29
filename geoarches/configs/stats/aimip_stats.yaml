@@ -1,5 +1,5 @@
 module:
-  stats_file: "aimip_norm_stats.nc"
+  norm_file: "aimip_norm_stats.nc"
   _target_: geoarches.utils.normalization.NormalizationStatistics
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
@@ -19,6 +19,10 @@ module:
   loss_weight_per_variable:
     surface: [0.1, 0.1, 1.0, 0.1]
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # if diffusion model, path to the precomputed 
+  # delta stats of predictions is needed, else 
+  # null for None
+  diff_delta_stats_path: null   
 
   # Note: If you change number of levels,
   # update img_size in embedder in configs/module/.

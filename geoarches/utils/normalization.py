@@ -67,6 +67,9 @@ class NormalizationStatistics:
             A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
             and the values should be lists of corresponding weights (in the same order as the variable lists).
             If None, the default weights defined in `default_var_weights` will be used.
+        diff_delta_stats_path : str, optional
+            The path to the statistics file containing the standard deviation of the difference between predicted
+            successive states. If None, the normalization of training data (e.g. ERA5) file will be used.
         """
         if variables is None:
             variables = {
@@ -138,6 +141,7 @@ class NormalizationStatistics:
         path = (
             self.diff_delta_stats_path or self.norm_file_path
         )  # Default to norm file if no delta path provided
+
         with xr.open_dataset(path) as stats_ds:
             surface_stds = torch.from_numpy(
                 stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
@@ -155,19 +159,28 @@ class NormalizationStatistics:
     def compute_loss_coeffs(
         self,
         latitude=121,
-        pow=2,
+        pow=2.0,
         loss_delta_normalization=True,
         use_weatherbench_lat_coeffs=False,
-        area_weights=None,
     ):
-        if area_weights is None:
-            compute_weights_fn = (
-                compute_lat_weights_weatherbench
-                if use_weatherbench_lat_coeffs
-                else compute_lat_weights
-            )
+        """
+        Computes the loss coefficients for the specified variables, pressure levels, and loss weights.
+        The loss coefficients are computed based on the area weights, surface and level variables,
+        and the vertical coefficients derived from the pressure levels.
+        args:
+        latitude : Number of latitude points in the data
+        loss_delta_normalization : bool
+            Whether to apply delta normalization to the loss coefficients.
+        use_weatherbench_lat_coeffs : bool
+            Whether to use the WeatherBench latitude coefficients for area weighting.
+        """
+        compute_weights_fn = (
+            compute_lat_weights_weatherbench
+            if use_weatherbench_lat_coeffs
+            else compute_lat_weights
+        )
 
-            area_weights = compute_weights_fn(latitude)
+        area_weights = compute_weights_fn(latitude)
 
         pressure_levels = torch.tensor(self.levels).float()
         vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
@@ -213,10 +226,11 @@ class NormalizationStatistics:
                     f"Level stds shape mismatch: {data_std['level'].shape} vs {delta_level_stds.shape}"
                 )
 
+            # Normal delta normalization, computed just from era5
             loss_delta_scaler = TensorDict(
                 surface=data_std["surface"] / delta_surface_stds,
                 level=data_std["level"] / delta_level_stds,
-            )
+            ).pow(pow)
         else:
             loss_delta_scaler = TensorDict(
                 surface=torch.ones_like(loss_coeffs["surface"]),
@@ -224,5 +238,6 @@ class NormalizationStatistics:
             )
 
         self.loss_coeffs = loss_coeffs
+        self.loss_delta_scaler = loss_delta_scaler
 
         return loss_coeffs, loss_delta_scaler

@@ -92,11 +92,8 @@ class DiffusionModule(BaseLightningModule):
 
         self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
-        area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
-        area_weights = (area_weights / area_weights.mean())[:, None]
-
         self.loss_coeffs, self.state_scaler = stats.compute_loss_coeffs(
-            **stats_cfg.compute_loss_coeffs_args, area_weights=area_weights
+            **stats_cfg.compute_loss_coeffs_args
         )
 
         # set up metrics
@@ -299,9 +296,6 @@ class DiffusionModule(BaseLightningModule):
                 noisy_state = tensordict_apply(
                     scheduler_step, pred, t, noisy_state, **scheduler_kwargs
                 )
-
-                # if noisy_state['surface'].ndim == 5:
-                #    noisy_state['surface'] = noisy_state['surface'][:, :, 0, ...].squeeze()
 
                 # at the end
                 if step_index is not None:

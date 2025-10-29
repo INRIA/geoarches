@@ -70,7 +70,6 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.constant_masks = torch.load(
             geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
         )
-        self.constant_masks = self.constant_masks.half()
 
         constant_dims = self.constant_masks.shape[0]
 

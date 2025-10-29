@@ -1,41 +1,27 @@
+import omegaconf
 import torch
-from hydra import compose, initialize
 from tensordict.tensordict import TensorDict
 
 from geoarches.lightning_modules.diffusion import DiffusionModule
 from geoarches.lightning_modules.forecast import ForecastModuleWithCond
-
-with initialize(version_base="1.2", config_path="../../geoarches/configs"):
-    cfg = compose(
-        config_name="test_awgen",
-        overrides=[
-            "module.module.load_deterministic_model=Null",
-            "module.embedder.forcings_ch=2",
-            "module.embedder.forcings_embedding=surface",
-            "module.inference.num_steps=1",
-            "module.embedder.emb_dim=48",
-            "module.embedder.out_emb_dim=96",
-            "module.backbone.emb_dim=48",
-        ],
-    )
-
-    det_cfg = compose(
-        config_name="test_awdet",
-        overrides=[
-            "module.embedder.forcings_ch=2",
-            "module.embedder.forcings_embedding=surface",
-            "module.embedder.emb_dim=48",
-            "module.embedder.out_emb_dim=96",
-            "module.backbone.emb_dim=48",
-        ],
-    )
+from tests.fixtures.diffusion import cfg
+from tests.fixtures.forecast import cfg as det_cfg
 
 
 class TestDiffusionModule:
     def build_model(self, build_det_model=False):
+        omegaconf.OmegaConf.set_struct(cfg, True)
+        with omegaconf.open_dict(cfg):
+            cfg.module.embedder.forcings_ch = 2
+            cfg.module.embedder.forcings_embedding = "surface"
+
         module = DiffusionModule(cfg.module, cfg.stats, **cfg.module.module)
 
         if build_det_model:
+            omegaconf.OmegaConf.set_struct(det_cfg, True)
+            with omegaconf.open_dict(det_cfg):
+                det_cfg.module.embedder.forcings_ch = 2
+                det_cfg.module.embedder.forcings_embedding = "surface"
             det_module = ForecastModuleWithCond(
                 det_cfg.module, det_cfg.stats, **det_cfg.module.module
             )

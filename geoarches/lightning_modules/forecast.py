@@ -113,7 +113,6 @@ class ForecastModule(BaseLightningModule):
                 )
             else:
                 if use_avg and self.avg_modules is not None:
-                    print("Using average of models for rollout")
                     # average predictions of different models
                     pred = self.forward(loop_batch)
                     for m in self.avg_modules:
@@ -191,11 +190,6 @@ class ForecastModule(BaseLightningModule):
 
         if "future_states" not in batch:
             # standard prediction
-
-            for k, v in batch.items():
-                if k == "state" or k == "prev_state":
-                    print(k, "level: ", torch.isnan(v["level"]).any().item())
-                    print(k, "surface: ", torch.isnan(v["surface"]).any().item())
             pred = self.forward(batch)
             loss = self.loss(pred, batch["next_state"])
             self.mylog(loss=loss)

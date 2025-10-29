@@ -83,5 +83,3 @@ embedder:
   surface_ch: 4
   level_ch: 6
   n_concatenated_states: 3 # prev and noise and det
-  forcings_ch: 0
-  forcings_embedding: Null
