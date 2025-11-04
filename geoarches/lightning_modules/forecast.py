@@ -129,17 +129,24 @@ class ForecastModule(BaseLightningModule):
             add_forcings = "future_forcings" in loop_batch
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
-            loop_batch = dict(
-                prev_state=loop_batch["state"] if add_prev_state else None,
-                state=pred,
-                # Used only to obtain NaN mask (not true next state)
-                next_state=loop_batch["next_state"],
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-                hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                month=torch.tensor(next_month).to(self.device),
-                forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
-                future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
-            )
+
+            if update_fnc is not None:
+                loop_batch = update_fnc(
+                    loop_batch,
+                    pred,
+                )
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"] if add_prev_state else None,
+                    state=pred,
+                    # Used only to obtain NaN mask (not true next state)
+                    next_state=loop_batch["next_state"],
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                    month=torch.tensor(next_month).to(self.device),
+                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
+                )
 
         if return_format == "tensordict":
             preds_future = torch.stack(preds_future, dim=1)

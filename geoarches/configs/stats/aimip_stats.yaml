@@ -21,8 +21,10 @@ module:
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   # if diffusion model, path to the precomputed 
   # delta stats of predictions is needed, else 
-  # null for None
-  diff_delta_stats_path: null   
+  # null to use diff_std to normalize for deltas 
+  # between next_state and state 
+  # (state_normalization=delta)
+  residual_stats_path: null   
 
   # Note: If you change number of levels,
   # update img_size in embedder in configs/module/.

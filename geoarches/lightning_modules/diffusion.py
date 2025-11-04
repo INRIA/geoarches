@@ -40,8 +40,6 @@ class DiffusionModule(BaseLightningModule):
         loss_weighting_strategy=None,
         conditional="",  # things that the model is conditioned
         load_deterministic_model=False,
-        loss_delta_normalization=False,
-        state_normalization=False,
         pow=2,
         lr=1e-4,
         betas=(0.9, 0.98),
@@ -65,9 +63,6 @@ class DiffusionModule(BaseLightningModule):
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
         stats = instantiate(stats_cfg.module)
-
-        stats = instantiate(stats_cfg.module)
-        pressure_levels = list(stats.levels)
 
         self.det_model = None
         if load_deterministic_model:
