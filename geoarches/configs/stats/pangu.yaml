@@ -22,13 +22,16 @@ module:
   # Note: If you change number of levels,
   # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
-  # if diffusion model, path to the precomputed 
-  # delta stats of predictions is needed, else 
-  # null for None
-  diff_delta_stats_path: null
-  
-compute_loss_coeffs_args:
+
   latitude: 121
   pow: 2
   use_weatherbench_lat_coeffs: true 
-  loss_delta_normalization: true
+
+  # if diffusion model, path to the precomputed 
+  # delta stats of predictions is needed, else 
+  # null for None
+  residual_stats_path: null
+  
+compute_state_scaler_args:
+  state_normalization: "delta"
+  downweight_vertical_velocity: false

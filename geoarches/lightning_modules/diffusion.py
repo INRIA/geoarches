@@ -87,9 +87,9 @@ class DiffusionModule(BaseLightningModule):
 
         self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
-        self.loss_coeffs, self.state_scaler = stats.compute_loss_coeffs(
-            **stats_cfg.compute_loss_coeffs_args
-        )
+        self.loss_coeffs = stats.compute_loss_coeffs()
+        self.state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
+        self.state_normalization = stats_cfg.compute_state_scaler_args.state_normalization
 
         # set up metrics
         self.val_metrics = nn.ModuleList(
@@ -163,8 +163,7 @@ class DiffusionModule(BaseLightningModule):
                     batch["pred_state"] = self.det_model(batch).detach()
             next_state = batch["next_state"] - batch["pred_state"]
 
-        if self.state_normalization:
-            next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
+        next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
 
         # weighting scheme: logit normal
         if self.sd3_timestep_sampling:

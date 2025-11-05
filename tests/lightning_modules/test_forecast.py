@@ -5,14 +5,14 @@ from tensordict.tensordict import TensorDict
 from geoarches.lightning_modules.forecast import ForecastModuleWithCond
 from tests.fixtures.forecast import cfg as det_cfg
 
+omegaconf.OmegaConf.set_struct(det_cfg, True)
+with omegaconf.open_dict(det_cfg):
+    det_cfg.module.embedder.forcings_ch = 2
+    det_cfg.module.embedder.forcings_embedding = "surface"
+
 
 class TestForecastModule:
     def build_model(self, build_det_model=False):
-        omegaconf.OmegaConf.set_struct(det_cfg, True)
-        with omegaconf.open_dict(det_cfg):
-            det_cfg.module.embedder.forcings_ch = 2
-            det_cfg.module.embedder.forcings_embedding = "surface"
-
         det_module = ForecastModuleWithCond(det_cfg.module, det_cfg.stats, **det_cfg.module.module)
 
         return det_module
@@ -34,7 +34,7 @@ class TestForecastModule:
         # The loss_coeffs will be computed within ForecastModule.__init__
         # using the instantiated self.DummyStats.
         forecast_module.to("cpu")
-        surf_ch, level_ch, forc_ch, img_size = self.get_dims()
+        surf_ch, level_ch, _, img_size = self.get_dims()
         # Create pred without NaNs.
         pred = TensorDict(
             {

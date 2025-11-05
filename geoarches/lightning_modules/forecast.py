@@ -26,18 +26,15 @@ class ForecastModule(BaseLightningModule):
         name="forecast",
         dataset=None,
         pow=2,  # 2 is standard mse
-        loss_delta_normalization=True,
         lr=1e-4,
         betas=(0.9, 0.98),
         weight_decay=1e-5,
         num_warmup_steps=1000,
         num_training_steps=300000,
         num_cycles=0.5,
-        use_graphcast_coeffs=True,
         increase_multistep_period=2,
         add_input_state=False,
         save_test_outputs=False,
-        use_weatherbench_lat_coeffs=True,
         rollout_iterations=1,
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
@@ -55,8 +52,10 @@ class ForecastModule(BaseLightningModule):
         self.variables = stats.variables
         self.levels = stats.levels
 
-        loss_coeffs, state_scaler = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
-        self.loss_coeffs = loss_coeffs * state_scaler.pow(pow)
+        loss_coeffs = stats.compute_loss_coeffs()
+        state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
+
+        self.loss_coeffs = loss_coeffs * state_scaler
 
         # Instantiate metric modules
         self.train_metrics = nn.ModuleList(

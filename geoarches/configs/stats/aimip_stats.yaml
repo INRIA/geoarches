@@ -19,6 +19,15 @@ module:
   loss_weight_per_variable:
     surface: [0.1, 0.1, 1.0, 0.1]
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+  # Note: If you change number of levels,
+  # update img_size in embedder in configs/module/.
+  levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+
+  latitude: 121
+  pow: 2
+  use_weatherbench_lat_coeffs: true 
+
   # if diffusion model, path to the precomputed 
   # delta stats of predictions is needed, else 
   # null to use diff_std to normalize for deltas 
@@ -26,13 +35,6 @@ module:
   # (state_normalization=delta)
   residual_stats_path: null   
 
-  # Note: If you change number of levels,
-  # update img_size in embedder in configs/module/.
-  levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
-  norm_scheme: graphcast
-
-compute_loss_coeffs_args:
-  latitude: 121
-  pow: 2
-  use_weatherbench_lat_coeffs: true 
-  loss_delta_normalization: true
+compute_state_scaler_args:
+  state_normalization: "delta"
+  downweight_vertical_velocity: false

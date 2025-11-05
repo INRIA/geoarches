@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import numpy as np
+import omegaconf
 import pandas as pd
 import tensordict
 import torch
@@ -288,7 +289,8 @@ class Era5Forecast(Era5Dataset):
         del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
 
         if dimension_indexers is not None:
-            dimension_indexers = dict(dimension_indexers)
+            if isinstance(dimension_indexers, omegaconf.DictConfig):
+                dimension_indexers = dict(dimension_indexers)
         else:
             dimension_indexers = {}
 
@@ -297,7 +299,7 @@ class Era5Forecast(Era5Dataset):
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            dimension_indexers=dimension_indexers,
+            dimension_indexers=default_dimension_indexers | dimension_indexers,
             warning_on_nan=warning_on_nan,
             interpolate_nans=None,  # uses interpolate_input and interpolate_target
         )
