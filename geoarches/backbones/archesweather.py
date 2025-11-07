@@ -1,4 +1,5 @@
 import importlib
+import warnings
 from enum import Enum
 
 import numpy as np
@@ -69,6 +70,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.constant_masks = torch.load(
             geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
         )
+
         constant_dims = self.constant_masks.shape[0]
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
@@ -174,11 +176,15 @@ class WeatherEncodeDecodeLayer(nn.Module):
         # Remove south pole if necessary.
         if forcings is not None and forcings.shape[-2] % 2:
             forcings = forcings[..., :-1, :]
+
         if self.forcings_embedding == ForcingsEmbedding.SURFACE:
             surface = torch.cat([surface, forcings], dim=1)
 
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
+
+        if torch.isnan(surface).any() or torch.isnan(level).any():
+            warnings.warn("NaN detected in encoded features")
 
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
 
@@ -345,6 +351,6 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer4(x, cond_emb)
 
         output = x
-        output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+        output = output.transpose(1, 2).reshape(output.shape[0], -1, self.zdim, *self.layer1_shape)
 
         return output
