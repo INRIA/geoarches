@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import numpy as np
+import omegaconf
 import pandas as pd
 import tensordict
 import torch
@@ -287,12 +288,18 @@ class Era5Forecast(Era5Dataset):
 
         del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
 
+        if dimension_indexers is not None:
+            if isinstance(dimension_indexers, omegaconf.DictConfig):
+                dimension_indexers = dict(dimension_indexers)
+        else:
+            dimension_indexers = {}
+
         super().__init__(
             path,
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            dimension_indexers=(default_dimension_indexers | (dimension_indexers or {})),
+            dimension_indexers=dimension_indexers,
             warning_on_nan=warning_on_nan,
             interpolate_nans=None,  # uses interpolate_input and interpolate_target
         )
@@ -344,7 +351,7 @@ class Era5Forecast(Era5Dataset):
 
         # Load normalization statistics.
         self.norm_scheme = False
-        if stats_cfg:
+        if stats_cfg is not None:
             stats = instantiate(stats_cfg.module)
             self.data_mean, self.data_std = stats.load_normalization_stats()
             self.norm_scheme = True

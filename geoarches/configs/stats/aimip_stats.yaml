@@ -1,6 +1,6 @@
 module:
+  norm_file: "aimip_norm_stats.nc"
   _target_: geoarches.utils.normalization.NormalizationStatistics
-  norm_file: pangu_norm_stats.nc
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
   variables: 
@@ -19,6 +19,7 @@ module:
   loss_weight_per_variable:
     surface: [0.1, 0.1, 1.0, 0.1]
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
   # Note: If you change number of levels,
   # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
@@ -28,9 +29,11 @@ module:
 
   # if diffusion model, path to the precomputed 
   # delta stats of predictions is needed, else 
-  # null for None
-  residual_stats_path: null
-  
+  # null to use diff_std to normalize for deltas 
+  # between next_state and state 
+  # (state_normalization=delta)
+  residual_stats_path: null   
+
 compute_state_scaler_args:
   state_normalization: "delta"
   downweight_vertical_velocity: false

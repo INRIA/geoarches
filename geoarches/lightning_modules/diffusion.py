@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from hydra.utils import instantiate
-from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
@@ -41,8 +40,6 @@ class DiffusionModule(BaseLightningModule):
         loss_weighting_strategy=None,
         conditional="",  # things that the model is conditioned
         load_deterministic_model=False,
-        loss_delta_normalization=False,
-        state_normalization=False,
         pow=2,
         lr=1e-4,
         betas=(0.9, 0.98),
@@ -65,9 +62,7 @@ class DiffusionModule(BaseLightningModule):
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
-
         stats = instantiate(stats_cfg.module)
-        pressure_levels = list(stats.levels)
 
         self.det_model = None
         if load_deterministic_model:
@@ -92,8 +87,9 @@ class DiffusionModule(BaseLightningModule):
 
         self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
-        area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
-        area_weights = (area_weights / area_weights.mean())[:, None]
+        self.loss_coeffs = stats.compute_loss_coeffs()
+        self.state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
+        self.state_normalization = stats_cfg.compute_state_scaler_args.state_normalization
 
         # set up metrics
         self.val_metrics = nn.ModuleList(
@@ -105,49 +101,6 @@ class DiffusionModule(BaseLightningModule):
                 for metric_name, metric in cfg.inference.metrics.items()
             }
         )
-        # define coeffs for loss
-
-        pressure_levels = torch.tensor(pressure_levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
-
-        # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
-
-        self.loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-        # scaling loss or states
-        pangu_stats = torch.load(
-            geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
-        )
-        pangu_scaler = TensorDict(
-            level=pangu_stats["level_std"], surface=pangu_stats["surface_std"]
-        )
-
-        scaler = pangu_scaler
-
-        if state_normalization == "delta":
-            scaler = TensorDict(
-                level=torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
-            )
-
-        elif state_normalization == "pred":
-            scaler = TensorDict(
-                **torch.load(
-                    geoarches_stats_path / "deltapred24_aws_denorm.pt", weights_only=False
-                )
-            )
-            scaler["level"][-1] *= 3  # we don't care too much about vertical velocity
-
-        self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
 
         self.test_outputs = []
         self.validation_samples = {}
@@ -210,8 +163,7 @@ class DiffusionModule(BaseLightningModule):
                     batch["pred_state"] = self.det_model(batch).detach()
             next_state = batch["next_state"] - batch["pred_state"]
 
-        if self.state_normalization:
-            next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
+        next_state = tensordict_apply(torch.mul, next_state, self.state_scaler.to(self.device))
 
         # weighting scheme: logit normal
         if self.sd3_timestep_sampling:
@@ -263,8 +215,15 @@ class DiffusionModule(BaseLightningModule):
             snr_weights = snr_weights.to(self.device)[:, None, None, None, None]
             loss_coeffs = loss_coeffs.apply(lambda x: x * snr_weights)
 
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        pred = pred * mask
+
+        # set nans in gt to 0
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
+
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
         loss = sum(weighted_error.mean().values())
+
         return loss
 
     def sample(
@@ -331,6 +290,7 @@ class DiffusionModule(BaseLightningModule):
                 noisy_state = tensordict_apply(
                     scheduler_step, pred, t, noisy_state, **scheduler_kwargs
                 )
+
                 # at the end
                 if step_index is not None:
                     scheduler._step_index = step_index + 1
@@ -339,7 +299,7 @@ class DiffusionModule(BaseLightningModule):
 
         if self.state_normalization:
             final_state = tensordict_apply(
-                torch.mul, final_state, self.state_scaler.to(self.device)
+                torch.div, final_state, self.state_scaler.to(self.device)
             )
 
         if self.learn_residual == "default":
@@ -358,28 +318,49 @@ class DiffusionModule(BaseLightningModule):
         iterations=1,
         disable_tqdm=False,
         return_format="tensordict",
+        update_fnc=None,
         **kwargs,
     ):
+        """
+        batch: input batch with state, prev_state, forcings, timestamp, lead_time_hours
+        batch_nb: index of the batch, used to set the seed
+        member: index of the ensemble member, used to set the seed
+        iterations: number of steps to rollout
+        disable_tqdm: whether to disable the tqdm progress bar
+        update_fnc: function to update the batch after each sample.
+            If None, the batch is updated with the previous state and timestamp and forcings are kept the same.
+        return_format: "tensordict" or "list"
+        """
+
         torch.set_grad_enabled(False)
+
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
 
         for i in tqdm(range(iterations), disable=disable_tqdm):
+            print(i)
             seed_i = member + 1000 * i + batch_nb * 10**6
+            print(loop_batch.keys())
+
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
             add_forcings = "future_forcings" in loop_batch
+            print("Add forcings:", add_forcings)
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
-            loop_batch = dict(
-                prev_state=loop_batch["state"],
-                state=sample,
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-                hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                month=torch.tensor(next_month).to(self.device),
-                forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
-                future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
-            )
+
+            if update_fnc is not None:
+                loop_batch = update_fnc(loop_batch, sample, iteration=i)
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"],
+                    state=sample,
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                    month=torch.tensor(next_month).to(self.device),
+                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
+                )
 
         if return_format == "list":
             return preds_future

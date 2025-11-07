@@ -466,6 +466,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -503,6 +504,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -536,6 +538,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -574,6 +577,7 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -674,7 +678,7 @@ class TestEra5ForecastWithForcings:
     )
     def test_load_current_and_next_state(self, lead_time_hours, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -683,7 +687,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -709,7 +713,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -719,7 +723,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -746,7 +750,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=None,
+            stats_cfg=cfg.stats,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -756,7 +760,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -792,7 +796,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": slice(None),
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },

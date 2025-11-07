@@ -26,18 +26,15 @@ class ForecastModule(BaseLightningModule):
         name="forecast",
         dataset=None,
         pow=2,  # 2 is standard mse
-        loss_delta_normalization=True,
         lr=1e-4,
         betas=(0.9, 0.98),
         weight_decay=1e-5,
         num_warmup_steps=1000,
         num_training_steps=300000,
         num_cycles=0.5,
-        use_graphcast_coeffs=True,
         increase_multistep_period=2,
         add_input_state=False,
         save_test_outputs=False,
-        use_weatherbench_lat_coeffs=True,
         rollout_iterations=1,
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
@@ -55,7 +52,10 @@ class ForecastModule(BaseLightningModule):
         self.variables = stats.variables
         self.levels = stats.levels
 
-        self.loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
+        loss_coeffs = stats.compute_loss_coeffs()
+        state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
+
+        self.loss_coeffs = loss_coeffs * state_scaler.pow(self.pow)
 
         # Instantiate metric modules
         self.train_metrics = nn.ModuleList(
@@ -87,13 +87,21 @@ class ForecastModule(BaseLightningModule):
 
         return out
 
-    def forward_multistep(self, batch, iters=None, return_format="tensordict", use_avg=True):
+    def forward_multistep(
+        self,
+        batch,
+        iters=None,
+        return_format="tensordict",
+        use_avg=True,
+        update_fnc=None,
+        return_loop_batch=False,
+    ):
         # multistep forward with gradient checkpointing to save GPU memory
-        if use_avg and self.avg_modules is not None:
-            out = self.forward_multistep(batch, iters=iters, use_avg=False)
-            for m in self.avg_modules:
-                out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
-            return out / (1 + len(self.avg_modules))
+        """if use_avg and self.avg_modules is not None:
+        out = self.forward_multistep(batch, iters=iters, use_avg=False)
+        for m in self.avg_modules:
+            out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
+        return out / (1 + len(self.avg_modules))"""
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
@@ -103,30 +111,49 @@ class ForecastModule(BaseLightningModule):
                     self.forward, loop_batch, use_reentrant=False
                 )
             else:
-                pred = self.forward(loop_batch)
+                if use_avg and self.avg_modules is not None:
+                    # average predictions of different models
+                    pred = self.forward(loop_batch)
+                    for m in self.avg_modules:
+                        x = m.forward(loop_batch)
+                        pred = pred + x
+                    pred = pred / (1 + len(self.avg_modules))
+                else:
+                    pred = self.forward(loop_batch)
+
             preds_future.append(pred)
+
             # compute next batch
             add_prev_state = "prev_state" in loop_batch
             add_forcings = "future_forcings" in loop_batch
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
-            loop_batch = dict(
-                prev_state=loop_batch["state"] if add_prev_state else None,
-                state=pred,
-                # Used only to obtain NaN mask (not true next state)
-                next_state=loop_batch["next_state"],
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-                hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                month=torch.tensor(next_month).to(self.device),
-                forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
-                future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
-            )
 
-        if return_format == "list":
+            if update_fnc is not None:
+                loop_batch = update_fnc(
+                    loop_batch,
+                    pred,
+                )
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"] if add_prev_state else None,
+                    state=pred,
+                    # Used only to obtain NaN mask (not true next state)
+                    next_state=loop_batch["next_state"],
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                    month=torch.tensor(next_month).to(self.device),
+                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
+                )
+
+        if return_format == "tensordict":
+            preds_future = torch.stack(preds_future, dim=1)
+
+        if return_loop_batch:
+            return preds_future, loop_batch
+        else:
             return preds_future
-        preds_future = torch.stack(preds_future, dim=1)
-
-        return preds_future
 
     def loss(self, pred, gt, multistep=False, **kwargs):
         loss_coeffs = self.loss_coeffs.to(self.device)
@@ -140,7 +167,15 @@ class ForecastModule(BaseLightningModule):
                 .reshape(-1, 1, 1, 1, 1)
             )
 
-            loss_coeffs.apply(lambda x: x * future_coeffs)
+            loss_coeffs = loss_coeffs.apply(lambda x: x * future_coeffs)
+
+        # mask pred to 0 where gt is nan
+        # - depends on interpolation behaviour in dataloader
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        pred = pred * mask
+
+        # set nans in gt to 0
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
 
         # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
@@ -362,6 +397,7 @@ class ForecastModuleWithCond(ForecastModule):
         if avg_with_modules:
             from geoarches.lightning_modules.base_module import load_module
 
+            print(f"Loading avg modules: {avg_with_modules}")
             self.avg_modules = nn.ModuleList(
                 [load_module(m, return_config=False) for m in avg_with_modules]
             )
