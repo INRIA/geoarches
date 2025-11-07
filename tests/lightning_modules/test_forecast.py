@@ -1,50 +1,45 @@
+import omegaconf
 import torch
 from tensordict.tensordict import TensorDict
 
-from geoarches.lightning_modules.forecast import ForecastModule
+from geoarches.lightning_modules.forecast import ForecastModuleWithCond
+from tests.fixtures.forecast import cfg as det_cfg
+
+omegaconf.OmegaConf.set_struct(det_cfg, True)
+with omegaconf.open_dict(det_cfg):
+    det_cfg.module.embedder.forcings_ch = 2
+    det_cfg.module.embedder.forcings_embedding = "surface"
 
 
 class TestForecastModule:
-    class DummyStats:
-        def __init__(self):
-            self.variables = {"level": ["var1"], "surface": ["var2"]}
-            self.levels = [500]
+    def build_model(self, build_det_model=False):
+        det_module = ForecastModuleWithCond(det_cfg.module, det_cfg.stats, **det_cfg.module.module)
 
-        def compute_loss_coeffs(self):
-            # Return loss coeffs of 1 for all variables
-            level_coeffs = torch.ones(1, 1, 1, 1)
-            surface_coeffs = torch.ones(1, 1, 1)
-            return TensorDict({"level": level_coeffs, "surface": surface_coeffs}, batch_size=[])
+        return det_module
 
-    class DummyCfg:
-        def __init__(self):
-            self.compute_loss_coeffs_args = {}
-            self.train = self
-            self.val = self
-            self.inference = self
-            self.metrics = {}  # Should be a dict, not a list
-            self.metrics_kwargs = {}
+    def get_dims(self):
+        surface_ch = det_cfg.module.embedder.surface_ch
+        level_ch = det_cfg.module.embedder.level_ch
+        forc_ch = det_cfg.module.embedder.forcings_ch
+        img_size = det_cfg.module.embedder.img_size
+        return surface_ch, level_ch, forc_ch, img_size
 
     def test_loss_with_nans_in_gt(self):
         # Create a dummy ForecastModule
-        stats_cfg = self.DummyCfg()
         # To make DummyStats instantiable by Hydra, wrap it in a dict with _target_
-        stats_cfg.module = {"_target_": self.DummyStats}
-        module_cfg = self.DummyCfg()
-        module_cfg.backbone = None
-        module_cfg.embedder = None
-        forecast_module = ForecastModule(
-            cfg=module_cfg,
-            stats_cfg=stats_cfg,
+        forecast_module = ForecastModuleWithCond(
+            cfg=det_cfg.module,
+            stats_cfg=det_cfg.stats,
         )
         # The loss_coeffs will be computed within ForecastModule.__init__
         # using the instantiated self.DummyStats.
         forecast_module.to("cpu")
-
+        surf_ch, level_ch, _, img_size = self.get_dims()
+        # Create pred without NaNs.
         pred = TensorDict(
             {
-                "level": torch.zeros(1, 1, 2, 2),
-                "surface": torch.zeros(1, 1, 2, 2),
+                "level": torch.zeros(1, level_ch, *img_size),
+                "surface": torch.zeros(1, surf_ch, *img_size[-2:]),
             },
             batch_size=[],
         )
@@ -52,8 +47,8 @@ class TestForecastModule:
         # Create gt with NaNs.
         gt = TensorDict(
             {
-                "level": torch.randn(1, 1, 2, 2),
-                "surface": torch.randn(1, 1, 2, 2),
+                "level": torch.zeros(1, level_ch, *img_size),
+                "surface": torch.zeros(1, surf_ch, *img_size[-2:]),
             },
             batch_size=[],
         )
