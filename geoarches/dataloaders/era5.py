@@ -299,7 +299,7 @@ class Era5Forecast(Era5Dataset):
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            dimension_indexers=default_dimension_indexers | dimension_indexers,
+            dimension_indexers=dimension_indexers,
             warning_on_nan=warning_on_nan,
             interpolate_nans=None,  # uses interpolate_input and interpolate_target
         )
@@ -351,7 +351,7 @@ class Era5Forecast(Era5Dataset):
 
         # Load normalization statistics.
         self.norm_scheme = False
-        if stats_cfg:
+        if stats_cfg is not None:
             stats = instantiate(stats_cfg.module)
             self.data_mean, self.data_std = stats.load_normalization_stats()
             self.norm_scheme = True

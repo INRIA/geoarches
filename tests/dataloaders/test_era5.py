@@ -466,6 +466,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -503,6 +504,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -536,6 +538,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -574,6 +577,7 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
             load_clim=False,
             # Select all lat/lon.
             dimension_indexers={
+                "level": all_levels,
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
