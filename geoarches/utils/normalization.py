@@ -69,9 +69,12 @@ class NormalizationStatistics:
             A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
             and the values should be lists of corresponding weights (in the same order as the variable lists).
             If None, the default weights defined in `default_var_weights` will be used.
-        diff_delta_stats_path : str, optional
+        residual_stats_path : str, optional
             The path to the statistics file containing the standard deviation of the difference between predicted
             successive states. If None, the normalization of training data (e.g. ERA5) file will be used.
+        latitude : Number of latitude points in the data (Needed to compute latitude weighting).
+        use_weatherbench_lat_coeffs : bool
+            Whether to use the WeatherBench latitude coefficients for area weighting.
         """
         if variables is None:
             variables = {
