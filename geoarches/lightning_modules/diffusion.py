@@ -163,7 +163,7 @@ class DiffusionModule(BaseLightningModule):
                     batch["pred_state"] = self.det_model(batch).detach()
             next_state = batch["next_state"] - batch["pred_state"]
 
-        next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
+        next_state = tensordict_apply(torch.mul, next_state, self.state_scaler.to(self.device))
 
         # weighting scheme: logit normal
         if self.sd3_timestep_sampling:
@@ -299,7 +299,7 @@ class DiffusionModule(BaseLightningModule):
 
         if self.state_normalization:
             final_state = tensordict_apply(
-                torch.mul, final_state, self.state_scaler.to(self.device)
+                torch.div, final_state, self.state_scaler.to(self.device)
             )
 
         if self.learn_residual == "default":

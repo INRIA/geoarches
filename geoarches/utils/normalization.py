@@ -32,7 +32,6 @@ class NormalizationStatistics:
         levels: List[int] = arches_default_pressure_levels,
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
         residual_stats_path: str | None = None,
-        pow: float = 2.0,
         latitude: int = 121,
         use_weatherbench_lat_coeffs: bool = False,
     ):
@@ -103,7 +102,6 @@ class NormalizationStatistics:
         self.state_scaler = None
 
         self.latitude = latitude
-        self.pow = pow
         self.use_weatherbench_lat_coeffs = use_weatherbench_lat_coeffs
 
     def load_normalization_stats(self):
@@ -240,7 +238,7 @@ class NormalizationStatistics:
 
         self.state_scaler = state_scaler
 
-        return state_scaler.pow(self.pow)
+        return state_scaler
 
     def compute_loss_coeffs(
         self,
