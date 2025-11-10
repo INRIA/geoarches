@@ -111,15 +111,13 @@ class ForecastModule(BaseLightningModule):
                     self.forward, loop_batch, use_reentrant=False
                 )
             else:
+                pred = self.forward(loop_batch)
                 if use_avg and self.avg_modules is not None:
                     # average predictions of different models
-                    pred = self.forward(loop_batch)
                     for m in self.avg_modules:
                         x = m.forward(loop_batch)
                         pred = pred + x
                     pred = pred / (1 + len(self.avg_modules))
-                else:
-                    pred = self.forward(loop_batch)
 
             preds_future.append(pred)
 
@@ -169,21 +167,13 @@ class ForecastModule(BaseLightningModule):
 
             loss_coeffs = loss_coeffs.apply(lambda x: x * future_coeffs)
 
-        # mask pred to 0 where gt is nan
-        # - depends on interpolation behaviour in dataloader
-        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
-        pred = pred * mask
-
-        # set nans in gt to 0
-        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
-
         # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
         pred = pred * mask
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
 
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        weighted_error = weighted_error.sum() / mask.sum()
+        weighted_error = weighted_error.sum() / mask.sum()  # mean
 
         loss = sum(weighted_error.values())
 

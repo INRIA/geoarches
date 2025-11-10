@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Callable
 
-import pyshtools as pysh
+import pyshtools as pysh  # pytype: disable=import-error
 import torch
 from einops import rearrange
 from torchmetrics import Metric

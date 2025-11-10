@@ -62,6 +62,7 @@ class TestBase:
                     **{
                         var_name: (["time", "latitude", "longitude"], surface_var_data)
                         for var_name in era5_constants.arches_default_surface_variables
+                        + ["sea_ice_cover", "sea_surface_temperature"]
                     },
                 ),
                 coords={
