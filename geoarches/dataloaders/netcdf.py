@@ -7,6 +7,9 @@ import xarray as xr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
+from geoarches.dataloaders import nan_util
+from geoarches.utils.tensordict_utils import tensordict_apply
+
 # Appropriate xarray engine for a given file extension
 engine_mapping = {
     ".nc": "netcdf4",
@@ -45,7 +48,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
-        interpolate_nans: bool = False,
+        interpolate_nans: nan_util.NanInterpolationMethod | None = None,
     ):
         """Initializes.
 
@@ -59,17 +62,20 @@ class XarrayDataset(torch.utils.data.Dataset):
         return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
         warning_on_nan: Whether to log warning if nan data found.
         limit_examples: Return set number of examples in dataset
-        interpolate_nans: Whether to fill NaN values in the data with the mean of the
-                            data across latitude and longitude dimensions. Defaults to True.
+        interpolate_nans: Whether to fill NaN values in the data. Defaults to no interpolation.
         """
         self.filename_filter = filename_filter
         self.variables = variables
 
-        # Separate indexers with slice and those without.
-        self.dimension_indexers = dimension_indexers or {}
+        self.dimension_indexers = dict(dimension_indexers) if dimension_indexers else {}
 
         self.return_timestamp = return_timestamp
         self.warning_on_nan = warning_on_nan
+        if interpolate_nans and interpolate_nans not in list(nan_util.NanInterpolationMethod):
+            raise ValueError(
+                f"Invalid interpolate_nans: {interpolate_nans}. "
+                f"Valid options are: {list(nan_util.NanInterpolationMethod)}"
+            )
         self.interpolate_nans = interpolate_nans
 
         self.transpose_order = transpose_order
@@ -159,6 +165,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             print(self.dimension_indexers)
 
         # Apply sel for indexers
+        # Separate indexers with slice and those without.
         for k, v in self.dimension_indexers.items():
             if k == "time":
                 continue
@@ -181,6 +188,7 @@ class XarrayDataset(torch.utils.data.Dataset):
     def __getitem__(
         self,
         i,
+        return_nan_mask=False,
         return_timestamp=False,
         interpolate_nans=None,
         warning_on_nan=None,
@@ -204,20 +212,21 @@ class XarrayDataset(torch.utils.data.Dataset):
             self.cached_fileid = file_id
             self.cached_xrdataset = xrdataset
 
-        obsi = self.cached_xrdataset.isel(time=line_id)
-        if interpolate_nans:
-            obsi = obsi.fillna(
-                value=obsi.mean(
-                    dim=["latitude", "longitude"],
-                    skipna=True,
-                )
-            )
+        obsi = self.cached_xrdataset.isel(time=line_id)  # pytype: disable=attribute-error
 
+        if return_nan_mask:
+            tdict_before_interpolation = self.convert_to_tensordict(obsi)
+            nan_mask = tensordict_apply(torch.isnan, tdict_before_interpolation)
+
+        obsi = nan_util.pre_norm_interpolate_nans(obsi, interpolate_nans)
         tdict = self.convert_to_tensordict(obsi)
 
-        if warning_on_nan:
+        if warning_on_nan and interpolate_nans != nan_util.NanInterpolationMethod.NONE:
             if any([x.isnan().any().item() for x in tdict.values()]):
                 warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
+
+        if return_nan_mask:
+            return tdict, nan_mask
 
         if return_timestamp or self.return_timestamp:
             timestamp = self.cached_xrdataset["time"][line_id].values.item()

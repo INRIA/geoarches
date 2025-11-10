@@ -203,13 +203,9 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
         """
-
-        # First check if surface_variables, level_variables, and pressure_levels are ListConfigs
         if isinstance(surface_variables, ListConfig):
             surface_variables = list(surface_variables)
-        if isinstance(level_variables, ListConfig):
             level_variables = list(level_variables)
-        if isinstance(pressure_levels, ListConfig):
             pressure_levels = list(pressure_levels)
 
         # Quantiles for each var across gridpoints and times.

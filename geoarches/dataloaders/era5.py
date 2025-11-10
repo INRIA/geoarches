@@ -1,14 +1,17 @@
+import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import numpy as np
-import omegaconf
 import pandas as pd
-import tensordict
 import torch
 import xarray as xr
 from hydra.utils import instantiate
+
+from geoarches.dataloaders import nan_util
+from geoarches.utils.normalization import NormalizationStatistics
+from geoarches.utils.tensordict_utils import tensordict_apply
 
 from .era5_constants import (
     arches_default_level_variables,
@@ -37,6 +40,10 @@ filename_filters = dict(
     # We read the years before and after (see above comment for why).
     aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
     aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
+    aimip_rollout_full=lambda x: any(str(y) in x for y in range(1978, 2025)),
+    aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
+    aimip_rollout_z0012=lambda x: any(str(y) in x for y in range(1978, 2025))
+    and ("0h" in x or "12h" in x),
 )
 
 default_dimension_indexers = {
@@ -87,7 +94,7 @@ class Era5Dataset(XarrayDataset):
         transpose_order: tuple[Any, ...] = (..., "level", "latitude", "longitude"),
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_nans: nan_util.NanInterpolationMethod | None = None,
     ):
         """
         Args:
@@ -121,12 +128,12 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
-    def convert_to_tensordict(self, xr_dataset):
+    def convert_to_tensordict(self, xr_dataset, debug: bool = False):
         """
         input xarr should be a single time slice
         """
 
-        tdict = super().convert_to_tensordict(xr_dataset)
+        tdict = super().convert_to_tensordict(xr_dataset, debug=debug)
         # we don't do operations on xr datasets since it takes more time than on tensors
 
         # unsqueeze surface (important)
@@ -203,9 +210,9 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel({"level": levels})
+            xr_dataset = xr_dataset.sel(level=levels)
 
-        xr_dataset = xr_dataset.chunk({"time": 1})
+        xr_dataset = xr_dataset.chunk(time=1)
         return xr_dataset
 
     def convert_trajectory_to_xarray(
@@ -243,10 +250,11 @@ class Era5Forecast(Era5Dataset):
         self,
         stats_cfg,
         path: str = "data/era5_240/full/",
-        forcings_path: str = None,
+        forcings_path: str | None = None,
+        forcings_stats_path: str | None = None,
         domain: str = "train",
         filename_filter: Callable | None = None,
-        timedelta_hours: int = None,
+        timedelta_hours: int | None = None,
         variables: Dict[str, List[str]] | None = None,
         forcing_vars: List[str] | None = None,
         dimension_indexers: Dict[str, Any] = default_dimension_indexers,
@@ -256,8 +264,8 @@ class Era5Forecast(Era5Dataset):
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_input: bool = False,
-        interpolate_target: bool = False,
+        interpolate_input: nan_util.NanInterpolationMethod | None = None,
+        interpolate_target: nan_util.NanInterpolationMethod | None = None,
     ):
         """
         Args:
@@ -265,6 +273,8 @@ class Era5Forecast(Era5Dataset):
             path: Single filepath or directory holding files.
             forcings_path: Single filepath or directory holding forcing files.
                 If None, no forcing files are loaded.
+            forcings_stats_path: Single filepath holding forcing statistics files.
+                If None, forcings are not normalized (assumes forcings are already normalized).
             domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..)
             filename_filter: To filter files within `path` based on filename. If set, does not use `domain` param.
                 If None, filters files based on `domain`.
@@ -279,6 +289,8 @@ class Era5Forecast(Era5Dataset):
             forcing_vars: List of forcing variables to load from forcings dataset (if forcings_path is set).
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
                 Used to select levels and lat/lon resolution.
+                Set to None to select all values in each dimension in the xr dataset.
+                Must set dimension_indexers=dict(levels=...) if using stats_cfg.
             warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
             interpolate_input: Whether to interpolate NaN values for model input (prev and current state).
             interpolate_target: Whether to interpolate NaN values for model target (next state).
@@ -287,12 +299,6 @@ class Era5Forecast(Era5Dataset):
         # TODO(geco): remove this dict update and add variable manually.
 
         del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
-
-        if dimension_indexers is not None:
-            if isinstance(dimension_indexers, omegaconf.DictConfig):
-                dimension_indexers = dict(dimension_indexers)
-        else:
-            dimension_indexers = {}
 
         super().__init__(
             path,
@@ -311,10 +317,11 @@ class Era5Forecast(Era5Dataset):
             )
         if forcings_path:
             print("##### FORCINGS: ", forcing_vars, " #####")
+            forcing_vars = dict(forcings=forcing_vars)
             self.forcings_ds = Era5Dataset(
                 forcings_path,
                 domain="all",
-                variables=dict(forcings=forcing_vars),
+                variables=forcing_vars,
                 dimension_indexers={k: i for k, i in dimension_indexers.items() if k != "level"},
                 transpose_order=(..., "latitude", "longitude"),
                 warning_on_nan=warning_on_nan,
@@ -345,16 +352,19 @@ class Era5Forecast(Era5Dataset):
 
         if timedelta_hours:
             self.timedelta = timedelta_hours
+        elif "z0012" in domain:
+            self.timedelta = 12
+        elif "z00" in domain:
+            self.timedelta = 24
         else:
-            self.timedelta = 6 if "z0012" not in domain else 12
+            self.timedelta = 6  # Full ERA5 dataset has 6h timedelta.
         self.current_multistep = 1
 
         # Load normalization statistics.
-        self.norm_scheme = False
+        self.data_mean, self.data_std = None, None
         if stats_cfg is not None:
             stats = instantiate(stats_cfg.module)
             self.data_mean, self.data_std = stats.load_normalization_stats()
-            self.norm_scheme = True
 
             # Check variables and levels.
             dataset_levels = self.dimension_indexers["level"]
@@ -372,6 +382,21 @@ class Era5Forecast(Era5Dataset):
                     "Variables in normalization statistics do not match variables in dataset.\n"
                     f"Dataset variables: {self.variables}\nStatistics variables: {stats.variables}"
                 )
+        if forcings_stats_path is not None:
+            forcing_stats = NormalizationStatistics(
+                norm_file=forcings_stats_path, variables=forcing_vars, levels=None
+            )
+            self.forcings_mean, self.forcings_std = forcing_stats.load_normalization_stats()
+            self.forcings_mean, self.forcings_std = (
+                self.forcings_mean.squeeze(1),
+                self.forcings_std.squeeze(1),
+            )
+        else:
+            warnings.warn(
+                "No forcings_stats_path provided. Forcings will not be normalized.", UserWarning
+            )
+            self.forcings_mean = None
+            self.forcings_std = None
 
         # Load climatology.
         self.clim_path = Path(path).parent.joinpath("era5_240_clim.nc")
@@ -399,8 +424,11 @@ class Era5Forecast(Era5Dataset):
         out["day_of_year"] = torch.tensor(timestamp.dayofyear)
         out["month"] = torch.tensor(timestamp.month)
 
-        out["state"] = super().__getitem__(
-            i, interpolate_nans=self.interpolate_input, warning_on_nan=self.warning_on_nan
+        out["state"], out["nan_mask"] = super().__getitem__(
+            i,
+            return_nan_mask=True,
+            interpolate_nans=self.interpolate_input,
+            warning_on_nan=self.warning_on_nan,
         )
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
@@ -412,7 +440,7 @@ class Era5Forecast(Era5Dataset):
             out["next_state"] = super().__getitem__(
                 i + T // self.timedelta,
                 interpolate_nans=self.interpolate_target,
-                warning_on_nan=self.warning_on_nan and self.interpolate_target,
+                warning_on_nan=self.warning_on_nan,
             )
 
         # Load multiple future timestamps if specified.
@@ -423,10 +451,12 @@ class Era5Forecast(Era5Dataset):
                     super().__getitem__(
                         i + k * T // self.timedelta,
                         interpolate_nans=self.interpolate_target,
-                        warning_on_nan=self.warning_on_nan and self.interpolate_target,
+                        warning_on_nan=self.warning_on_nan,
                     )
                 )
-            out["future_states"] = tensordict.stack(future_states, dim=0)
+            out["future_states"] = tensordict_apply(
+                lambda *arrs, dim: torch.stack(arrs, dim=dim), *future_states, dim=0
+            )
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
@@ -446,20 +476,43 @@ class Era5Forecast(Era5Dataset):
             if self.multistep > 1:
                 out["future_forcings"] = self.load_future_forcings(datetime)
 
-        if normalize and self.norm_scheme:
+        if normalize and (self.data_mean is not None or self.forcings_mean is not None):
             out = self.normalize(out)
+
+        # Optionally, interpolate NaNs in the output after normalization.
+        for state in ["prev_state", "state", "forcings"]:
+            if state in out:
+                out[state] = nan_util.post_norm_interpolate_nans(
+                    out[state], self.interpolate_input
+                )
+        for state in ["next_state", "future_states"]:
+            if state in out:
+                out[state] = nan_util.post_norm_interpolate_nans(
+                    out[state], self.interpolate_target
+                )
 
         return out
 
     def load_forcings(self, timestamp: np.datetime64):
-        """Load forcings data for a given timestamp."""
+        """Load forcings data for a given timestamp.
+
+        Forcing timestamps are assumed to be on the first day of the month.
+        We load forcings data that corresponds to the month of the next_state.
+        """
+        # Create mapping from month timestamp to index in forcings dataset.
         if not hasattr(self.forcings_ds, "timestamp_to_idx"):
             timestamp_values = [t[2] for t in self.forcings_ds.timestamps]
             self.forcings_ds.timestamp_to_idx = {
                 str(t.astype("datetime64[M]")): i for i, t in enumerate(timestamp_values)
             }
 
-        first_day_of_month = timestamp.astype("datetime64[M]")
+        next_timestamp = timestamp + np.timedelta64(self.lead_time_hours, "h")
+        first_day_of_month = next_timestamp.astype("datetime64[M]")
+        if str(first_day_of_month) not in self.forcings_ds.timestamp_to_idx:
+            raise ValueError(
+                f"Tried to load forcings data for {first_day_of_month} but DONE."
+                f"state timestamp: {timestamp}, next_state timestamp: {next_timestamp}."
+            )
         index = self.forcings_ds.timestamp_to_idx[str(first_day_of_month)]
         return self.forcings_ds[index]["forcings"]
 
@@ -476,23 +529,32 @@ class Era5Forecast(Era5Dataset):
         return future_forcings
 
     def normalize(self, batch):
-        if not self.norm_scheme:
+        if self.data_mean is None and self.forcings_mean is None:
             return batch
 
         device = list(batch.values())[0].device
+        out = {k: v for k, v in batch.items()}  # copy
 
-        means = self.data_mean.to(device)
-        stds = self.data_std.to(device)
+        if self.data_mean is not None:
+            means = self.data_mean.to(device)
+            stds = self.data_std.to(device)
 
-        if "surface" in batch:
-            # we can normalize directly
-            return (batch - means) / stds
-        out = {k: ((v - means) / stds if "state" in k else v) for k, v in batch.items()}
+            out = {k: ((v - means) / stds if "state" in k else v) for k, v in out.items()}
+
+        if self.forcings_mean is not None:
+            out = {
+                k: (
+                    (v - self.forcings_mean["forcings"]) / self.forcings_std["forcings"]
+                    if "forcings" in k
+                    else v
+                )
+                for k, v in out.items()
+            }
 
         return out
 
     def denormalize(self, batch):
-        if not self.norm_scheme:
+        if self.data_mean is None:
             return batch
 
         device = list(batch.values())[0].device

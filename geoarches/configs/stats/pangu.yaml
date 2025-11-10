@@ -24,10 +24,10 @@ module:
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
 
   latitude: 121
-  use_weatherbench_lat_coeffs: true 
+  use_weatherbench_lat_coeffs: true
 
-  # if diffusion model, path to the precomputed 
-  # delta stats of predictions is needed, else 
+  # if diffusion model, path to the precomputed
+  # delta stats of predictions is needed, else
   # null for None
   residual_stats_path: null
   
