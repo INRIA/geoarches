@@ -29,7 +29,7 @@ class NormalizationStatistics:
         self,
         norm_file: str = "pangu_norm_stats.nc",
         variables: Dict[str, List[str]] = None,
-        levels: List[int] = arches_default_pressure_levels,
+        levels: List[int] | None = arches_default_pressure_levels,
         loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
         residual_stats_path: str | None = None,
         latitude: int = 121,
@@ -63,8 +63,7 @@ class NormalizationStatistics:
             and the values should be lists of variable names. If None, the default surface and level variables
             of archesweather will be used.
         levels : list, optional
-            A list of pressure levels to be used for normalization. If None, the default pressure levels
-            of archesweather will be used.
+            A list of pressure levels to be used for normalization. If None, assumes stats are not by levels.
         loss_weight_per_variable : dict, optional
             A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
             and the values should be lists of corresponding weights (in the same order as the variable lists).
@@ -91,10 +90,15 @@ class NormalizationStatistics:
             raise ValueError(f"Normalization file {self.norm_file_path} does not exist.")
 
         self.residual_stats_path = residual_stats_path
+        if self.residual_stats_path is not None:
+            if not Path(self.residual_stats_path).is_absolute():
+                self.residual_stats_path = geoarches_stats_path / self.residual_stats_path
+            if not Path(self.residual_stats_path).exists():
+                raise ValueError(f"Residual stats file {self.residual_stats_path} does not exist.")
 
         # If passed through hydra, need to convert from OmegaConf objects to lists.
         self.variables = {k: list(vars) for k, vars in variables.items()}
-        self.levels = list(levels)
+        self.levels = list(levels) if levels else None
 
         self.loss_weight_per_variable = loss_weight_per_variable
 
@@ -112,38 +116,31 @@ class NormalizationStatistics:
         Loads the mean and standard deviation statistics for the specified variables and pressure levels
         from the precomputed stats file.
         """
+        mean, std = {}, {}
         with xr.open_dataset(self.norm_file_path) as stats_ds:
-            stats = {
-                "surface_mean": torch.from_numpy(
-                    stats_ds[self.variables["surface"]].sel(statistic="mean").to_array().to_numpy()
-                )[..., None, None, None],
-                "surface_std": torch.from_numpy(
-                    stats_ds[self.variables["surface"]].sel(statistic="std").to_array().to_numpy()
-                )[..., None, None, None],
-                "level_mean": torch.from_numpy(
-                    stats_ds[self.variables["level"]]
-                    .sel(statistic="mean")
-                    .sel(level=self.levels)
-                    .to_array()
-                    .to_numpy()
-                )[..., None, None],
-                "level_std": torch.from_numpy(
-                    stats_ds[self.variables["level"]]
-                    .sel(statistic="std")
-                    .sel(level=self.levels)
-                    .to_array()
-                    .to_numpy()
-                )[..., None, None],
-            }
+            for var_type, var_names in self.variables.items():
+                # Select by levels if level dimension is present.
+                indexers = {}
+                has_lev = True if "level" in stats_ds[var_names].dims else False
+                if has_lev:
+                    if self.levels is None:
+                        raise ValueError(
+                            "Found level dimension in dataset, but levels are not provided."
+                        )
+                    indexers = {"level": self.levels}
+                mean[var_type] = torch.from_numpy(
+                    stats_ds[var_names].sel(statistic="mean", **indexers).to_array().to_numpy()
+                )[..., None, None]
+                std[var_type] = torch.from_numpy(
+                    stats_ds[var_names].sel(statistic="std", **indexers).to_array().to_numpy()
+                )[..., None, None]
+                # Add level dimension if not present.
+                if not has_lev:
+                    mean[var_type] = mean[var_type][..., None]
+                    std[var_type] = std[var_type][..., None]
 
-        self.mean = TensorDict(
-            surface=stats["surface_mean"],
-            level=stats["level_mean"],
-        )
-        self.std = TensorDict(
-            surface=stats["surface_std"],
-            level=stats["level_std"],
-        )
+        self.mean = TensorDict(mean)
+        self.std = TensorDict(std)
 
         return self.mean, self.std
 
