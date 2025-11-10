@@ -114,7 +114,7 @@ def main(cfg: DictConfig):
     ckpt_dir = Path(cfg.exp_dir).joinpath("checkpoints")
     if ckpt_dir.exists():
         print("Experiment already exists. Trying to resume it.")
-        exp_cfg = OmegaConf.load(Path(cfg.exp_dir) / "config.yaml")
+        exp_cfg = OmegaConf.load(str(Path(cfg.exp_dir) / "config.yaml"))
         if cfg.resume or cfg.mode == "test":
             # we just copy cluster info
             cfg.module = exp_cfg.module
@@ -179,7 +179,7 @@ def main(cfg: DictConfig):
         print("registering exp on main node")
         hparams = OmegaConf.to_container(cfg, resolve=True)
         print(hparams)
-        logger.log_hyperparams(hparams)
+        logger.log_hyperparams(hparams)  # pytype: disable=attribute-error
         Path(cfg.exp_dir).mkdir(exist_ok=True, parents=True)
         with open(Path(cfg.exp_dir) / "config.yaml", "w") as f:
             f.write(OmegaConf.to_yaml(cfg, resolve=True))
