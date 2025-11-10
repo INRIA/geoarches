@@ -62,7 +62,10 @@ class DiffusionModule(BaseLightningModule):
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
+
         stats = instantiate(stats_cfg.module)
+        self.variables = stats.variables
+        self.levels = stats.levels
 
         self.det_model = None
         if load_deterministic_model:
@@ -105,19 +108,16 @@ class DiffusionModule(BaseLightningModule):
         self.test_outputs = []
         self.validation_samples = {}
 
-    def forward(self, batch, noisy_next_state, timesteps, is_sampling=False):
+    def forward(self, batch, noisy_next_state, timesteps, pred_state=None, is_sampling=False):
         input_state = noisy_next_state
         conditional_keys = self.conditional.split("+")  # all the things we condition on
-
-        # whether we need to run the deterministic model
-        if "det" in conditional_keys:
-            assert "pred_state" in batch
-            pred_state = batch["pred_state"]
 
         if "prev" in conditional_keys:
             prev_state = batch["prev_state"]
             input_state = tensordict_cat([prev_state, input_state], dim=1)
         if "det" in conditional_keys:
+            # allow to pass pred_state both from kwarg and batch for backwards compat.
+            pred_state = batch.get("pred_state", pred_state)
             input_state = tensordict_cat([pred_state, input_state], dim=1)
 
         # conditional by default
@@ -149,21 +149,28 @@ class DiffusionModule(BaseLightningModule):
             0, self.noise_scheduler.config.num_train_timesteps, (bs,), device=device
         ).long()
 
-        noise = tensordict_apply(torch.randn_like, batch["next_state"])
+        noise = batch["next_state"].apply(torch.randn_like)
 
         # by default
         next_state = batch["next_state"]
+        pred_state = None
 
         if self.learn_residual == "default":
             next_state = batch["next_state"] - batch["state"]
 
         elif self.learn_residual == "pred":
-            if "pred_state" not in batch:
-                with torch.no_grad():
-                    batch["pred_state"] = self.det_model(batch).detach()
-            next_state = batch["next_state"] - batch["pred_state"]
+            with torch.no_grad():
+                if "pred_state" in batch:
+                    pred_state = batch["pred_state"]
+                else:
+                    pred_state = self.det_model(batch).detach()
+            next_state = batch["next_state"] - pred_state
 
-        next_state = tensordict_apply(torch.mul, next_state, self.state_scaler.to(self.device))
+        # remove nans in next_state for processing.
+        next_state = tensordict_apply(lambda x: torch.nan_to_num(x, nan=0.0), next_state)
+
+        if self.state_normalization:
+            next_state = tensordict_apply(torch.mul, next_state, self.state_scaler.to(self.device))
 
         # weighting scheme: logit normal
         if self.sd3_timestep_sampling:
@@ -197,6 +204,7 @@ class DiffusionModule(BaseLightningModule):
             batch,
             noisy_next_state,
             timesteps,
+            pred_state=pred_state,
         )
         # compute loss
 
@@ -215,14 +223,14 @@ class DiffusionModule(BaseLightningModule):
             snr_weights = snr_weights.to(self.device)[:, None, None, None, None]
             loss_coeffs = loss_coeffs.apply(lambda x: x * snr_weights)
 
+        # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
         pred = pred * mask
-
-        # set nans in gt to 0
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
 
         weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        loss = sum(weighted_error.mean().values())
+        weighted_error = weighted_error.sum() / mask.sum()  # mean
+        loss = sum(weighted_error.values())
 
         return loss
 
@@ -262,9 +270,13 @@ class DiffusionModule(BaseLightningModule):
         if scale_input_noise is not None:
             noisy_state = noisy_state * scale_input_noise
 
-        if self.learn_residual == "pred" and "pred_state" not in batch:
+        pred_state = None
+        if self.learn_residual == "pred":
             with torch.no_grad():
-                batch["pred_state"] = self.det_model(batch).detach()
+                if "pred_state" in batch:
+                    pred_state = batch["pred_state"]
+                else:
+                    pred_state = self.det_model(batch).detach()
 
         loop_batch = {k: v for k, v in batch.items() if "next" not in k}  # ensures no data leakage
 
@@ -275,6 +287,7 @@ class DiffusionModule(BaseLightningModule):
                     loop_batch,
                     noisy_state,
                     timesteps=torch.tensor([t]).to(self.device),
+                    pred_state=pred_state,
                     is_sampling=True,
                 )
 
@@ -290,7 +303,6 @@ class DiffusionModule(BaseLightningModule):
                 noisy_state = tensordict_apply(
                     scheduler_step, pred, t, noisy_state, **scheduler_kwargs
                 )
-
                 # at the end
                 if step_index is not None:
                     scheduler._step_index = step_index + 1
@@ -306,7 +318,7 @@ class DiffusionModule(BaseLightningModule):
             final_state = batch["state"] + final_state
 
         elif self.learn_residual == "pred":
-            final_state = batch["pred_state"] + final_state
+            final_state = pred_state + final_state
 
         return final_state
 
@@ -321,7 +333,8 @@ class DiffusionModule(BaseLightningModule):
         update_fnc=None,
         **kwargs,
     ):
-        """
+        """Multistep rollout.
+
         batch: input batch with state, prev_state, forcings, timestamp, lead_time_hours
         batch_nb: index of the batch, used to set the seed
         member: index of the ensemble member, used to set the seed

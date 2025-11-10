@@ -1,10 +1,40 @@
 import numpy as np
 import pandas as pd
 import pytest
+import tensordict
+import torch
 import xarray as xr
 
 from geoarches.dataloaders import era5, era5_constants
+from geoarches.utils.tensordict_utils import tensordict_apply
 from tests.fixtures.era5 import LAT, LEVEL, LON, TestBase, all_levels, cfg
+
+
+def _check_normalization(example: dict, ds: era5.Era5Forecast):
+    """Check that normalization is correct by denormalizing and renormalizing."""
+    # TODO(singhren):  Can we improve error messaging with utils like
+    # assert_trees_all_close or other similar torch utils.
+    example_denormalized = ds.denormalize(example)
+    for k, v in example.items():
+        if isinstance(v, tensordict.TensorDict) and k != "nan_mask":
+            assert not any(
+                tensordict_apply(
+                    torch.allclose,
+                    v,
+                    example_denormalized[k],
+                    equal_nan=True,
+                ).values(),
+            ), f"All tensors are close for state: {k}"
+    example_renormalized = ds.normalize(example_denormalized)
+    for k, v in example.items():
+        if isinstance(v, tensordict.TensorDict):
+            assert all(
+                tensordict_apply(
+                    torch.allclose, v, example_renormalized[k], equal_nan=True
+                ).values(),
+            ), f"Not all tensors are close for state: {k}"
+        else:
+            assert torch.equal(v, example_renormalized[k]), f"Tensors are not equal for key: {k}"
 
 
 class TestEra5Dataset(TestBase):
@@ -13,11 +43,7 @@ class TestEra5Dataset(TestBase):
             path=str(self.test_dir),
             domain="all",
             # Select all values in each dimension.
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            dimension_indexers=None,
         )
         example = ds[0]
 
@@ -31,11 +57,7 @@ class TestEra5Dataset(TestBase):
             domain="all",
             return_timestamp=True,
             # Select all values in each dimension.
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            dimension_indexers=None,
         )
         example, timestamp = ds[0]
 
@@ -165,11 +187,7 @@ class TestEra5Forecast(TestBase):
             load_prev=False,
             load_clim=False,
             # Select all values in each dimension.
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            dimension_indexers=None,
         )
         example = ds[0]
 
@@ -199,11 +217,7 @@ class TestEra5Forecast(TestBase):
             load_prev=False,
             load_clim=False,
             # Select all values in each dimension.
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            dimension_indexers=None,
         )
         example = ds[0]
 
@@ -234,11 +248,7 @@ class TestEra5Forecast(TestBase):
             load_prev=True,
             load_clim=False,
             # Select all values in each dimension.
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            dimension_indexers=None,
         )
         example = ds[0]
 
@@ -344,7 +354,15 @@ class TestEra5Forecast(TestBase):
         assert ds.timestamps[-1][-1] == expected_end_time
         assert len(ds) == expected_len
 
-    def test_interpolate_nans_in_inputs(self):
+    @pytest.mark.parametrize(
+        "interpolate_nans",
+        [
+            ("zero"),
+            ("lat_mean_sic_zero"),
+            ("global_mean"),
+        ],
+    )
+    def test_interpolate_nans_in_inputs(self, interpolate_nans):
         ds = era5.Era5Forecast(
             stats_cfg=None,
             path=str(self.test_dir),
@@ -353,7 +371,7 @@ class TestEra5Forecast(TestBase):
             multistep=1,
             load_prev=True,
             load_clim=False,
-            interpolate_input=True,  # Interpolate NaNs in input (prev_state and state).
+            interpolate_input=interpolate_nans,  # Interpolate NaNs in input (prev_state and state).
             dimension_indexers={
                 "level": all_levels,
                 "latitude": slice(None),
@@ -399,7 +417,15 @@ class TestEra5Forecast(TestBase):
         assert np.isnan(example1["next_state"]["level"].numpy()).any()
         assert np.isnan(example1["next_state"]["surface"].numpy()).any()
 
-    def test_interpolate_nans_in_inputs_and_targets(self):
+    @pytest.mark.parametrize(
+        "interpolate_nans",
+        [
+            ("zero"),
+            ("lat_mean_sic_zero"),
+            ("global_mean"),
+        ],
+    )
+    def test_interpolate_nans_in_inputs_and_targets(self, interpolate_nans):
         # NaNs are introduced at the first timestamp of the second file (t2).
         ds = era5.Era5Forecast(
             stats_cfg=None,
@@ -409,13 +435,10 @@ class TestEra5Forecast(TestBase):
             multistep=1,
             load_prev=True,
             load_clim=False,
-            interpolate_input=True,  # Interpolate NaNs in input (prev_state and state).
-            interpolate_target=True,  # Interpolate NaNs in target (next_state).
-            dimension_indexers={
-                "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
-            },
+            interpolate_input=interpolate_nans,  # Interpolate NaNs in input (prev_state and state).
+            interpolate_target=interpolate_nans,  # Interpolate NaNs in target (next_state).
+            # Select all values in each dimension.
+            dimension_indexers=None,
         )
 
         # example = ds[0]: prev=t0, state=t1, next=t2.
@@ -449,6 +472,39 @@ class TestEra5Forecast(TestBase):
         assert not np.isnan(example1["next_state"]["level"].numpy()).any()
         assert not np.isnan(example1["next_state"]["surface"].numpy()).any()
 
+    def test_interpolate_nans_in_inputs_lat_mean_sic_zero(self):
+        # NaNs are introduced at the first timestamp of the second file (t2).
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(self.test_dir),
+            # SIC and SST.
+            variables=dict(
+                surface=["sea_ice_cover", "sea_surface_temperature"],
+                level=era5_constants.arches_default_level_variables,
+            ),
+            domain="all",
+            lead_time_hours=6,
+            multistep=1,
+            load_prev=True,
+            load_clim=False,
+            interpolate_input="lat_mean_sic_zero",  # Interpolate NaNs in input (prev_state and state).
+            # Select all values in each dimension.
+            dimension_indexers=None,
+        )
+
+        # example = ds[2]: prev=t2, state=t3, next=t4.
+        # t2, t3 and t4 has NaNs. Since interpolate_nans is True,
+        # # prev_state and state should be interpolated.
+        example1 = ds[2]
+        # prev_state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["prev_state"]["surface"].numpy()).any()
+        assert (example1["prev_state"]["surface"][0] == 0).any()  # SIC has 0's.
+        # state has NaNs originally, but should be interpolated.
+        assert not np.isnan(example1["state"]["surface"].numpy()).any()
+        assert (example1["state"]["surface"][0] == 0).any()  # SIC has 0's.
+        # next_state should have NaNs.
+        assert np.isnan(example1["next_state"]["surface"].numpy()).any()
+
 
 class TestEra5ForecastWithGraphcastNormalization(TestBase):
     @pytest.mark.parametrize(
@@ -464,11 +520,9 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             lead_time_hours=lead_time_hours,
             load_prev=False,
             load_clim=False,
-            # Select all lat/lon.
             dimension_indexers={
+                # stats_cfg levels must equal dimension_indexers levels.
                 "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -486,10 +540,7 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         # No prev state
         assert "prev_state" not in example
 
-        # Check if normalization is applied.
-        example_normalized = example["state"]["surface"]
-        example_denormalized = ds.denormalize(example)["state"]["surface"]
-        assert not np.allclose(example_normalized, example_denormalized)
+        _check_normalization(example, ds)
 
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
@@ -502,11 +553,9 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             multistep=multistep,
             load_prev=False,
             load_clim=False,
-            # Select all lat/lon.
             dimension_indexers={
+                # stats_cfg levels must equal dimension_indexers levels.
                 "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -525,6 +574,8 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         # No prev state
         assert "prev_state" not in example
 
+        _check_normalization(example, ds)
+
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
         cfg.stats.module.norm_file = "graphcast_norm_stats.nc"
@@ -536,11 +587,9 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
             multistep=multistep,
             load_prev=True,
             load_clim=False,
-            # Select all lat/lon.
             dimension_indexers={
+                # stats_cfg levels must equal dimension_indexers levels.
                 "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
             },
         )
         example = ds[0]
@@ -560,6 +609,8 @@ class TestEra5ForecastWithGraphcastNormalization(TestBase):
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
+        _check_normalization(example, ds)
+
 
 class TestEra5ForecastWithPanguNormalization(TestBase):
     @pytest.mark.parametrize(
@@ -575,11 +626,9 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
             lead_time_hours=lead_time_hours,
             load_prev=False,
             load_clim=False,
-            # Select all lat/lon.
             dimension_indexers={
+                # stats_cfg levels must equal dimension_indexers levels.
                 "level": all_levels,
-                "latitude": slice(None),
-                "longitude": slice(None),
             },
         )
 
@@ -598,10 +647,7 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
         # No prev state
         assert "prev_state" not in example
 
-        # Check if normalization is applied.
-        example_normalized = example["state"]["surface"]
-        example_denormalized = ds.denormalize(example)["state"]["surface"]
-        assert not np.allclose(example_normalized, example_denormalized)
+        _check_normalization(example, ds)
 
 
 class TestEra5ForecastWithForcings:
@@ -610,7 +656,8 @@ class TestEra5ForecastWithForcings:
     def setup_class(self, tmp_path_factory):
         # Use tmp_path_factory to create a class-level temporary directory.
         self.test_dir = tmp_path_factory.mktemp("data")
-        times = pd.date_range("2024-01-01", periods=6, freq="6h")  # datetime64[ns]
+        # Start from 2023-12-31 to check that we load forcings from 2024-01-01 (timestamp of next_state).
+        times = pd.date_range("2023-12-31", periods=6, freq="6h")  # datetime64[ns]
 
         # 3 files with 2 timestamps each.
         for i in range(3):
@@ -644,7 +691,7 @@ class TestEra5ForecastWithForcings:
         # Forcings dataset.
         self.test_forcings_dir = tmp_path_factory.mktemp("forcings")
         # Create the time coordinate with a monthly frequency
-        time = pd.date_range("2024-01-01", periods=4, freq="MS")
+        time = pd.date_range("2023-12-01", periods=2, freq="MS")
 
         file_path = self.test_forcings_dir / "fake_forcings.nc"
 
@@ -652,6 +699,8 @@ class TestEra5ForecastWithForcings:
         sea_ice_cover_data[:, :, 0] = np.nan
         sea_surface_temperature_data = np.random.rand(len(time), LAT, LON)
         sea_surface_temperature_data[:, :, 0] = np.nan
+
+        self.sea_ice_cover_data = torch.from_numpy(sea_ice_cover_data).to(torch.float32)
 
         ds = xr.Dataset(
             data_vars={
@@ -678,7 +727,7 @@ class TestEra5ForecastWithForcings:
     )
     def test_load_current_and_next_state(self, lead_time_hours, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=cfg.stats,
+            stats_cfg=None,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -687,7 +736,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": all_levels,
+                "level": slice(None),
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -697,7 +746,7 @@ class TestEra5ForecastWithForcings:
 
         assert len(ds) == expected_len
         # Current state
-        assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
+        assert example["timestamp"] == 1703980800  # 2023-12-31-00-00
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         assert example["forcings"].shape == (2, LAT, LON)  #  (var, lat, lon)
@@ -713,7 +762,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 4), (3, 3), (4, 2)])
     def test_multistep(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=cfg.stats,
+            stats_cfg=None,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -723,7 +772,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": all_levels,
+                "level": slice(None),
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -733,7 +782,7 @@ class TestEra5ForecastWithForcings:
 
         assert len(ds) == expected_len
         # Current state
-        assert example["timestamp"] == 1704067200  # 2024-01-01-00-00
+        assert example["timestamp"] == 1703980800  # 2023-12-31-00-00
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         assert example["forcings"].shape == (2, LAT, LON)  #  (var, lat, lon)
@@ -750,7 +799,7 @@ class TestEra5ForecastWithForcings:
     @pytest.mark.parametrize("multistep, expected_len", [(2, 3), (3, 2), (4, 1)])
     def test_multistep_and_load_prev(self, multistep, expected_len):
         ds = era5.Era5Forecast(
-            stats_cfg=cfg.stats,
+            stats_cfg=None,
             path=str(self.test_dir),
             forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
             domain="all",
@@ -760,7 +809,7 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": all_levels,
+                "level": slice(None),
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
@@ -770,7 +819,7 @@ class TestEra5ForecastWithForcings:
 
         assert len(ds) == expected_len
         # Current state
-        assert example["timestamp"] == 1704088800  # 2024-01-01-06-00
+        assert example["timestamp"] == 1704002400  # 2023-12-31-06-00
         assert example["state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
         assert example["forcings"].shape == (2, LAT, LON)  #  (var, lat, lon)
@@ -785,7 +834,7 @@ class TestEra5ForecastWithForcings:
         assert example["prev_state"]["surface"].shape == (4, 1, LAT, LON)  #  (var, 1, lat, lon)
         assert example["prev_state"]["level"].shape == (6, 13, LAT, LON)  #  (var, lev, lat, lon)
 
-    def test_interpolate_nans(self):
+    def test_interpolate_nans_zero(self):
         ds = era5.Era5Forecast(
             stats_cfg=None,
             path=str(self.test_dir),
@@ -796,14 +845,69 @@ class TestEra5ForecastWithForcings:
             load_clim=False,
             # Select all values in each dimension.
             dimension_indexers={
-                "level": all_levels,
+                "level": slice(None),
                 "latitude": slice(None),
                 "longitude": slice(None),
             },
             forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
-            interpolate_input=True,
+            interpolate_input="zero",
         )
 
         example = ds[0]
 
         assert not np.isnan(example["forcings"].numpy()).any()
+        assert (example["forcings"] == 0.0).any()
+
+    def test_interpolate_nans_lat_mean_sic_zero(self):
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(self.test_dir),
+            forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
+            domain="all",
+            lead_time_hours=6,
+            load_prev=False,
+            load_clim=False,
+            # Select all values in each dimension.
+            dimension_indexers={
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
+            },
+            forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
+            interpolate_input="lat_mean_sic_zero",
+        )
+
+        example = ds[0]
+
+        assert not np.isnan(example["forcings"].numpy()).any()
+        assert (example["forcings"][:, 0] == 0.0).any()  # SIC has 0's
+
+    @pytest.mark.parametrize("ds_index, forcing_index", [(0, 0), (1, 0), (2, 0), (3, 1), (4, 1)])
+    def test_loads_correct_forcing_timestamp(self, ds_index, forcing_index):
+        """Test that the forcing data corresponds to month of next_state timestamp."""
+        ds = era5.Era5Forecast(
+            stats_cfg=None,
+            path=str(self.test_dir),
+            forcings_path=str(self.test_forcings_dir / "fake_forcings.nc"),
+            domain="all",
+            lead_time_hours=6,
+            load_prev=False,
+            load_clim=False,
+            # Select all values in each dimension.
+            dimension_indexers={
+                "level": slice(None),
+                "latitude": slice(None),
+                "longitude": slice(None),
+            },
+            forcing_vars=["sea_ice_cover", "sea_surface_temperature"],
+        )
+
+        example = ds[ds_index]
+
+        # Loads 2023-12-01 or 2024-01-01 forcings.
+        expected_sea_ice_cover = self.sea_ice_cover_data[forcing_index].flip(-2).roll(LON // 2, -1)
+        torch.testing.assert_close(
+            example["forcings"][0].to(torch.float32),
+            expected_sea_ice_cover,
+            equal_nan=True,
+        )

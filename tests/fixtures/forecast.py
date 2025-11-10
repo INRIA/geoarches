@@ -1,7 +1,7 @@
 import hydra
 import omegaconf
 
-with hydra.initialize(version_base="1.2", config_path="../../geoarches/configs"):
+with hydra.initialize(version_base=None, config_path="../../geoarches/configs", job_name="test"):
     cfg = hydra.compose(
         config_name="config",
         overrides=[
