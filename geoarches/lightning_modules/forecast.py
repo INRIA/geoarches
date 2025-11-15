@@ -369,7 +369,7 @@ class ForecastModuleWithCond(ForecastModule):
         self,
         *args,
         cond_dim=32,
-        use_prev=False,
+        cond_times=["month", "hour_of_day"],
         use_avg=False,
         avg_with_modules=[],
         **kwargs,
@@ -378,9 +378,9 @@ class ForecastModuleWithCond(ForecastModule):
 
         super().__init__(*args, **kwargs)
         # cond_dim should be given as arg to the backbone
-        self.month_embedder = dit.TimestepEmbedder(cond_dim)
-        self.hour_embedder = dit.TimestepEmbedder(cond_dim)
-        self.use_prev = use_prev
+        self.time_embedders = nn.ModuleDict(
+            {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
+        )
         self.use_avg = use_avg
 
         self.avg_modules = None
@@ -396,9 +396,12 @@ class ForecastModuleWithCond(ForecastModule):
     def forward(self, batch, use_avg=True):
         # convert time into str
 
-        month_emb = self.month_embedder(batch["month"])
-        hour_emb = self.hour_embedder(batch["hour_of_day"])
-
-        cond_emb = month_emb + hour_emb
+        cond_emb = None
+        for time_name, time_embedder in self.time_embedders.items():
+            time_emb = time_embedder(batch[time_name])
+            if cond_emb is None:
+                cond_emb = time_emb
+            else:
+                cond_emb += time_emb
 
         return super().forward(batch, cond_emb)
