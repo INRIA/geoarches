@@ -20,13 +20,32 @@ engine_mapping = {
     ".zarr": "zarr",
 }
 
-# Mapping to rename dimensions if needed.
-dimension_mapping = {
-    "valid_time": "time",
-    "pressure_level": "level",
-    "lat": "latitude",
-    "lon": "longitude",
-}
+
+def optionally_rename_dimensions(xrdataset):
+    """Rename dimensions if needed."""
+    dimension_mapping = {
+        "valid_time": "time",
+        "pressure_level": "level",
+        "lat": "latitude",
+        "lon": "longitude",
+    }
+    for old_name, new_name in dimension_mapping.items():
+        if old_name in xrdataset.dims:
+            xrdataset = xrdataset.swap_dims({old_name: new_name})
+        if old_name in xrdataset.coords:
+            xrdataset = xrdataset.assign_coords(**{new_name: xrdataset.coords[old_name]})
+    return xrdataset
+
+
+def select_dimensions(xrdataset, dimension_indexers):
+    """Select by dimensions_indexers from xarray dataset."""
+    for k, v in dimension_indexers.items():
+        if k == "time":
+            continue
+        params = dict(method="nearest", tolerance=1e-6) if not isinstance(v, slice) else {}
+        v = list(v) if isinstance(v, tuple) else v
+        xrdataset = xrdataset.sel({k: v}, **params)
+    return xrdataset
 
 
 class XarrayDataset(torch.utils.data.Dataset):
@@ -165,13 +184,7 @@ class XarrayDataset(torch.utils.data.Dataset):
             print(self.dimension_indexers)
 
         # Apply sel for indexers
-        # Separate indexers with slice and those without.
-        for k, v in self.dimension_indexers.items():
-            if k == "time":
-                continue
-            params = dict(method="nearest", tolerance=1e-6) if not isinstance(v, slice) else {}
-            v = list(v) if isinstance(v, tuple) else v
-            xr_dataset = xr_dataset.sel({k: v}, **params)
+        xr_dataset = select_dimensions(xr_dataset, self.dimension_indexers)
 
         xr_dataset = xr_dataset.transpose(*self.transpose_order)
         np_arrays = {
@@ -203,11 +216,7 @@ class XarrayDataset(torch.utils.data.Dataset):
                 self.cached_xrdataset.close()
             xrdataset = xr.open_dataset(self.files[file_id], **self.xr_options)
             # postprocess some coord names
-            for old_name, new_name in dimension_mapping.items():
-                if old_name in xrdataset.dims:
-                    xrdataset = xrdataset.swap_dims({old_name: new_name})
-                if old_name in xrdataset.coords:
-                    xrdataset = xrdataset.assign_coords(**{new_name: xrdataset.coords[old_name]})
+            xrdataset = optionally_rename_dimensions(xrdataset)
 
             self.cached_fileid = file_id
             self.cached_xrdataset = xrdataset
