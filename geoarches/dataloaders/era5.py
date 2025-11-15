@@ -9,7 +9,8 @@ import torch
 import xarray as xr
 from hydra.utils import instantiate
 
-from geoarches.dataloaders import nan_util
+from geoarches.dataloaders import nan_util, netcdf
+from geoarches.dataloaders.netcdf import XarrayDataset
 from geoarches.utils.normalization import NormalizationStatistics
 from geoarches.utils.tensordict_utils import tensordict_apply
 
@@ -20,7 +21,6 @@ from .era5_constants import (
     level_variables_short,
     surface_variables_short,
 )
-from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
@@ -80,7 +80,11 @@ def get_headline_level_variable_indices(
 
 class Era5Dataset(XarrayDataset):
     """
-    This class is just for loading era5-like data, without any future or pred state.
+    This class is just for loading era5-like data, without any future or prev state.
+
+    Main functions are convert_to_tensordict() for loading data and
+    convert_to_xarray() for saving data back in xarray format.
+
     Does not do any normalization either.
     """
 
@@ -128,6 +132,15 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
+        # Get xarraycoords for convert_to_xarray().
+        # Assumes:
+        #   (1) all files have the same coords.
+        #   (2) convert_to_xarray() undos all transformations from convert_to_tensordict().
+        with xr.open_dataset(self.files[0], **self.xr_options) as xr_dataset:
+            xr_dataset = netcdf.optionally_rename_dimensions(xr_dataset)
+            xr_dataset = netcdf.select_dimensions(xr_dataset, self.dimension_indexers)
+            self.coords = xr_dataset.coords
+
     def convert_to_tensordict(self, xr_dataset, debug: bool = False):
         """
         input xarr should be a single time slice
@@ -141,7 +154,7 @@ class Era5Dataset(XarrayDataset):
             tdict["surface"] = tdict["surface"].unsqueeze(-3)
 
         # do we need to flip lats ?
-        if xr_dataset.latitude[0] < xr_dataset.latitude[-1]:
+        if self.coords["latitude"][0] < self.coords["latitude"][-1]:
             tdict = tdict.apply(lambda x: x.flip(-2))
 
         # focus on Europe
@@ -152,10 +165,21 @@ class Era5Dataset(XarrayDataset):
         return tdict
 
     def convert_to_xarray(self, tdict, timestamp, levels=None):
-        """
-        we dont take prediction timedelta into account here
-        timestamp is necessary to convert to xarray
-        compressed means we only store 3 levels (500, 700, 850)
+        """Convert tensordict back to xarray. Useful for saving predictions.
+
+        Important: Must undo all tensor operations from convert_to_tensordict()
+        so that xarray dimensions match the original (self.coords).
+
+        We don't take prediction timedelta into account here.
+        (See convert_trajectory_to_xarray()).
+
+        Args:
+            tdict: tensordict to convert to xarray.
+            timestamp: Array of timestamps (in seconds) to assign to xarray.
+            level: Optional subset of levels to store (useful for compression).
+
+        Returns:
+            xr.Dataset with same variables and coords as the original dataset.
         """
         tdict = tdict.cpu()
         halflon = tdict["surface"].shape[-1] // 2
@@ -166,17 +190,18 @@ class Era5Dataset(XarrayDataset):
         # roll does not work with named dimensions, use cat
         tdict = tdict.apply(lambda x: x.roll(-halflon, -1))
 
+        # flip back lats if needed
+        if self.coords["latitude"][0] < self.coords["latitude"][-1]:
+            tdict = tdict.apply(lambda x: x.flip(-2))
+
         # squeeze
         surface = tdict["surface"].squeeze(-3)
         level = tdict["level"]
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
-
-        # TODO(geco): what if we have things like slices ?
-
-        coords = {
-            k: list(v) for k, v in self.dimension_indexers.items() if not isinstance(v, slice)
+        coords = self.coords = {
+            k: v for k, v in self.coords.items() if k in ("latitude", "longitude", "level")
         }
         coords = coords | {"time": times}
 
