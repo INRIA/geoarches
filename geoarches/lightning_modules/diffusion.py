@@ -31,6 +31,7 @@ class DiffusionModule(BaseLightningModule):
         stats_cfg,
         name="diffusion",
         cond_dim=32,
+        cond_times=["month", "hour_of_day"],
         num_train_timesteps=1000,
         scheduler="flow",  # only available option
         prediction_type="sample",  # or velocity
@@ -79,9 +80,11 @@ class DiffusionModule(BaseLightningModule):
                 self.det_model = AvgModule(load_deterministic_model)
 
         # cond_dim should be given as arg to the backbone
-
-        self.month_embedder = TimestepEmbedder(cond_dim)
-        self.hour_embedder = TimestepEmbedder(cond_dim)
+        # State time conditioning.
+        self.time_embedders = nn.ModuleDict(
+            {time: TimestepEmbedder(cond_dim) for time in cond_times}
+        )
+        # Noise level.
         self.timestep_embedder = TimestepEmbedder(cond_dim)
 
         self.noise_scheduler = noise_scheduler or FlowMatchEulerDiscreteScheduler(
@@ -121,11 +124,16 @@ class DiffusionModule(BaseLightningModule):
             input_state = tensordict_cat([pred_state, input_state], dim=1)
 
         # conditional by default
-        month_emb = self.month_embedder(batch["month"])
-        hour_emb = self.hour_embedder(batch["hour_of_day"])
-        timestep_emb = self.timestep_embedder(timesteps)
+        cond_emb = None
+        for time_name, time_embedder in self.time_embedders.items():
+            time_emb = time_embedder(batch[time_name])
+            if cond_emb is None:
+                cond_emb = time_emb
+            else:
+                cond_emb += time_emb
 
-        cond_emb = month_emb + hour_emb + timestep_emb
+        timestep_emb = self.timestep_embedder(timesteps)
+        cond_emb = timestep_emb if cond_emb is None else cond_emb + timestep_emb
 
         x = self.embedder.encode(batch["state"], input_state, batch.get("forcings", None))
 
