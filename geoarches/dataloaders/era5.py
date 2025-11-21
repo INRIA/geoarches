@@ -139,7 +139,7 @@ class Era5Dataset(XarrayDataset):
         with xr.open_dataset(self.files[0], **self.xr_options) as xr_dataset:
             xr_dataset = netcdf.optionally_rename_dimensions(xr_dataset)
             xr_dataset = netcdf.select_dimensions(xr_dataset, self.dimension_indexers)
-            self.coords = xr_dataset.coords
+            self.coords = {k: v.to_numpy() for k, v in xr_dataset.coords.items()}
 
     def convert_to_tensordict(self, xr_dataset, debug: bool = False):
         """
