@@ -117,13 +117,13 @@ def get_non_nan_mask(td: TensorDict):
     )
 
 
-def replace_inf_and_large_values(td: TensorDict, threshold):
+def replace_inf_and_large_values(td: TensorDict, threshold,replacement_value):
     """
-    Replaces `inf` values and values larger than threshold with 0.
+    Replaces `inf` values and values larger than threshold with replacement_value.
     """
     return TensorDict(
         {
-            key: value.masked_fill(torch.isinf(value) | (value > threshold), 0)
+            key: value.masked_fill(torch.isinf(value) | (value > threshold), replacement_value)
             for key, value in td.items()
         },
         batch_size=td.batch_size,
