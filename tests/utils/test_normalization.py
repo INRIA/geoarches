@@ -39,7 +39,6 @@ def test_init_defaults():
     assert norm_stats.variables["surface"] == arches_default_surface_variables
     assert norm_stats.variables["level"] == arches_default_level_variables
     assert norm_stats.levels == arches_default_pressure_levels
-    assert norm_stats.loss_weight_per_variable == normalization.default_var_weights
 
 
 def test_init_graphcast():
@@ -117,7 +116,9 @@ def test_load_normalization_stats(
     num_levels = len(levels)
 
     norm_stats = normalization.NormalizationStatistics(
-        norm_file=stats_path, variables=variables, levels=levels, latitude=LAT
+        norm_file=stats_path,
+        variables=variables,
+        levels=levels,
     )
 
     mean, std = norm_stats.load_normalization_stats()
@@ -140,7 +141,9 @@ def test_load_graphcast_timedelta_stats():
     }
     levels = [500, 850]
     norm_stats = normalization.NormalizationStatistics(
-        variables=variables, levels=levels, norm_file="graphcast_norm_stats.nc", latitude=LAT
+        variables=variables,
+        levels=levels,
+        norm_file="graphcast_norm_stats.nc",
     )
     surface_stds, level_stds = norm_stats.load_timedelta_stats()
     assert surface_stds.shape == (2, 1, 1, 1)
@@ -150,7 +153,7 @@ def test_load_graphcast_timedelta_stats():
 def test_load_pangu_timedelta_stats():
     """Tests that the pangu timedelta stats are loaded correctly."""
     norm_stats = normalization.NormalizationStatistics(
-        norm_file="pangu_norm_stats.nc", latitude=LAT
+        norm_file="pangu_norm_stats.nc",
     )
 
     surface_stds, level_stds = norm_stats.load_timedelta_stats()
@@ -169,10 +172,8 @@ def test_load_pangu_timedelta_stats():
 
 
 def test_compute_loss_coeffs_shape_pangu():
-    norm_stats = normalization.NormalizationStatistics(
-        norm_file="pangu_norm_stats.nc", latitude=LAT
-    )
-    loss_coeffs = norm_stats.compute_loss_coeffs()
+    norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
+    loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
     scaler = norm_stats.compute_state_scaler(
         state_normalization="delta", downweight_vertical_velocity=False
     )
@@ -189,9 +190,10 @@ def test_compute_loss_coeffs_shape_pangu():
 def test_compute_loss_coeffs_shape_graphcast():
     levels = [500, 850]
     norm_stats = normalization.NormalizationStatistics(
-        levels=levels, norm_file="graphcast_norm_stats.nc", latitude=LAT
+        levels=levels,
+        norm_file="graphcast_norm_stats.nc",
     )
-    loss_coeffs = norm_stats.compute_loss_coeffs()
+    loss_coeffs = norm_stats.compute_loss_coeffs(latitude=LAT)
     scaler = norm_stats.compute_state_scaler(
         state_normalization="delta", downweight_vertical_velocity=False
     )
@@ -206,9 +208,7 @@ def test_compute_loss_coeffs_shape_graphcast():
 
 
 def test_compute_loss_coeffs_pangu_no_delta():
-    norm_stats = normalization.NormalizationStatistics(
-        norm_file="pangu_norm_stats.nc", latitude=LAT
-    )
+    norm_stats = normalization.NormalizationStatistics(norm_file="pangu_norm_stats.nc")
     loss_coeffs = norm_stats.compute_loss_coeffs()
     scaler = norm_stats.compute_state_scaler(
         state_normalization="delta", downweight_vertical_velocity=False

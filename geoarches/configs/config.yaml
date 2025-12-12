@@ -2,6 +2,9 @@
 defaults:
   - cluster: local  # Tells hydra to use cluster/local.yaml when composing the cfg object.
   - dataloader: era5
+  # Defines lightning module and backbone. (archesweathergen for diffusion)
+  # NOTE: To run diffusion must update stats.compute_scalar_args (see configs in stats/)
+  # TODO(singhren): Add back state_normalization and downweight_vertical_veolocity to modules.
   - module: archesweather
   - stats: pangu # Normalization scheme (pangu or graphcast or None)
   - override hydra/job_logging: none

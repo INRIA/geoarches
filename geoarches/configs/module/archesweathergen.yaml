@@ -17,9 +17,6 @@ module:
   conditional: prev+det # or prev+det for instance
 
   # scales
-  loss_delta_normalization: False
-  loss_weighting_strategy: debiased
-  state_normalization: pred
   pow: 2.0
 
   use_classifier: False # debug
