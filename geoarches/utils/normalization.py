@@ -30,10 +30,7 @@ class NormalizationStatistics:
         norm_file: str = "pangu_norm_stats.nc",
         variables: Dict[str, List[str]] = None,
         levels: List[int] | None = arches_default_pressure_levels,
-        loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
         residual_stats_path: str | None = None,
-        latitude: int = 121,
-        use_weatherbench_lat_coeffs: bool = False,
     ):
         """
         Initializes the normalization module with the specified normalization scheme, variables,
@@ -48,10 +45,6 @@ class NormalizationStatistics:
         for the specified variables and pressure levels from the precomputed stats files.
         Further, the modules computes the loss coefficients based on the provided variables,
         pressure levels, and loss weights per variable.
-        The loss coefficients are computed based on the area weights, surface and level variables,
-        and the vertical coefficients derived from the pressure levels.
-        The normalization module also supports delta normalization, which is used to normalize
-        the loss coefficients based on the standard deviation of the difference between successive states.
 
         Parameters
         ----------
@@ -64,16 +57,9 @@ class NormalizationStatistics:
             of archesweather will be used.
         levels : list, optional
             A list of pressure levels to be used for normalization. If None, assumes stats are not by levels.
-        loss_weight_per_variable : dict, optional
-            A dictionary containing the loss weights for each variable. The keys should be 'surface' and 'level',
-            and the values should be lists of corresponding weights (in the same order as the variable lists).
-            If None, the default weights defined in `default_var_weights` will be used.
         residual_stats_path : str, optional
             The path to the statistics file containing the standard deviation of the difference between predicted
             successive states. If None, the normalization of training data (e.g. ERA5) file will be used.
-        latitude : Number of latitude points in the data (Needed to compute latitude weighting).
-        use_weatherbench_lat_coeffs : bool
-            Whether to use the WeatherBench latitude coefficients for area weighting.
         """
         if variables is None:
             variables = {
@@ -100,16 +86,11 @@ class NormalizationStatistics:
         self.variables = {k: list(vars) for k, vars in variables.items()}
         self.levels = list(levels) if levels else None
 
-        self.loss_weight_per_variable = loss_weight_per_variable
-
         self.mean = None
         self.std = None
         self.diff_std = None
         self.loss_coeffs = None
         self.state_scaler = None
-
-        self.latitude = latitude
-        self.use_weatherbench_lat_coeffs = use_weatherbench_lat_coeffs
 
     def load_normalization_stats(self):
         """
@@ -242,19 +223,28 @@ class NormalizationStatistics:
 
     def compute_loss_coeffs(
         self,
+        loss_weight_per_variable: Dict[str, List[float]] = default_var_weights,
+        latitude: int = 121,
+        use_weatherbench_lat_coeffs: bool = False,
     ):
-        """
-        Computes the loss coefficients for the specified variables, pressure levels, and loss weights.
-        The loss coefficients are computed based on the area weights, surface and level variables,
-        and the vertical coefficients derived from the pressure levels.
+        """Computes loss coefficients per variable, level, and latitude.
+
+        Args:
+            loss_weight_per_variable : A dictionary containing the loss weights for each variable.
+                The keys match keys of the variables, i.e. 'surface' and 'level',
+                and the values should be lists of corresponding weights (in the same order as the variable lists).
+                If None, the default weights defined in `default_var_weights` will be used.
+            latitude : Number of latitude points in the data (Needed to compute latitude weighting).
+            use_weatherbench_lat_coeffs : bool
+                Whether to use the WeatherBench latitude coefficients for area weighting.
         """
         compute_weights_fn = (
             compute_lat_weights_weatherbench
-            if self.use_weatherbench_lat_coeffs
+            if use_weatherbench_lat_coeffs
             else compute_lat_weights
         )
 
-        area_weights = compute_weights_fn(self.latitude)
+        area_weights = compute_weights_fn(latitude)
 
         pressure_levels = torch.tensor(self.levels).float()
         vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
@@ -262,10 +252,8 @@ class NormalizationStatistics:
         n_surface_vars = len(self.variables["surface"])
         n_level_vars = len(self.variables["level"])
 
-        surf_weights = torch.tensor([self.loss_weight_per_variable["surface"]]).reshape(
-            -1, 1, 1, 1
-        )
-        level_weights = torch.tensor([self.loss_weight_per_variable["level"]]).reshape(-1, 1, 1, 1)
+        surf_weights = torch.tensor([loss_weight_per_variable["surface"]]).reshape(-1, 1, 1, 1)
+        level_weights = torch.tensor([loss_weight_per_variable["level"]]).reshape(-1, 1, 1, 1)
 
         total_coeff = sum(surf_weights) + sum(level_weights)
 

@@ -26,7 +26,7 @@ class NanInterpolationMethod(str, enum.Enum):
 
 
 # Methods that should be applied after normalization.
-POST_NORM_METHODS = [NanInterpolationMethod.ZERO_AFTER_NORM]
+POST_NORM_METHODS = [NanInterpolationMethod.ZERO_AFTER_NORM, NanInterpolationMethod.GLOBAL_MEAN]
 
 
 def pre_norm_interpolate_nans(
@@ -38,8 +38,6 @@ def pre_norm_interpolate_nans(
         return ds
     if nan_interpolation_method in POST_NORM_METHODS:
         return ds
-    if nan_interpolation_method == NanInterpolationMethod.GLOBAL_MEAN:
-        ds = ds.fillna(value=ds.mean(dim=["latitude", "longitude"], skipna=True))
     elif nan_interpolation_method == NanInterpolationMethod.ZERO:
         ds = ds.fillna(value=0.0)
     # Fill NaNs in SIC with 0.0 and fill the rest with the latitude mean.
@@ -64,10 +62,15 @@ def post_norm_interpolate_nans(
         return t
     if nan_interpolation_method not in POST_NORM_METHODS:
         return t
-    if nan_interpolation_method == NanInterpolationMethod.ZERO_AFTER_NORM:
-        if isinstance(t, torch.Tensor):
-            return torch.nan_to_num(t, nan=0.0)
-        else:
-            return tensordict_apply(lambda x: torch.nan_to_num(x, nan=0.0), t)
+    if nan_interpolation_method == NanInterpolationMethod.GLOBAL_MEAN:
+        # Average over the spatial dims (lat and lon).
+        fill_value = t.nanmean(dim=(-2, -1), keepdim=True)
+    elif nan_interpolation_method == NanInterpolationMethod.ZERO_AFTER_NORM:
+        fill_value = 0.0
     else:
         raise ValueError(f"Unknown nan interpolation method: {nan_interpolation_method}")
+
+    if isinstance(t, torch.Tensor):
+        return torch.where(torch.isnan(t), fill_value, t)
+    else:
+        return tensordict_apply(torch.where, t.isnan(), fill_value, t)

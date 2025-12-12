@@ -1,7 +1,6 @@
 import numpy as np
-import pandas as pd
 
-from geoarches.dataloaders import era5
+from geoarches.dataloaders import era5, nan_util
 
 
 class Era5ForecastWithPrediction(era5.Era5Forecast):
@@ -16,12 +15,13 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         domain="train",
         filename_filter=None,
         lead_time_hours=24,
-        pred_path="data/era5_pred_archesweather-S/",
+        pred_path: str | None = None,
         load_prev=False,
         load_hard_neg=False,
         variables=None,
         dimension_indexers=None,
         pred_dimension_indexers=None,
+        interpolate_input: nan_util.NanInterpolationMethod | None = None,
         **kwargs,
     ):
         """Args:
@@ -54,84 +54,48 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             load_prev=load_prev,
             variables=variables,
             dimension_indexers=dimension_indexers,
+            interpolate_input=interpolate_input,
             **kwargs,
         )
         self.load_prev = load_prev
         self.load_hard_neg = load_hard_neg
+        self.interpolate_input = interpolate_input
         # self.filename_filter is already init
         if pred_path is not None:
             self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
+                domain="all",
                 dimension_indexers=dimension_indexers | pred_dimension_indexers,
                 filename_filter=self.filename_filter,
                 variables=self.variables,
+                interpolate_nans=interpolate_input,
             )
-
-            if "train" not in domain:
-                # re-select timestamps.
-                # we always evaluate on a single 'target eval year', but sometimes we
-                # need some extra context from the year before & after (if the first
-                # prediction is on jan 1 for instance, we need the state from the end
-                # of the previous year).
-                # filename_filter filters file crudely but sometimes we need to remove
-                # some dates in the files. typically when we evaluate, we evaluate on a
-                # single year but we need context from the previous and later year,
-                # hence we need to load 3 years.
-                # if this is the case that we have loaded 3 years then we take the
-                # middle year, which is the one that is supposed to be fully evaluated.
-                # if there is a single year, we don't reset timestamp bounds.
-                # TODO(geco): the clean way would be to pass in a date range as argument
-                # and to compute the correct filename filter from those dates.
-                # then given the date range we can also adjust timestamp bounds.
-
-                # find year for which we want to keep timestamps
-                allowed_years = [
-                    y
-                    for y in range(1979, 2024)
-                    if any(
-                        self.filename_filter(f"{y}_{hour}h") for hour in ("0", "06", "12", "18")
-                    )
-                ]
-                year = allowed_years[0] if len(allowed_years) == 1 else allowed_years[1]
-                start_time = np.datetime64(f"{year}-01-01T00:00:00")
-                if self.load_prev:
-                    start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
-                end_time = np.datetime64(
-                    f"{year + 1}-01-01T00:00:00"
-                ) + self.lead_time_hours * np.timedelta64(1, "h")
-                self.pred_ds.set_timestamp_bounds(start_time, end_time)
+            # pred_ds should be synchronized with main ds, so we adjust timestamp bounds
+            # accordingly.
+            start_time = min(x[-1] for x in self.timestamps)
+            end_time = max(x[-1] for x in self.timestamps)
+            self.pred_ds.set_timestamp_bounds(start_time, end_time + np.timedelta64(1, "s"))
 
         # TODO: is the stats file in geoarches ?
         # geoarches_stats_path = importlib.resources.files(geoarches_stats)
         # deltapred_path = geoarches_stats_path / "stats/deltapred24_aw-s_stats.pt"
         # deltapred_stats = torch.load(deltapred_path, weights_only=True)
 
-    def __len__(self):
-        di = self.lead_time_hours // self.timedelta if "train" in self.domain else 0
-        return super().__len__() - di  # because we cannot access first element
-
     def __getitem__(self, i, normalize=True, load_hard_neg=True):
         out = {}
         di = self.lead_time_hours // self.timedelta
-        shift_main = di if "train" in self.domain else 0  # because we cannot access first element
-        out = super().__getitem__(
-            i + shift_main, normalize=False
-        )  # get original data, +di because we need to fetch next one
+        out = super().__getitem__(i)
 
-        # handle prediction. if load_prev, we have to fetch next one
         if hasattr(self, "pred_ds"):
-            out["pred_state"], pred_timestamp = self.pred_ds.__getitem__(
-                i + di if self.load_prev else i, return_timestamp=True
-            )
-            assert out["timestamp"] == pred_timestamp, (
-                f"badly aligned {i}:"
-                + pd.Timestamp(out["timestamp"].int().item() * 10**9).strftime("%Y-%m-%d-%H-%M")
-                + "/"
-                + pd.Timestamp(pred_timestamp.int().item() * 10**9).strftime("%Y-%m-%d-%H-%M")
+            nptime = np.datetime64(out["timestamp"].int().item(), "s")
+            out["pred_state"] = self.pred_ds.select_from_nptime(nptime)
+            out["pred_state"] = self.normalize(out["pred_state"])
+            out["pred_state"] = nan_util.post_norm_interpolate_nans(
+                out["pred_state"], self.interpolate_input
             )
 
-        if normalize:
-            out = self.normalize(out)
+        # if normalize:
+        #   out = self.normalize(out)
 
         if self.load_hard_neg and load_hard_neg:
             rb = 2 * np.random.randint(2) - 1

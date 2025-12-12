@@ -1,21 +1,17 @@
-import numpy as np
-import pytest
 import tensordict
 import torch
 import xarray as xr
 
 from geoarches.dataloaders import nan_util
-from geoarches.utils.tensordict_utils import tensordict_apply
 
 
-class TestInterpolateNans:
-    """Tests for the interpolate_nans function."""
+class TestPreNormInterpolateNans:
+    """Tests for the pre_norm_interpolate_nans function."""
 
     @pytest.mark.parametrize(
         "method",
         [
             nan_util.NanInterpolationMethod.ZERO,
-            nan_util.NanInterpolationMethod.GLOBAL_MEAN,
             nan_util.NanInterpolationMethod.LAT_MEAN_SIC_ZERO,
         ],
     )
@@ -52,7 +48,7 @@ class TestInterpolateNans:
             },
             coords={"latitude": [0, 1, 2], "longitude": [0, 1]},
         )
-        result_ds = nan_util.pre_norm_interpolate_nans(ds, None)
+        result_ds = nan_util.pre_norm_interpolate_nans(ds, nan_interpolation_method=None)
         xr.testing.assert_allclose(result_ds, ds)
 
     def test_zero(self):
@@ -86,39 +82,6 @@ class TestInterpolateNans:
         result_ds = nan_util.pre_norm_interpolate_nans(ds, nan_util.NanInterpolationMethod.ZERO)
         xr.testing.assert_allclose(result_ds, expected_ds)
 
-    def test_global_mean(self):
-        """Expects that function replaces NaNs with global mean per variable."""
-        ds = xr.Dataset(
-            {
-                "a": (
-                    ("latitude", "longitude"),
-                    [[1.0, 2.0], [np.nan, 4.0], [5.0, 6.0]],
-                ),
-                "b": (
-                    ("latitude", "longitude"),
-                    [[1.0, np.nan], [3.0, 4.0], [5.0, 6.0]],
-                ),
-            },
-            coords={"latitude": [0, 1, 2], "longitude": [0, 1]},
-        )
-        expected_ds = xr.Dataset(
-            {
-                "a": (
-                    ("latitude", "longitude"),
-                    [[1.0, 2.0], [3.6, 4.0], [5.0, 6.0]],
-                ),
-                "b": (
-                    ("latitude", "longitude"),
-                    [[1.0, 3.8], [3.0, 4.0], [5.0, 6.0]],
-                ),
-            },
-            coords={"latitude": [0, 1, 2], "longitude": [0, 1]},
-        )
-        result_ds = nan_util.pre_norm_interpolate_nans(
-            ds, nan_util.NanInterpolationMethod.GLOBAL_MEAN
-        )
-        xr.testing.assert_allclose(result_ds, expected_ds)
-
     def test_lat_mean_sic_zero_when_no_ffill(self):
         """Tests when no ffill is needed (non-nan values in each latitude)."""
         ds = xr.Dataset(
@@ -142,7 +105,11 @@ class TestInterpolateNans:
                 ),
                 "sea_surface_temperature": (
                     ("latitude", "longitude"),
-                    [[1.0, 1.0], [3.0, 4.0], [6.0, 6.0]],  # Fill rest with lat mean.
+                    [
+                        [1.0, 1.0],
+                        [3.0, 4.0],
+                        [6.0, 6.0],
+                    ],  # Fill rest with lat mean.
                 ),
             },
             coords={"latitude": [0, 1, 2], "longitude": [0, 1]},
@@ -158,7 +125,11 @@ class TestInterpolateNans:
             {
                 "sea_ice_cover": (
                     ("latitude", "longitude"),
-                    [[1.0, 2.0], [np.nan, 4.0], [np.nan, np.nan]],  # Fill SIC with 0.0.
+                    [
+                        [1.0, 2.0],
+                        [np.nan, 4.0],
+                        [np.nan, np.nan],
+                    ],  # Fill SIC with 0.0.
                 ),
                 "sea_surface_temperature": (
                     ("latitude", "longitude"),
@@ -190,7 +161,11 @@ class TestInterpolateNans:
             {
                 "sea_ice_cover": (
                     ("latitude", "longitude"),
-                    [[1.0, 2.0], [np.nan, 4.0], [np.nan, np.nan]],  # Fill SIC with 0.0.
+                    [
+                        [1.0, 2.0],
+                        [np.nan, 4.0],
+                        [np.nan, np.nan],
+                    ],  # Fill SIC with 0.0.
                 ),
                 "sea_surface_temperature": (
                     ("latitude", "longitude"),
@@ -253,6 +228,23 @@ class TestInterpolateNans:
 
 class TestPostNormInterpolateNans:
     """Tests for the interpolate_nans_after_norm function."""
+
+    def test_global_mean_with_tensor(self):
+        """Expects that function replaces NaNs with global mean per variable."""
+        x = torch.tensor(
+            [
+                [[1.0, 2.0], [np.nan, 4.0], [5.0, 6.0]],  # first var
+                [[1.0, np.nan], [3.0, 4.0], [5.0, 6.0]],  # second var
+            ]
+        )
+        expected_out = torch.tensor(
+            [  # computes global mean per variable.
+                [[1.0, 2.0], [3.6, 4.0], [5.0, 6.0]],
+                [[1.0, 3.8], [3.0, 4.0], [5.0, 6.0]],
+            ]
+        )
+        out = nan_util.post_norm_interpolate_nans(x, nan_util.NanInterpolationMethod.GLOBAL_MEAN)
+        torch.testing.assert_close(out, expected_out)
 
     def test_zero_after_norm_with_tensor(self):
         x = torch.tensor(

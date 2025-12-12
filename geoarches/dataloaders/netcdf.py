@@ -1,7 +1,10 @@
+import functools
+import json
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 
+import numpy as np
 import torch
 import xarray as xr
 from tensordict.tensordict import TensorDict
@@ -67,24 +70,36 @@ class XarrayDataset(torch.utils.data.Dataset):
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
         limit_examples: int | None = None,
+        force_rebuild_index: bool = False,
         interpolate_nans: nan_util.NanInterpolationMethod | None = None,
     ):
         """Initializes.
 
         Args:
+
         path: Single filepath or directory holding xarray files.
-        variables: Dict holding xarray data variable lists mapped by their keys to be processed into tensordict.
+        variables: Dict holding xarray data variable lists mapped by their keys to
+          be processed into tensordict.
             e.g. {surface: [data_var1, datavar2, ...], level: [...]}
-            Used in convert_to_tensordict() to read data arrays in the xarray dataset and convert to tensordict.
-        dimension_indexers: Dict of dimensions to select in xarray using Dataset.sel().
+            Used in convert_to_tensordict() to read data arrays in the xarray
+              dataset and convert to tensordict.
+        dimension_indexers: Dict of dimensions to select in xarray using
+          Dataset.sel().
         filename_filter: To filter files within `path` based on filename.
-        return_timestamp: Whether to return timestamp in __getitem__() along with tensordict.
+        return_timestamp: Whether to return timestamp in __getitem__() along with
+          tensordict.
         warning_on_nan: Whether to log warning if nan data found.
-        limit_examples: Return set number of examples in dataset
-        interpolate_nans: Whether to fill NaN values in the data. Defaults to no interpolation.
+        limit_examples: Return set number of examples in dataset. Deprecated. Use
+          timestamps instead.
+        interpolate_nans: Whether to fill NaN values in the data. Defaults to no
+          interpolation.
+        force_rebuild_index: Whether to rebuild the index of timestamps for all
+          files under path.
+        This can be useful is the files in directory have changed.
         """
         self.filename_filter = filename_filter
         self.variables = variables
+        self.path = Path(path)
 
         self.dimension_indexers = dict(dimension_indexers) if dimension_indexers else {}
 
@@ -99,49 +114,92 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         self.transpose_order = transpose_order
 
-        if not Path(path).exists():
+        if not self.path.exists():
             raise ValueError("Path does not exist:", path)
 
-        if Path(path).is_file() and "." in path.split("/")[-1]:
-            print("Single file detected. Loading single file ", path)
-            self.files = [path]
+        if self.path.is_file():
+            self.xr_options = dict(engine=engine_mapping[self.path.suffix], cache=True)
+            fname = self.path.name
+            self.path = self.path.parent
+            self.timestamps = self.get_file_timestamps(fname)
+        elif not list(self.path.glob("*")):
+            raise ValueError("No files found under path:", path)
         else:
-            files = list(Path(path).glob("*"))
-            if len(files) == 0:
-                raise ValueError("No files found under path:", path)
+            # define opening options
+            file_extensions = [
+                x.suffix for x in list(self.path.glob("*")) if x.suffix in engine_mapping.keys()
+            ]
+            engine = engine_mapping[file_extensions[0]]
+            self.xr_options = dict(engine=engine, cache=True)
 
-            self.files = sorted(
-                [str(x) for x in files if filename_filter(x.name)],
-                key=lambda x: x.replace("_6h", "_06h").replace("_0h", "_00h"),
-            )
-            if len(self.files) == 0:
-                raise ValueError("filename_filter filtered all files under path:", path)
+            # optionally build index and load
+            if force_rebuild_index or not self.index_path.exists():
+                self.build_index()
+            self.timestamps = self.load_index()
 
-        file_extension = Path(self.files[0]).suffix
-        engine = engine_mapping[file_extension]
-        self.xr_options = dict(engine=engine, cache=True)
+            # for backward compatibility, we filter timestamps by filename here.
+            # TODO(geco): we should filter by timestamp instead.
+            self.timestamps = [x for x in self.timestamps if self.filename_filter(x[0])]
 
-        self.timestamps = []
-
-        for fid, f in tqdm(enumerate(self.files)):
-            with xr.open_dataset(f, **self.xr_options) as obs:
-                time_dim_name = "time" if "time" in obs.coords else "valid_time"
-                file_stamps = [
-                    (fid, i, t) for (i, t) in enumerate(obs.coords[time_dim_name].to_numpy())
-                ]
-                self.timestamps.extend(file_stamps)
-            if (
-                limit_examples and len(self.timestamps) > limit_examples
-            ):  # get fraction of full dataset
-                print("Limiting number of examples loaded to", limit_examples)
-                self.timestamps = self.timestamps[:limit_examples]
-                break
-
-        self.timestamps = sorted(self.timestamps, key=lambda x: x[-1])  # sort by timestamp
         self.id2pt = dict(enumerate(self.timestamps))
 
         self.cached_xrdataset = None
-        self.cached_fileid = None
+        self.cached_fname = None
+
+        # for backwards comp.
+        # TODO(geco): remove
+        self.files = list(set([self.path / x[0] for x in self.timestamps]))
+
+    @property
+    def index_path(self) -> Path:
+        return self.path.parent / (self.path.name + "_index.json")
+
+    @functools.cached_property
+    def nptime_to_loc_info(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            nptime: dict(fname=fname, line_id=i, dataset_index=ds_idx)
+            for ds_idx, (fname, i, nptime) in enumerate(self.timestamps)
+        }
+
+    def get_file_timestamps(self, fname: str) -> List[Tuple[str, int, np.datetime64]]:
+        with xr.open_dataset(self.path / fname, **self.xr_options) as obs:
+            time_dim_name = "time" if "time" in obs.coords else "valid_time"
+            file_stamps = [
+                (fname, i, t) for (i, t) in enumerate(obs.coords[time_dim_name].to_numpy())
+            ]
+        return file_stamps
+
+    def load_index(self) -> List[Tuple[str, int, np.datetime64]]:
+        with self.index_path.open("rb") as f:
+            timestamps = json.load(f)
+        timestamps = [
+            (fname, i, np.datetime64(str_timestamp)) for (fname, i, str_timestamp) in timestamps
+        ]
+        return timestamps
+
+    def build_index(self) -> None:
+        """Build index of timestamps for all files under path.
+
+        Saves under json
+        """
+        files = [x for x in self.path.glob("*") if x.suffix in engine_mapping.keys()]
+
+        self.timestamps = []
+
+        for fpath in tqdm(files):
+            self.timestamps.extend(self.get_file_timestamps(fpath.name))
+
+        self.timestamps = sorted(self.timestamps, key=lambda x: x[-1])  # sort by timestamp
+
+        # check for duplicates
+        timestamps = [t[-1] for t in self.timestamps]
+        if len(timestamps) != len(np.unique(timestamps)):
+            raise ValueError("Timestamps are not unique.")
+
+        # convert to str and dump to json
+        timestamps = [(fname, i, str(t)) for (fname, i, t) in self.timestamps]
+        with self.index_path.open("wb") as f:
+            json.dump(timestamps, f)
 
     def set_timestamp_bounds(self, low, high, debug=False):
         """Filter timestamps loaded from dataloader between bounds.
@@ -198,6 +256,13 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         return tdict
 
+    def select_from_nptime(self, nptime: np.datetime64) -> Tuple[str, int]:
+        """Get file name and line id for a given timestamp string."""
+        if nptime not in self.nptime_to_loc_info:
+            raise ValueError(f"Timestamp {nptime} not found in dataset.")
+        idx = self.nptime_to_loc_info[nptime]["dataset_index"]
+        return self[idx]
+
     def __getitem__(
         self,
         i,
@@ -209,16 +274,16 @@ class XarrayDataset(torch.utils.data.Dataset):
         interpolate_nans = self.interpolate_nans if interpolate_nans is None else interpolate_nans
         warning_on_nan = self.warning_on_nan if warning_on_nan is None else warning_on_nan
 
-        file_id, line_id, timestamp = self.id2pt[i]
+        fname, line_id, _ = self.id2pt[i]
 
-        if self.cached_fileid != file_id:
+        if self.cached_fname != fname:
             if self.cached_xrdataset is not None:
                 self.cached_xrdataset.close()
-            xrdataset = xr.open_dataset(self.files[file_id], **self.xr_options)
+            xrdataset = xr.open_dataset(self.path / fname, **self.xr_options)
             # postprocess some coord names
             xrdataset = optionally_rename_dimensions(xrdataset)
 
-            self.cached_fileid = file_id
+            self.cached_fname = fname
             self.cached_xrdataset = xrdataset
 
         obsi = self.cached_xrdataset.isel(time=line_id)  # pytype: disable=attribute-error
@@ -232,7 +297,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         if warning_on_nan and interpolate_nans != nan_util.NanInterpolationMethod.NONE:
             if any([x.isnan().any().item() for x in tdict.values()]):
-                warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
+                warnings.warn(f"NaN values detected in {fname} {line_id}")
 
         if return_nan_mask:
             return tdict, nan_mask
