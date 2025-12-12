@@ -32,7 +32,7 @@ class ZarrIterativeWriter:
                 print("path already exists")
                 shutil.rmtree(path)
 
-    def write(self, xr_dataset, append_dim="time"):
+    def write(self, xr_dataset, step: int | None = None, append_dim="time"):
         with self.synchronizer:
             is_initialized = self.path.exists()
             args = (
