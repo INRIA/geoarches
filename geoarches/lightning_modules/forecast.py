@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
 
+from geoarches.backbones import dit
 from geoarches.dataloaders import zarr
 from geoarches.utils.tensordict_utils import check_pred_has_no_nans, tensordict_apply
 
@@ -38,6 +39,7 @@ class ForecastModule(BaseLightningModule):
         rollout_iterations=1,
         test_filename_suffix="",
         check_nans_in_pred=False,  # For debugging nan loss.
+        use_masked_loss=True,
         **kwargs,
     ):
         """should create self.encoder and self.decoder in subclasses"""
@@ -52,7 +54,7 @@ class ForecastModule(BaseLightningModule):
         self.variables = stats.variables
         self.levels = stats.levels
 
-        loss_coeffs = stats.compute_loss_coeffs()
+        loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
         state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
 
         self.loss_coeffs = loss_coeffs * state_scaler.pow(self.pow)
@@ -169,13 +171,15 @@ class ForecastModule(BaseLightningModule):
 
         # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
-        pred = pred * mask
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
-
-        weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        weighted_error = weighted_error.sum() / mask.sum()  # mean
-
-        loss = sum(weighted_error.values())
+        if self.use_masked_loss:
+            pred = pred * mask
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+            weighted_error = weighted_error.sum() / mask.sum()  # mean
+            loss = sum(weighted_error.values())
+        else:
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs).mean()
+            loss = sum(weighted_error.values())
 
         return loss
 
@@ -370,17 +374,22 @@ class ForecastModuleWithCond(ForecastModule):
         *args,
         cond_dim=32,
         cond_times=["month", "hour_of_day"],
+        # Temporary flag to allow backward compatibility with older checkpoints.
+        cond_times_backward_compatible=False,
         use_avg=False,
         avg_with_modules=[],
         **kwargs,
     ):
-        from geoarches.backbones import dit
-
         super().__init__(*args, **kwargs)
         # cond_dim should be given as arg to the backbone
-        self.time_embedders = nn.ModuleDict(
-            {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
-        )
+        self.cond_times_backward_compatible = cond_times_backward_compatible
+        if cond_times_backward_compatible:
+            self.month_embedder = dit.TimestepEmbedder(cond_dim)
+            self.hour_embedder = dit.TimestepEmbedder(cond_dim)
+        else:
+            self.time_embedders = nn.ModuleDict(
+                {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
+            )
         self.use_avg = use_avg
 
         self.avg_modules = None
@@ -394,14 +403,12 @@ class ForecastModuleWithCond(ForecastModule):
             self.strict_loading = False
 
     def forward(self, batch, use_avg=True):
-        # convert time into str
-
-        cond_emb = None
-        for time_name, time_embedder in self.time_embedders.items():
-            time_emb = time_embedder(batch[time_name])
-            if cond_emb is None:
-                cond_emb = time_emb
-            else:
-                cond_emb += time_emb
+        # Generate conditional embedding by combining embeddings from different time features.
+        if self.cond_times_backward_compatible:
+            cond_emb = dit.get_combined_time_embedding(
+                {"month": self.month_embedder, "hour_of_day": self.hour_embedder}, batch
+            )
+        else:
+            cond_emb = dit.get_combined_time_embedding(self.time_embedders, batch)
 
         return super().forward(batch, cond_emb)

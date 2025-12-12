@@ -43,7 +43,7 @@ class WeatherEncodeDecodeLayer(nn.Module):
         n_concatenated_states=0,
         final_interpolation=False,
         circular_padding=False,
-        forcings_embedding: ForcingsEmbedding | None = None,
+        forcings_embedding: ForcingsEmbedding | str | None = None,
         auto_move_to_device=True,
         constant_mask_file="archesweather_constant_masks",
     ) -> None:

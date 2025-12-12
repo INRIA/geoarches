@@ -12,7 +12,7 @@ from hydra.utils import instantiate
 from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
-from geoarches.backbones.dit import TimestepEmbedder
+from geoarches.backbones import dit
 from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
@@ -31,6 +31,8 @@ class DiffusionModule(BaseLightningModule):
         stats_cfg,
         name="diffusion",
         cond_dim=32,
+        # Temporary flag to allow backward compatibility with older checkpoints.
+        cond_times_backward_compatible=False,
         cond_times=["month", "hour_of_day"],
         num_train_timesteps=1000,
         scheduler="flow",  # only available option
@@ -38,7 +40,6 @@ class DiffusionModule(BaseLightningModule):
         beta_schedule="squaredcos_cap_v2",
         beta_start=0.0001,
         beta_end=0.012,
-        loss_weighting_strategy=None,
         conditional="",  # things that the model is conditioned
         load_deterministic_model=False,
         pow=2,
@@ -52,6 +53,7 @@ class DiffusionModule(BaseLightningModule):
         sd3_timestep_sampling=True,
         noise_scheduler=None,
         inference_scheduler=None,
+        use_masked_loss=True,
         **kwargs,
     ):
         """
@@ -81,11 +83,16 @@ class DiffusionModule(BaseLightningModule):
 
         # cond_dim should be given as arg to the backbone
         # State time conditioning.
-        self.time_embedders = nn.ModuleDict(
-            {time: TimestepEmbedder(cond_dim) for time in cond_times}
-        )
+        self.cond_times_backward_compatible = cond_times_backward_compatible
+        if cond_times_backward_compatible:
+            self.month_embedder = dit.TimestepEmbedder(cond_dim)
+            self.hour_embedder = dit.TimestepEmbedder(cond_dim)
+        else:
+            self.time_embedders = nn.ModuleDict(
+                {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
+            )
         # Noise level.
-        self.timestep_embedder = TimestepEmbedder(cond_dim)
+        self.timestep_embedder = dit.TimestepEmbedder(cond_dim)
 
         self.noise_scheduler = noise_scheduler or FlowMatchEulerDiscreteScheduler(
             num_train_timesteps=num_train_timesteps
@@ -93,7 +100,7 @@ class DiffusionModule(BaseLightningModule):
 
         self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
-        self.loss_coeffs = stats.compute_loss_coeffs()
+        self.loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
         self.state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
         self.state_normalization = stats_cfg.compute_state_scaler_args.state_normalization
 
@@ -123,14 +130,13 @@ class DiffusionModule(BaseLightningModule):
             pred_state = batch.get("pred_state", pred_state)
             input_state = tensordict_cat([pred_state, input_state], dim=1)
 
-        # conditional by default
-        cond_emb = None
-        for time_name, time_embedder in self.time_embedders.items():
-            time_emb = time_embedder(batch[time_name])
-            if cond_emb is None:
-                cond_emb = time_emb
-            else:
-                cond_emb += time_emb
+        # Generate conditional embedding by combining embeddings from different time features.
+        if self.cond_times_backward_compatible:
+            cond_emb = dit.get_combined_time_embedding(
+                {"month": self.month_embedder, "hour_of_day": self.hour_embedder}, batch
+            )
+        else:
+            cond_emb = dit.get_combined_time_embedding(self.time_embedders, batch)
 
         timestep_emb = self.timestep_embedder(timesteps)
         cond_emb = timestep_emb if cond_emb is None else cond_emb + timestep_emb
@@ -233,12 +239,15 @@ class DiffusionModule(BaseLightningModule):
 
         # Mask loss where gt is NaN.
         mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
-        pred = pred * mask
         gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
-
-        weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        weighted_error = weighted_error.sum() / mask.sum()  # mean
-        loss = sum(weighted_error.values())
+        if self.use_masked_loss:
+            pred = pred * mask
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+            weighted_error = weighted_error.sum() / mask.sum()  # mean
+            loss = sum(weighted_error.values())
+        else:
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs).mean()
+            loss = sum(weighted_error.values())
 
         return loss
 
@@ -359,14 +368,10 @@ class DiffusionModule(BaseLightningModule):
         loop_batch = {k: v for k, v in batch.items()}
 
         for i in tqdm(range(iterations), disable=disable_tqdm):
-            print(i)
             seed_i = member + 1000 * i + batch_nb * 10**6
-            print(loop_batch.keys())
-
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
             add_forcings = "future_forcings" in loop_batch
-            print("Add forcings:", add_forcings)
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
 
