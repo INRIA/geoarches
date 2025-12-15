@@ -170,7 +170,7 @@ class XarrayDataset(torch.utils.data.Dataset):
         return file_stamps
 
     def load_index(self) -> List[Tuple[str, int, np.datetime64]]:
-        with self.index_path.open("rb") as f:
+        with self.index_path.open("r") as f:
             timestamps = json.load(f)
         timestamps = [
             (fname, i, np.datetime64(str_timestamp)) for (fname, i, str_timestamp) in timestamps
@@ -198,7 +198,7 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         # convert to str and dump to json
         timestamps = [(fname, i, str(t)) for (fname, i, t) in self.timestamps]
-        with self.index_path.open("wb") as f:
+        with self.index_path.open("w") as f:
             json.dump(timestamps, f)
 
     def set_timestamp_bounds(self, low, high, debug=False):

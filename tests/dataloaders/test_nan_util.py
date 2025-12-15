@@ -1,8 +1,11 @@
+import numpy as np
+import pytest
 import tensordict
 import torch
 import xarray as xr
 
 from geoarches.dataloaders import nan_util
+from geoarches.utils.tensordict_utils import tensordict_apply
 
 
 class TestPreNormInterpolateNans:
