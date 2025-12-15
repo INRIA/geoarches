@@ -82,8 +82,6 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         # deltapred_stats = torch.load(deltapred_path, weights_only=True)
 
     def __getitem__(self, i, normalize=True, load_hard_neg=True):
-        out = {}
-        di = self.lead_time_hours // self.timedelta
         out = super().__getitem__(i)
 
         if hasattr(self, "pred_ds"):
