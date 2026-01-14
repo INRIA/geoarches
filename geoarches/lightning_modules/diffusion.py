@@ -359,14 +359,12 @@ class DiffusionModule(BaseLightningModule):
         loop_batch = {k: v for k, v in batch.items()}
 
         for i in tqdm(range(iterations), disable=disable_tqdm):
-            print(i)
             seed_i = member + 1000 * i + batch_nb * 10**6
-            print(loop_batch.keys())
 
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
             add_forcings = "future_forcings" in loop_batch
-            print("Add forcings:", add_forcings)
+
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
 

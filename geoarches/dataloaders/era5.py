@@ -44,6 +44,7 @@ filename_filters = dict(
     aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
     aimip_rollout_z0012=lambda x: any(str(y) in x for y in range(1978, 2025))
     and ("0h" in x or "12h" in x),
+    rollout=lambda x: any(str(y) in x for y in range(2023, 2025)),
 )
 
 default_dimension_indexers = {
@@ -340,6 +341,7 @@ class Era5Forecast(Era5Dataset):
             raise ValueError(
                 "Either both forcings_path and forcing_vars must be set, or neither must be set."
             )
+
         if forcings_path:
             print("##### FORCINGS: ", forcing_vars, " #####")
             forcing_vars = dict(forcings=forcing_vars)
@@ -412,10 +414,8 @@ class Era5Forecast(Era5Dataset):
                 norm_file=forcings_stats_path, variables=forcing_vars, levels=None
             )
             self.forcings_mean, self.forcings_std = forcing_stats.load_normalization_stats()
-            self.forcings_mean, self.forcings_std = (
-                self.forcings_mean.squeeze(1),
-                self.forcings_std.squeeze(1),
-            )
+            self.forcings_mean = self.forcings_mean.squeeze(1)
+            self.forcings_std = self.forcings_std.squeeze(1)
         else:
             warnings.warn(
                 "No forcings_stats_path provided. Forcings will not be normalized.", UserWarning
@@ -444,7 +444,9 @@ class Era5Forecast(Era5Dataset):
             dtype=torch.int64,
         )
         timestamp = pd.Timestamp(datetime)
-        out["hour_of_day"] = torch.tensor(timestamp.hour)
+        out["hour_of_day"] = (
+            torch.tensor(timestamp.hour) if hasattr(timestamp, "hour") else torch.tensor(0)
+        )
         out["day_of_month"] = torch.tensor(timestamp.day)
         out["day_of_year"] = torch.tensor(timestamp.dayofyear)
         out["month"] = torch.tensor(timestamp.month)
@@ -575,7 +577,7 @@ class Era5Forecast(Era5Dataset):
                 )
                 for k, v in out.items()
             }
-
+            out["forcings"] = out["forcings"]
         return out
 
     def denormalize(self, batch):

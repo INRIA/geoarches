@@ -62,7 +62,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         if pred_path is not None:
             self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
-                dimension_indexers=dimension_indexers | pred_dimension_indexers,
+                dimension_indexers=dict(dimension_indexers) | dict(pred_dimension_indexers),
                 filename_filter=self.filename_filter,
                 variables=self.variables,
             )
@@ -123,6 +123,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             out["pred_state"], pred_timestamp = self.pred_ds.__getitem__(
                 i + di if self.load_prev else i, return_timestamp=True
             )
+
             assert out["timestamp"] == pred_timestamp, (
                 f"badly aligned {i}:"
                 + pd.Timestamp(out["timestamp"].int().item() * 10**9).strftime("%Y-%m-%d-%H-%M")
@@ -132,6 +133,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
 
         if normalize:
             out = self.normalize(out)
+            # print("Type of state input: ", out["state"]["surface"].dtype)
 
         if self.load_hard_neg and load_hard_neg:
             rb = 2 * np.random.randint(2) - 1

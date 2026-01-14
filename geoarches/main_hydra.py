@@ -237,6 +237,7 @@ def main(cfg: DictConfig):
     )
 
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    print(cfg)
 
     if cfg.cluster.use_custom_requeue and main_node:
         print("setting up custom slurm requeuing")
@@ -254,6 +255,7 @@ def main(cfg: DictConfig):
         signal.signal(signal.SIGTERM, handler)
 
     torch.set_float32_matmul_precision("medium")
+    num_nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", 1))
     L.seed_everything(cfg.seed)
     trainer = L.Trainer(
         devices="auto",
@@ -273,6 +275,7 @@ def main(cfg: DictConfig):
         limit_test_batches=getattr(cfg, "limit_test_batches", cfg.limit_val_batches),
         accumulate_grad_batches=cfg.accumulate_grad_batches,
         reload_dataloaders_every_n_epochs=1,
+        num_nodes=num_nodes,
     )
 
     if cfg.debug:

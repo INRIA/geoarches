@@ -1,5 +1,6 @@
 import importlib
 from enum import Enum
+from functools import partial
 
 import numpy as np
 import torch
@@ -101,10 +102,18 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
 
         # decode layers
+        self.circular_padding = circular_padding
         if circular_padding:
-            pad_args = dict(padding="same", padding_mode="circular")
+            zero_pad_args = dict(pad=(0, 0, 1, 1, 0, 0), mode="constant")
+            circ_pad_args = dict(pad=(1, 1, 0, 0, 0, 0), mode="circular")
+
+            # Calculate same padding for kernel size 3 and stride 1
+            self.circular_pad = partial(nn.functional.pad, **circ_pad_args)
+            self.zero_pad = partial(nn.functional.pad, **zero_pad_args)
+
         else:
-            pad_args = dict(padding=1, padding_mode="zeros")
+            pad_args = dict(pad=(1, 1, 1, 1, 0, 0), mode="constant")
+            self.zero_pad = partial(nn.functional.pad, **pad_args)
 
         self.surface_deconv = nn.Conv2d(
             out_emb_dim,
@@ -112,15 +121,14 @@ class WeatherEncodeDecodeLayer(nn.Module):
             kernel_size=3,
             stride=1,
             bias=0,
-            **pad_args,
         )
+
         self.level_deconv = nn.Conv2d(
             out_emb_dim // 2,
             level_ch * patch_size[-1] ** 2,
             kernel_size=3,
             stride=1,
             bias=0,
-            **pad_args,
         )
         self.pixelshuffle = nn.PixelShuffle(patch_size[-1])
         ICNR_init(
@@ -185,6 +193,8 @@ class WeatherEncodeDecodeLayer(nn.Module):
         if self.forcings_embedding == ForcingsEmbedding.SURFACE:
             surface = torch.cat([surface, forcings], dim=1)
 
+        surface = surface.bfloat16()
+        level = level.bfloat16()
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
 
@@ -199,9 +209,20 @@ class WeatherEncodeDecodeLayer(nn.Module):
     def decode(self, x):
         if self.forcings_embedding == ForcingsEmbedding.SEPARATE:
             # Forcings were concatenated first to level dimension.
-            surface, level = x[:, :, 1], x[:, :, 2:]  # B, C, Lev, Lat, Lon
+            surface, level = x[:, :, 1:2], x[:, :, 2:]  # B, C, Lev, Lat, Lon
         else:
-            surface, level = x[:, :, 0], x[:, :, 1:]
+            surface, level = x[:, :, 0:1], x[:, :, 1:]
+
+        if self.circular_padding is True:
+            surface = self.circular_pad(surface)
+            surface = self.zero_pad(surface)  # pad longitude
+            level = self.circular_pad(level)
+            level = self.zero_pad(level)  # pad longitude
+            surface = surface.squeeze(2)
+        else:
+            surface = self.zero_pad(surface)
+            level = self.zero_pad(level)
+            surface = surface.squeeze(2)
 
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)

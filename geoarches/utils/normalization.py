@@ -139,8 +139,8 @@ class NormalizationStatistics:
                     mean[var_type] = mean[var_type][..., None]
                     std[var_type] = std[var_type][..., None]
 
-        self.mean = TensorDict(mean)
-        self.std = TensorDict(std)
+        self.mean = TensorDict(mean, batch_size=[])
+        self.std = TensorDict(std, batch_size=[])
 
         return self.mean, self.std
 
@@ -232,7 +232,7 @@ class NormalizationStatistics:
 
         # Downweight vertical velocity if specified
         if downweight_vertical_velocity:
-            # Downweight vertical velocity (assumed to be the last level variable)
+            # Downweight vertical velocity
             vv_index = self.variables["level"].index("vertical_velocity")
             state_scaler["level"][vv_index] *= 0.3  # Downweight by a factor of 3
 

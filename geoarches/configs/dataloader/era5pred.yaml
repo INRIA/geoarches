@@ -5,6 +5,18 @@ dataset:
   lead_time_hours: 24 # mixed
   load_prev: True
   load_hard_neg: False
+  multistep: ${oc.select:module.train.rollout_iterations,1}
+  variables:
+    surface: ${stats.module.variables.surface}
+    level: ${stats.module.variables.level}
+  dimension_indexers:
+    level: ${stats.module.levels}
+  pred_dimension_indexers:
+    level: ${stats.module.levels}
+  warning_on_nan: True
+  interpolate_input: none  # Don't remove nans in the model input.
+  interpolate_target: none  # Don't remove nans in the model target.
+
 
 validation_args:
   multistep: 2

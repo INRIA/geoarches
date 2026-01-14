@@ -62,9 +62,11 @@ else:
 # create dataset and dataloader
 ds = instantiate(
     cfg.dataloader.dataset,
-    path="data/era5_240/full/",
-    domain="all",
+    cfg.stats,
+    domain="rollout",
 )
+
+era5_name = cfg.dataloader.dataset.path.split("/")[-2]
 
 
 def collate_fn(lst):
@@ -72,17 +74,22 @@ def collate_fn(lst):
 
 
 dl = torch.utils.data.DataLoader(
-    ds, batch_size=1, num_workers=3, shuffle=False, collate_fn=collate_fn
+    ds, batch_size=1, num_workers=1, shuffle=False, collate_fn=collate_fn
 )
 
 current_year = 1979
 xr_list = []
 for i, batch in tqdm(enumerate(dl)):
-    fname = Path(args.output_path).joinpath(f"era5_240_pred_{current_year}_0h.nc")
-    if fname.exists():
-        continue
+    fname = Path(args.output_path).joinpath(f"{era5_name}_pred_{current_year}_0h.nc")
 
+    print(pd.to_datetime(batch["timestamp"][0], utc=True, unit="s"))
     next_year = pd.to_datetime(batch["timestamp"][0] + 6 * 3600, utc=True, unit="s").year
+
+    if fname.exists():
+        if next_year > current_year:
+            print("skipping to next year", next_year)
+            current_year = next_year
+        continue
 
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for (k, v) in batch.items()}
     out = module.forward(batch)
@@ -96,10 +103,11 @@ for i, batch in tqdm(enumerate(dl)):
         xr_dataset = xr.concat(xr_list, dim="time")
 
         for hour in (0, 6, 12, 18):
-            fname = f"era5_240_pred_{current_year}_{hour}h.nc"
+            fname = f"{era5_name}_pred_{current_year}_{hour}h.nc"
             xr_dataset.sel(time=(xr_dataset.time.dt.hour == hour)).to_netcdf(
                 Path(args.output_path) / fname,
                 encoding=dict(time=dict(units="hours since 2000-01-01")) if not i else None,
             )
         xr_list.clear()
         current_year = next_year
+        print("--------------------------------\n")

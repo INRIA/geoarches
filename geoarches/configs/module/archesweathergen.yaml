@@ -36,7 +36,7 @@ module:
 defaults:
   - metrics:  # Read from module/metrics/ folder.
     - era5_ensemble
-    - era5_brier
+    #- era5_brier
 
 val:
   num_members: 5
