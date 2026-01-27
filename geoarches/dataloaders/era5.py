@@ -517,11 +517,10 @@ class Era5Forecast(Era5Dataset):
 
             self.set_timestamp_bounds(start_time, end_time)
             self.timedelta = timedelta_hours or tdelta
-            self.filter_timestamps_by_hour()
         else:
             self.timedelta = timedelta_hours
 
-        self.current_multistep = 1
+        self.filter_timestamps_by_hour()
 
         # Load normalization statistics.
         self.data_mean, self.data_std = None, None
