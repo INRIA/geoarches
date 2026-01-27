@@ -86,14 +86,12 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
 
         if hasattr(self, "pred_ds"):
             nptime = np.datetime64(out["timestamp"].int().item(), "s")
-            out["pred_state"] = self.pred_ds.select_from_nptime(nptime)
-            out["pred_state"] = self.normalize(out["pred_state"])
+            pred_state = self.pred_ds.select_from_nptime(nptime)
+            normalized_pred_state = self.normalize(pred_state)
+            # Interpolate Nans after normalize (ie. if filling with zeros).
             out["pred_state"] = nan_util.post_norm_interpolate_nans(
-                out["pred_state"], self.interpolate_input
+                normalized_pred_state, self.interpolate_input
             )
-
-        # if normalize:
-        #   out = self.normalize(out)
 
         if self.load_hard_neg and load_hard_neg:
             rb = 2 * np.random.randint(2) - 1
