@@ -182,7 +182,10 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         Saves under json
         """
-        files = [x for x in self.path.glob("*") if x.suffix in engine_mapping.keys()]
+        # Ensure we only keep files with the expected extension.
+        # In particular, this ensures we filter out temporary files which have
+        # additional .tmp.xxx suffixes.
+        files = (x for x in self.path.glob("*") if x.suffix in engine_mapping.keys())
 
         self.timestamps = []
 
@@ -193,8 +196,13 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         # check for duplicates
         timestamps = [t[-1] for t in self.timestamps]
-        if len(timestamps) != len(np.unique(timestamps)):
-            raise ValueError("Timestamps are not unique.")
+        num_timestamps = len(timestamps)
+        num_unique_timestamps = len(set(timestamps))
+        if num_timestamps != num_unique_timestamps:
+            raise ValueError(
+                f"Timestamps are not unique. Found {num_timestamps} timestamps "
+                f"but only {num_unique_timestamps} unique timestamps."
+            )
 
         # convert to str and dump to json
         timestamps = [(fname, i, str(t)) for (fname, i, t) in self.timestamps]
