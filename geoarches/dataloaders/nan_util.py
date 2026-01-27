@@ -64,7 +64,10 @@ def post_norm_interpolate_nans(
         return t
     if nan_interpolation_method == NanInterpolationMethod.GLOBAL_MEAN:
         # Average over the spatial dims (lat and lon).
-        fill_value = t.nanmean(dim=(-2, -1), keepdim=True)
+        if isinstance(t, torch.Tensor):
+            fill_value = t.nanmean(dim=(-2, -1), keepdim=True)
+        else:
+            fill_value = tensordict_apply(torch.nanmean, t, dim=(-2, -1), keepdim=True)
     elif nan_interpolation_method == NanInterpolationMethod.ZERO_AFTER_NORM:
         fill_value = 0.0
     else:
