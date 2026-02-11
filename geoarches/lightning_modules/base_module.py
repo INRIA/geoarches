@@ -71,9 +71,12 @@ class BaseLightningModule(L.LightningModule):
         if Path(path).is_dir():
             path = Path(path) / "checkpoints"
             paths = list(Path(path).glob("*.ckpt"))
+            print(paths)
+            print(ckpt_fname)
             if ckpt_fname is not None:
                 paths = [p for p in paths if ckpt_fname in p.name]
             # sort by date
+            print(paths)
             path = sorted(paths, key=lambda x: x.stat().st_mtime)[-1]
 
         sd = torch.load(path, weights_only=False, map_location="cpu")["state_dict"]

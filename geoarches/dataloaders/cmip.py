@@ -1,6 +1,5 @@
 import importlib.resources
 
-import pandas as pd
 import torch
 from tensordict.tensordict import TensorDict
 
@@ -12,21 +11,6 @@ from geoarches.utils.tensordict_utils import (
 
 from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
-
-import psutil
-import os
-
-def print_cpu_memory_usage(position):
-    mem = psutil.virtual_memory()
-    
-    used_mb = (mem.total - mem.available) / (1024 ** 2)  # all processes combined
-    total_mb = mem.total / (1024 ** 2)
-    available_mb = mem.available / (1024 ** 2)
-  # Current process memory info
-    process = psutil.Process(os.getpid())
-    process_mem_mb = process.memory_info().rss / (1024 ** 2)  # Resident Set Size in MB
-
-    print(f"{position} | System Memory: used={used_mb:.2f} MB | available={available_mb:.2f} MB | total={total_mb:.2f} MB | Process Memory: {process_mem_mb:.2f} MB")
 
 
 class CMIPForecast(XarrayDataset):
@@ -44,6 +28,7 @@ class CMIPForecast(XarrayDataset):
         filename_filter=None,
         lead_time_months=1,
         multistep=1,
+        lead_times=None,
         load_prev=True,
         load_clim=False,
         norm_scheme="spatial",
@@ -55,7 +40,7 @@ class CMIPForecast(XarrayDataset):
         add_orography=False,
         spatial_forcing_variables=[
             "methane",
-            "cfc11",
+            # "cfc11",
             "carbon",
             "nitrous",
             "load_ASNO3M",
@@ -94,6 +79,9 @@ class CMIPForecast(XarrayDataset):
         val_filter=["ssp245"],
         zg_log=False,
         full_ozone=False,
+        aerosol_log=False,
+        predict_yearly_temp=False,
+        predict_yearly_average=False,
     ):
         """
         Args:
@@ -110,6 +98,19 @@ class CMIPForecast(XarrayDataset):
         """
         self.__dict__.update(locals())  # concise way to update self with input arguments
         self.timedelta = 1
+        # Normalize lead_times: allow user to pass a list of lead times (months)
+        # Backwards compatible behaviour:
+        # - if `lead_times` is provided it is used (list of ints)
+        # - else if `multistep` > 1, create lead_times as [lead_time_months * (i+1) for i in range(multistep)]
+        # - else use [lead_time_months]
+        if lead_times is not None:
+            # ensure a sorted list of ints
+            self.lead_times = sorted([int(x) for x in lead_times])
+        else:
+            if multistep is not None and multistep > 1:
+                self.lead_times = [lead_time_months * (i + 1) for i in range(multistep)]
+            else:
+                self.lead_times = [lead_time_months]
         filename_filters = dict(
             all=(lambda _: True),
             train=lambda x: any(
@@ -151,7 +152,7 @@ class CMIPForecast(XarrayDataset):
         
         self.master_list_spatial_forcing_variables = [
             "methane",
-            "cfc11",
+            # "cfc11",
             "carbon",
             "nitrous",
             "load_ASNO3M",
@@ -228,7 +229,7 @@ class CMIPForecast(XarrayDataset):
             #     stats_file_path = "cmip_stats_test_welfords_without_piControl.pt"
             geoarches_stats_path = importlib.resources.files(geoarches_stats)
             norm_file_path = geoarches_stats_path / stats_file_path
-            spatial_norm_stats = torch.load(norm_file_path)
+            spatial_norm_stats = torch.load(norm_file_path,weights_only=False)
             # a hack to add exp_id without needing to normalize it.
             spatial_norm_stats["non_spatial_forcings_mean"] = torch.concat(
                 [spatial_norm_stats["non_spatial_forcings_mean"], torch.tensor([0])]
@@ -236,71 +237,95 @@ class CMIPForecast(XarrayDataset):
             spatial_norm_stats["non_spatial_forcings_std"] = torch.concat(
                 [spatial_norm_stats["non_spatial_forcings_std"], torch.tensor([1])]
             )
-            self.data_mean = TensorDict(
-                surface=spatial_norm_stats["surface_mean"],
-                level=spatial_norm_stats["level_mean"],
-                lev=spatial_norm_stats["lev_mean"],
-                spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
-                non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
-            )
 
-
-            self.data_std = TensorDict(
-                surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
-                level=spatial_norm_stats["level_std"].nanmean(axis=(-1, -2), keepdim=True),
-                lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
-                spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
-                    axis=(-1, -2), keepdim=True
-                ),
-                non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
-            )
-            #this is redundant with norm_scheme == zg_log
-            if(self.zg_log):
-                geoarches_stats_path = importlib.resources.files(geoarches_stats)
-                norm_file_path = geoarches_stats_path / 'cmip_stats_zg_log.pt'
-                spatial_norm_stats = torch.load(norm_file_path)
-                if(norm_scheme == 'full_ocean'):
-                    self.data_mean['level'][-1] = spatial_norm_stats['level_mean'][-1,1:]
-                    self.data_std['level'][-1] = spatial_norm_stats['level_std'][-1,1:].nanmean(axis=(-1, -2),keepdims=True)
+            if ('full_ocean' in path):
+                self.data_mean = TensorDict(
+                    surface=spatial_norm_stats["surface_mean"],
+                    lev=spatial_norm_stats["lev_mean"],
+                    spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
+                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
+                )
+                self.data_std = TensorDict(
+                    surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
+                    lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
+                    spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
+                        axis=(-1, -2), keepdim=True
+                    ),
+                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
+                )
+            else:
+                self.data_mean = TensorDict(
+                    surface=spatial_norm_stats["surface_mean"],
+                    level=spatial_norm_stats["level_mean"],
+                    lev=spatial_norm_stats["lev_mean"],
+                    spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
+                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
+                )
+                self.data_std = TensorDict(
+                    surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
+                    level=spatial_norm_stats["level_std"].nanmean(axis=(-1, -2), keepdim=True),
+                    lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
+                    spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
+                        axis=(-1, -2), keepdim=True
+                    ),
+                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
+                )
+            if self.predict_yearly_temp:
+                if not self.predict_yearly_average:
+                    self.data_mean['surface'] = torch.cat([self.data_mean['surface'], self.data_mean['surface'][0:1]], dim=0)
+                    self.data_std['surface'] = torch.cat([self.data_std['surface'], self.data_std['surface'][0:1]], dim=0)
+                    self.data_mean['level'] = torch.cat([self.data_mean['level'], self.data_mean['level'][1:2]], dim=0)
+                    self.data_std['level'] = torch.cat([self.data_std['level'], self.data_std['level'][1:2]], dim=0)
                 else:
-                    self.data_mean['level'][-1] = spatial_norm_stats['level_mean'][-1]
-                    self.data_std['level'][-1] = spatial_norm_stats['level_std'][-1].nanmean(axis=(-1, -2),keepdims=True)
-            if(len(level_variables) == 4):
+                    self.data_mean['surface'] = torch.cat([self.data_mean['surface'], self.data_mean['surface'][0:1]], dim=0)
+                    self.data_std['surface'] = torch.cat([self.data_std['surface'], self.data_std['surface'][0:1]], dim=0)
+                    self.data_mean['level'] = torch.cat([self.data_mean['level'], self.data_mean['level'][1:2]], dim=0)
+                    self.data_std['level'] = torch.cat([self.data_std['level'], self.data_std['level'][1:2]], dim=0)
+            if(len(level_variables) == 4): #special case when zg is removed, need to be more precise here
                 self.data_mean['level'] = self.data_mean['level'][:len(level_variables)]     
-                self.data_std['level'] = self.data_std['level'][:len(level_variables)]            
+                self.data_std['level'] = self.data_std['level'][:len(level_variables)]
+
             if(not self.full_ozone):
-                self.data_mean["spatial_forcings"] = [
-                    self.data_mean["spatial_forcings"][i]
-                    for i, val in enumerate(self.spatial_forcing_variables)
-                    if val in self.master_list_spatial_forcing_variables
-                ]
-                self.data_mean["non_spatial_forcings"] = [
-                    self.data_mean["non_spatial_forcings"][i]
+                if(len(self.spatial_forcing_variables) ==0):
+                    self.data_mean["spatial_forcings"] = 0
+                    self.data_std['spatial_forcings'] = 1
+                else:
+                    self.data_mean["spatial_forcings"] = [
+                        self.data_mean["spatial_forcings"][self.master_list_spatial_forcing_variables.index(val)]
+                        for i, val in enumerate(self.spatial_forcing_variables)
+                        if val in self.master_list_spatial_forcing_variables
+                    ]
+
+                    self.data_std["spatial_forcings"] = [
+                        self.data_std["spatial_forcings"][self.master_list_spatial_forcing_variables.index(val)]
+                        for i, val in enumerate(self.spatial_forcing_variables)
+                        if val in self.master_list_spatial_forcing_variables
+                    ]
+                self.data_std["non_spatial_forcings"] = torch.tensor([
+                    self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
                     for i, val in enumerate(self.non_spatial_forcing_variables)
                     if val in self.master_list_non_spatial_forcing_variables
-                ]
-                self.data_std["spatial_forcings"] = [
-                    self.data_std["spatial_forcings"][i]
-                    for i, val in enumerate(self.spatial_forcing_variables)
-                    if val in self.master_list_spatial_forcing_variables
-                ]
-                self.data_std["non_spatial_forcings"] = [
-                    self.data_std["non_spatial_forcings"][i]
-                    for i, val in enumerate(self.non_spatial_forcing_variables)
-                    if val in self.master_list_non_spatial_forcing_variables
-                ]
+                ])
             else:
                 #accidentally added orography to full_ozone normalization
                 self.data_mean["spatial_forcings"] = self.data_mean["spatial_forcings"][:-1]
                 self.data_mean["non_spatial_forcings"] = self.data_mean["non_spatial_forcings"][:-1]
                 self.data_std["spatial_forcings"] = self.data_std["spatial_forcings"][:-1]
                 self.data_std["non_spatial_forcings"] = self.data_std["non_spatial_forcings"][:-1]
-
-
+            self.data_std["non_spatial_forcings"] = torch.tensor([
+                self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
+                for i, val in enumerate(self.non_spatial_forcing_variables)
+                if val in self.master_list_non_spatial_forcing_variables
+            ])
+            self.data_mean["non_spatial_forcings"] = torch.tensor([
+                self.data_mean["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
+                for i, val in enumerate(self.non_spatial_forcing_variables)
+                if val in self.master_list_non_spatial_forcing_variables
+            ])
         self.surface_variables = surface_variables
-        self.level_variables = [
-            a + " " + str(p // 100) for a in level_variables for p in pressure_levels
-        ]
+        # self.level_variables = [
+        #     a + " " + str(p // 100) for a in level_variables for p in pressure_levels
+        # ]
         times_seconds = [v[2].item() // 10**9 for k, v in self.id2pt.items()]
         self.next_timestamp_map = {k: v for k, v in list(zip(times_seconds, times_seconds[1:]))}
 
@@ -309,7 +334,8 @@ class CMIPForecast(XarrayDataset):
         self.orography = torch.load(f"{forcings_path}/orography.pt")[
             None
         ]  # add dim for stacking later
-        self.orography = (self.orography * self.orography.mean()) / self.orography.std()
+       
+        self.orography = (self.orography - self.orography.mean()) / self.orography.std()
 
     def convert_to_tensordict(self, xr_dataset):
         """
@@ -321,346 +347,120 @@ class CMIPForecast(XarrayDataset):
 
     def __len__(self):
         # Take into account previous and/or future timestamps loaded for one example.
-        offset = self.multistep + self.load_prev
-        return super().__len__() - offset * self.lead_time_months // self.timedelta
-
-    def __getitem__old(self, i, normalize=True):
-        # print_cpu_memory_usage('beginning of getitem')
-
-        # Shift index forward if need to load previous timestamp.
-        i = i + self.load_prev * self.lead_time_months // self.timedelta 
-        out = TensorDict() #this fixed a several days long memory leak ......
-        # out = dict()
-        #  load current state
-        out["state"] = super().__getitem__(i)
-        out["timestamp"] = torch.tensor(
-            self.id2pt[i][2].item() // 10**9,
-            dtype=torch.int64,
-        )  # time in seconds
-        # timestamps = out["timestamp"].detach().to("cpu").clone().numpy()
-        # times = pd.to_datetime(timestamps, unit="s").tz_localize(None)
-
-        # times = pd.to_datetime(out["timestamp"].cpu().numpy(), unit="s").tz_localize(None)
-        # current_month = torch.tensor(times.month) - 1 % 12
-        # current_year = torch.tensor(times.year)
-
-        # print_cpu_memory_usage('before get nextstate')
-#         out['state'] =   TensorDict(
-#     {
-#         "lev": torch.randn(1, 10, 144, 144),
-#         "level": torch.randn(5, 17, 144, 144),
-#         "non_spatial_forcings": torch.randn(6),
-#         "ozone": torch.randn(1, 66, 144, 144),
-#         "spatial_forcings": torch.randn(9, 144, 144),
-#         "surface": torch.randn(8, 1, 144, 144),
-#     },
-#     batch_size=[],
-# )
-        t = self.lead_time_months  # multistep
-        out["next_state"] = super().__getitem__(i + t // self.timedelta)
-        # print_cpu_memory_usage('after get nextstate')
-#         out['next_state'] = TensorDict(
-#     {
-#         "lev": torch.randn(1, 10, 144, 144),
-#         "level": torch.randn(5, 17, 144, 144),
-#         "non_spatial_forcings": torch.randn(6),
-#         "ozone": torch.randn(1, 66, 144, 144),
-#         "spatial_forcings": torch.randn(9, 144, 144),
-#         "surface": torch.randn(8, 1, 144, 144),
-#     },
-#     batch_size=[],
-# )
-
-        # Load multiple future timestamps if specified.
-        # if self.multistep > 1:
-        #     future_states = []
-        #     future_timestamps = []
-        #     for k in range(1, self.multistep + 1):
-        #         state = super().__getitem__(i + k * t // self.timedelta)
-        #         future_states.append(state)
-        #         future_timestamps.append(
-        #             torch.tensor(
-        #                 self.id2pt[i + k * t // self.timedelta][2].item() // 10**9,
-        #                 dtype=torch.int64,
-        #             )
-        #         )
-        #     out["future_states"] = torch.stack(future_states, dim=0)
-        #     out["future_timestamps"] = torch.stack(future_timestamps, dim=0)
-        # out['prev_state'] = TorchDict({'level':torch.rand(1,
-        # if self.load_prev > 1:
-        #     prev_states = []
-        #     for k in range(0, self.load_prev):
-        #         prev_states.append(
-        #             super().__getitem__(i - (self.lead_time_months * k + 1) // self.timedelta)
-        #         )
-        #     out["prev_state"] = torch.stack(prev_states, dim=0)
-        # else:
-        out["prev_state"] = super().__getitem__(
-            i - self.lead_time_months // self.timedelta
-        )
-#         out['prev_state'] = TensorDict(
-#     {
-#         "lev": torch.randn(1, 10, 144, 144),
-#         "level": torch.randn(5, 17, 144, 144),
-#         "non_spatial_forcings": torch.randn(6),
-#         "ozone": torch.randn(1, 66, 144, 144),
-#         "spatial_forcings": torch.randn(9,144, 144),
-#         "surface": torch.randn(8, 1, 144, 144),
-#     },
-#     batch_size=[],
-# )
-#             # prev_timestamp = (
-            #     self.id2pt[i - self.lead_time_months // self.timedelta][2].item() // 10**9
-            # )
-            # times = pd.to_datetime(prev_timestamp, unit="s").tz_localize(None)
-        # print_cpu_memory_usage('after get prev state')
-
-        # if self.full_ozone:
-        #     # Create new tensors detached and cloned (to break any reference to original storage)
-        #     out['state']['spatial_forcings'] = torch.cat(
-        #         [out['state']['spatial_forcings'], out['state']['ozone'][0].detach().clone()], dim=0
-        #     )
-        #     out['prev_state']['spatial_forcings'] = torch.cat(
-        #         [out['prev_state']['spatial_forcings'], out['prev_state']['ozone'][0].detach().clone()], dim=0
-        #     )
-        #     out['next_state']['spatial_forcings'] = torch.cat(
-        #         [out['next_state']['spatial_forcings'], out['next_state']['ozone'][0].detach().clone()], dim=0
-        #     )
-        #     del out['next_state']['ozone']
-        #     del out['prev_state']['ozone']
-        #     del out['state']['ozone']
-        # def copy_two_layers_deep(data, skip_key='ozone'):
-        #     new_data = TensorDict()
-        #     for outer_k, outer_v in data.items():
-        #         if isinstance(outer_v, TensorDict):
-        #             # Second layer is a dict → clone its tensors except the skipped key
-        #             new_data[outer_k] = {
-        #                 inner_k: inner_v.clone()
-        #                 for inner_k, inner_v in outer_v.items()
-        #                 if inner_k != skip_key
-        #             }
-        #         elif torch.is_tensor(outer_v):
-        #             # Second layer is directly a tensor → clone it
-        #             new_data[outer_k] = outer_v.clone()
-        #         else:
-        #             # Unrecognized type (keep as is or shallow copy)
-        #             new_data[outer_k] = outer_v
-        #     return new_data
-        # # print(out)
-        # out = copy_two_layers_deep(out)
-        # print(out)
-            # out = TensorDict({
-            #     outer_k: {
-            #         inner_k: inner_v.clone()
-            #         for inner_k, inner_v in outer_v.items()
-            #         if or (inner_k != 'ozone')
-            #     }
-            #     for outer_k, outer_v in out.items() 
-            # })
-            # Explicitly drop old tensors to free memory
-            # del out['state']['ozone']
-            # del out['prev_state']['ozone']
-            # del out['next_state']['ozone']
-            
-            # # Optionally force garbage collection (useful if in a tight training loop)
-            # import gc
-            # gc.collect()
-            # else:
-            #     out['state']['spatial_forcings'] = torch.concatenate([out['state']['spatial_forcings'],out['state']['ozone'][0]])
-        # import gc        
-        # gc.collect()
-        # torch.cuda.empty_cache()
-        # if self.full_ozone:
-        #     # Detach and ensure these are on CPU or safe device
-        #     def safe_concat(a, b):
-        #         # Ensure tensors are detached from any graph and contiguous
-        #         a = a.detach() if a.requires_grad else a
-        #         b = b.detach() if b.requires_grad else b
-        #         return torch.cat([a, b], dim=0).contiguous()
-        
-        #     # Concatenate ozone and spatial forcings safely
-        #     out['state']['spatial_forcings'] = safe_concat(out['state']['spatial_forcings'], out['state']['ozone'][0])
-        #     out['prev_state']['spatial_forcings'] = safe_concat(out['prev_state']['spatial_forcings'], out['prev_state']['ozone'][0])
-        #     out['next_state']['spatial_forcings'] = safe_concat(out['next_state']['spatial_forcings'], out['next_state']['ozone'][0])
-        
-        #     # Explicitly delete unused keys and clear cache
-        #     for key in ['state', 'prev_state', 'next_state']:
-        #         if 'ozone' in out[key]:
-        #             del out[key]['ozone']
-        # if(self.full_ozone):
-        #     #need to collapse 
-        #     def reshape_spatial_forcings(t_dict):
-        #         t_dict['spatial_forcings'] = t_dict['spatial_forcings'].reshape(t_dict['spatial_forcings'].shape[0]+t_dict['spatial_forcings'].shape[-1],t_dict['spatial_forcings'].shape[-3],t_dict['spatial_forcings'].shape[-2])
-        #         return t_dict
-        #     out = {k: reshape_spatial_forcings(v) if "state" in k else v for k, v in out.items()}
-            # out['state']['spatial_forcings'] = out['state']['spatial_forcings'].reshape(out['state']['spatial_forcings'].shape[0]*out['state']['spatial_forcings'].shape[1],out['state']['spatial_forcings'].shape[-2],out['state']['spatial_forcings'].shape[-1])
-        out = TensorDict({k: replace_inf_and_large_values(v,1e30,torch.nan) if "state" in k else v for k, v in out.items()})
-        # print_cpu_memory_usage('before zg_log')
-        # if(self.zg_log):
-        #     out['state']['level'][-1] = torch.log(out['state']['level'][-1]).detach()
-        #     out['next_state']['level'][-1] = torch.log(out['next_state']['level'][-1]).detach()
-        #     if(self.load_prev > 1):
-        #         out['prev_state']['level'][:,-1] = torch.log(out['prev_state']['level'][:,-1]).detach()
-        #     else:
-        #         out['prev_state']['level'][-1] = torch.log(out['prev_state']['level'][-1]).detach()
-        # print_cpu_memory_usage('after zg_log')
-        # import sys
-        # print(sys.getrefcount(out['state']['spatial_forcings']))
-        # if normalize:
-        #     out = self.normalize(out, month=current_month)
-        #     out = {k: apply_nan_to_num(v) if "state" in k else v for k, v in out.items()}
-
-        if normalize:
-            out = self.normalize(out)
-
-            # print_cpu_memory_usage('before nan_to_num')
-
-            for k, v in out.items():
-                if "state" in k:
-                    for key, value in v.items():
-                        torch.nan_to_num(value, out=value)
-        # print_cpu_memory_usage('after normalize')
-
-        # if(self.add_orography):
-        #     out['state']['spatial_forcings'] = torch.concatenate([out['state']['spatial_forcings'],self.orography],dim=0).detach()
-        #     if(self.load_prev > 1):
-        #         out['prev_state']['spatial_forcings'] = torch.stack([torch.concatenate([state['spatial_forcings'],self.orography],dim=0) for state in out['prev_state']])
-        #     if(self.multistep > 1):
-        #         out['future_states']['spatial_forcings'] = torch.stack([torch.concatenate([state['spatial_forcings'],self.orography],dim=0) for state in out['future_states']])
-        # if self.add_orography:
-        # Update current state
-        if self.add_orography:
-            # If you're always adding orography as an additional channel
-            out['state'] = out['state'].update({
-                'spatial_forcings': torch.stack([
-                    out['state']['spatial_forcings'],
-                    self.orography
-                ], dim=0).detach()
-            })
-            # Update previous states (if list/sequence of TensorDicts)
-            if self.load_prev > 1:
-                updated_prev = [
-                    state.update({
-                        'spatial_forcings': torch.cat(
-                            [state['spatial_forcings'], self.orography], dim=0
-                        )
-                    })
-                    for state in out['prev_state']
-                ]
-                out['prev_state'] = torch.stack(updated_prev)
-        
-            # Update future states (if multistep)
-            if self.multistep > 1:
-                updated_future = [
-                    state.update({
-                        'spatial_forcings': torch.cat(
-                            [state['spatial_forcings'], self.orography], dim=0
-                        )
-                    })
-                    for state in out['future_states']
-                ]
-                out['future_states'] = torch.stack(updated_future)
-        # out['prev_state']['spatial_norm'] = torch.concatenate([out['prev_state']['spatial_norm'],self.orography],dim=1)
-        # need to replace nans with mask_value
-        # mask = {k: (get_non_nan_mask(v) if "state" in k else v) for k, v in out.items()}
-        # out = {k: (v * mask[k] if "state" in k else v) for k, v in out.items()}
-        # print_cpu_memory_usage('end of getitem')
-
-        return out
+        # Convert lead times (months) to index steps using timedelta
+        ref_step = min(self.lead_times) // self.timedelta
+        max_future_step = max(self.lead_times) // self.timedelta
+        offset_steps = max_future_step + (self.load_prev * ref_step)
+        if self.predict_yearly_temp:
+            offset_steps += 24 // self.timedelta
+        return super().__len__() - offset_steps
 
     
     def __getitem__(self, i, normalize=True):
 
-        # print_cpu_memory_usage('beginning of getitem')
-    
-        i = i + self.load_prev * self.lead_time_months // self.timedelta 
+        # Shift index if previous state is requested. Use reference step (smallest lead).
+        ref_step = min(self.lead_times) // self.timedelta
+        i = i + self.load_prev * ref_step
+        if(self.predict_yearly_temp):
+            i = i + 12
         out = TensorDict()
         
-        out["state"] = super().__getitem__(i)
-        
+        out["state"] = super().__getitem__(i).clone()
+
         out["timestamp"] = torch.tensor(
             self.id2pt[i][2].item() // 10**9,
             dtype=torch.int64,
         )
         
-        t = self.lead_time_months
-        out["next_state"] = super().__getitem__(i + t // self.timedelta)
-        out["prev_state"] = super().__getitem__(i - self.lead_time_months // self.timedelta)
+        # Choose a single lead time at random from the configured lead_times.
+        lead_steps = [lt // self.timedelta for lt in self.lead_times]
+        if len(lead_steps) == 1:
+            chosen_idx = 0
+        else:
+            chosen_idx = int(torch.randint(low=0, high=len(lead_steps), size=(1,)).item())
 
-        # out['next_state'] = TensorDict(
-        # {
-        #     "lev": torch.randn(1, 10, 144, 144),
-        #     "level": torch.randn(5, 17, 144, 144),
-        #     "non_spatial_forcings": torch.randn(6),
-        #     # "ozone": torch.randn(1, 66, 144, 144),
-        #     "spatial_forcings": torch.randn(75, 144, 144),
-        #     "surface": torch.randn(8, 1, 144, 144),
-        # },
-        # batch_size=[],
-        # )
+        chosen_step = lead_steps[chosen_idx]
+        out["next_state"] = super().__getitem__(i + chosen_step).clone()
+        # Expose which lead time (months) was selected for this example
+        out["lead_time_months"] = torch.tensor(self.lead_times[chosen_idx], dtype=torch.int64)
 
-        # out['state'] = TensorDict(
-        # {
-        #     "lev": torch.randn(1, 10, 144, 144),
-        #     "level": torch.randn(5, 17, 144, 144),
-        #     "non_spatial_forcings": torch.randn(6),
-        #     # "ozone": torch.randn(1, 66, 144, 144),
-        #     "spatial_forcings": torch.randn(75, 144, 144),
-        #     "surface": torch.randn(8, 1, 144, 144),
-        # },
-        # batch_size=[],
-        # )
-
-        # out['prev_state'] = TensorDict(
-        # {
-        #     "lev": torch.randn(1, 10, 144, 144),
-        #     "level": torch.randn(5, 17, 144, 144),
-        #     "non_spatial_forcings": torch.randn(6),
-        #     # "ozone": torch.randn(1, 66, 144, 144),
-        #     "spatial_forcings": torch.randn(75, 144, 144),
-        #     "surface": torch.randn(8, 1, 144, 144),
-        # },
-        # batch_size=[],
-        # )
-
-
-
-
-
-
-        
-        # Handle ozone concatenation with explicit cleanup
-        # if self.full_ozone:
-        #     for state_key in ['state', 'prev_state', 'next_state']:
-        #         old_spatial = out[state_key]['spatial_forcings']
-        #         ozone_slice = out[state_key]['ozone'][0]
+        # Previous state (use reference step)
+        out["prev_state"] = super().__getitem__(i - ref_step).clone()
+        if self.predict_yearly_temp:
+            if self.predict_yearly_average:
+                # Calculate average of previous 12 months for state
+                past_surfaces = []
+                past_levels = []
+                steps_12_months = 12 // self.timedelta
+                for offset in range(0, steps_12_months):
+                    past_state = super().__getitem__(i - offset)
+                    past_surfaces.append(past_state['surface'][0:1])
+                    past_levels.append(past_state['level'][1:2])
                 
-        #         # Create new concatenated tensor
-        #         new_spatial = torch.cat([old_spatial, ozone_slice], dim=0).contiguous()
+                year_tas = torch.stack(past_surfaces).mean(dim=0)
+                year_level = torch.stack(past_levels).mean(dim=0)
+
+                out['state']['surface'] = torch.cat([out['state']['surface'], year_tas], dim=0)
+                out['state']['level'] = torch.cat([out['state']['level'], year_level], dim=0)
+
+                # Calculate average of next 12 months
+                future_surfaces = []
+                future_levels = []
+                for offset in range(1, steps_12_months + 1):
+                    future_state = super().__getitem__(i + chosen_step + offset)
+                    future_surfaces.append(future_state['surface'][0:1])
+                    future_levels.append(future_state['level'][1:2])
                 
-        #         # Update in place and delete old references
-        #         out[state_key]['spatial_forcings'] = new_spatial
-        #         del old_spatial, ozone_slice
-            
-        #     # Remove ozone from output (create new dict without ozone)
-        #     def remove_ozone(state_dict):
-        #         return TensorDict({k: v for k, v in state_dict.items() if k != 'ozone'})
-            
-        #     out['state'] = remove_ozone(out['state'])
-        #     out['prev_state'] = remove_ozone(out['prev_state'])
-        #     out['next_state'] = remove_ozone(out['next_state'])
-    
+                next_year_tas = torch.stack(future_surfaces).mean(dim=0)
+                next_year_level = torch.stack(future_levels).mean(dim=0)
+
+                out['next_state']['surface'] = torch.cat([out['next_state']['surface'], next_year_tas], dim=0)
+                out['next_state']['level'] = torch.cat([out['next_state']['level'], next_year_level], dim=0)
+
+                # Calculate average of previous 12 months for prev_state
+                prev_past_surfaces = []
+                prev_past_levels = []
+                prev_idx = i - ref_step
+                for offset in range(0, steps_12_months):
+                    p_state = super().__getitem__(prev_idx - offset)
+                    prev_past_surfaces.append(p_state['surface'][0:1])
+                    prev_past_levels.append(p_state['level'][1:2])
+
+                prev_year_tas = torch.stack(prev_past_surfaces).mean(dim=0)
+                prev_year_level = torch.stack(prev_past_levels).mean(dim=0)
+
+                out['prev_state']['surface'] = torch.cat([out['prev_state']['surface'], prev_year_tas], dim=0)
+                out['prev_state']['level'] = torch.cat([out['prev_state']['level'], prev_year_level], dim=0)
+                # print(out['prev_state']['surface'].shape)
+            else:
+                year_tas = out['state']['surface'][0:1]
+                year_level = out['state']['level'][1:2]
+                out['state']['surface'] = torch.cat([out['state']['surface'], year_tas], dim=0)
+                out['state']['level'] = torch.cat([out['state']['level'], year_level], dim=0)
+
+                next_year = super().__getitem__(i + chosen_step + 12 // self.timedelta)
+                next_year_tas = next_year['surface'][0:1]
+                next_year_level = next_year['level'][1:2]
+                out['next_state']['surface'] = torch.cat([out['next_state']['surface'], next_year_tas], dim=0)
+                out['next_state']['level'] = torch.cat([out['next_state']['level'], next_year_level], dim=0)
+
+                prev_year_tas = out['prev_state']['surface'][0:1]
+                prev_year_level = out['prev_state']['level'][1:2]
+                out['prev_state']['surface'] = torch.cat([out['prev_state']['surface'], prev_year_tas], dim=0)
+                out['prev_state']['level'] = torch.cat([out['prev_state']['level'], prev_year_level], dim=0)
         # Replace inf/large values IN-PLACE instead of cloning
         for k, v in out.items():
             if "state" in k:
                 for key, tensor in v.items():
-                    # In-place replacement
+                    # In-place replacement  
                     mask = (tensor.abs() > 1e30) | torch.isinf(tensor)
                     tensor[mask] = torch.nan
-    
+        # if(self.aerosol_log):
+        #     out['state']['spatial_forcings'][3:9] = torch.log(out['state']['spatial_forcings'][3:9])
+        #     out['next_state']['spatial_forcings'][3:9] = torch.log(out['next_state']['spatial_forcings'][3:9])
+        #     out['prev_state']['spatial_forcings'][3:9] = torch.log(out['prev_state']['spatial_forcings'][3:9])
+
         # # Normalize in-place if possible
-        # print(out)
-        # print(self.data_mean)
         if normalize:
             out = self.normalize(out)
             
@@ -683,7 +483,7 @@ class CMIPForecast(XarrayDataset):
                     ).contiguous()
                     del old_spatial
     
-        # print_cpu_memory_usage('end of getitem')
+
         return out
         
     def normalize(self, batch, stateless=False, month=None):

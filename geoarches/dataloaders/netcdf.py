@@ -7,10 +7,7 @@ import torch
 import xarray as xr
 from tensordict.tensordict import TensorDict
 from tqdm import tqdm
-import psutil
-import os
-from netCDF4 import Dataset
-import zarr
+from collections import OrderedDict
 # Appropriate xarray engine for a given file extension
 engine_mapping = {
     ".nc": "netcdf4",
@@ -28,23 +25,6 @@ default_dimension_indexers = {
     "level": ("level", slice(None)),
     "time": ("time", slice(None)),
 }
-# def select_by_coords(nc, dimension_indexers):
-#     # dimension_indexers: dict like {'lat': 10.0, 'lon': 20.0}
-#     # returns a dict {dim_name: index} to be used for slicing
-
-#     selected_indices = {}
-#     for dim_name, coord_value in dimension_indexers.items():
-#         coord_var = nc.variables[dim_name]
-#         coord_data = coord_var[:]
-#         print('coord_var', coord_var)
-#         print('coord_data',coord_data)
-#         print('coord_value',coord_value)
-#         # Find index where coord_data == coord_value (or closest)
-#         # For floats, do approximate matching:
-#         index = (abs(coord_data - coord_value)).argmin()
-#         selected_indices[dim_name] = index
-
-#     return selected_indices
 
 class XarrayDataset(torch.utils.data.Dataset):
     """
@@ -122,39 +102,12 @@ class XarrayDataset(torch.utils.data.Dataset):
             if len(self.files) == 0:
                 raise ValueError("filename_filter filtered all files under path:", path)
 
-        file_extension = Path(self.files[0]).suffix
+        # file_extension = Path(self.files[0]).suffix
         # engine = engine_mapping[file_extension]
         # self.xr_options = dict(engine=engine, cache=True)
 
         self.timestamps = []
-        # for fid, f in tqdm(enumerate(self.files)):
-        #     # Open Zarr store
-        #     zr = zarr.open(f, mode='r')
-            
-        #     # Get time values from the Zarr array
-        #     time_values = zr['time'][:]
-        #     file_stamps = [(fid, i, t) for (i, t) in enumerate(time_values)]
-        #     self.timestamps.extend(file_stamps)
-            
-        #     if (
-        #         limit_examples and len(self.timestamps) > limit_examples
-        #     ):  # get fraction of full dataset
-        #         print("Limiting number of examples loaded to", limit_examples)
-        #         self.timestamps = self.timestamps[:limit_examples]
-        #         break
 
-
-        
-        # for fid, f in tqdm(enumerate(self.files)):
-        #     with xr.open_dataset(f, **self.xr_options) as obs:
-        #         file_stamps = [(fid, i, t) for (i, t) in enumerate(obs.time.to_numpy())]
-        #         self.timestamps.extend(file_stamps)
-        #     if (
-        #         limit_examples and len(self.timestamps) > limit_examples
-        #     ):  # get fraction of full dataset
-        #         print("Limiting number of examples loaded to", limit_examples)
-        #         self.timestamps = self.timestamps[:limit_examples]
-        #         break
         for fid, f in tqdm(enumerate(self.files)):
             # with TensorDict.load_memmap(f) as obs:
             obs = TensorDict.load_memmap(f) 
@@ -172,140 +125,123 @@ class XarrayDataset(torch.utils.data.Dataset):
 
         self.cached_xrdataset = None
         self.cached_fileid = None
-                # Open with consolidated metadata (much faster)
-        # zr = zarr.open_consolidated(self.files[0], mode='r') if zarr.consolidate_metadata else zarr.open(file_path, mode='r')
+
+        self._ozone_cache = {}
+        self.ozone_cache_limit = 1 
+        self._ozone_cache = OrderedDict()
+
+    def _get_ozone_handle(self, exp, path):
+        # 1. Check if we already have this file open
+        if exp in self._ozone_cache:
+            # Move to end (mark as recently used)
+            self._ozone_cache.move_to_end(exp)
+            return self._ozone_cache[exp]
         
-        # # PRE-COMPUTE indices outside the loop (CRITICAL!)
-        # lev_indices_temp = [round(float(x), 3) for x in zr['lev'][:]]
-        # self.lev_indices_cache = {}
-        # if 'lev' in self.dimension_indexers:
-        #     self.lev_indices_cache['lev'] = [lev_indices_temp.index(round(float(val), 3)) 
-        #                                   for val in self.dimension_indexers['lev'][1]]
+        # 2. If cache is full, remove the oldest item to free memory
+        if len(self._ozone_cache) >= self.ozone_cache_limit:
+            oldest_exp, oldest_handle = self._ozone_cache.popitem(last=False)
+            # Explicitly delete the handle to encourage garbage collection immediately
+            del oldest_handle 
         
-        # self.plev_indices_cache = {}
-        # if 'plev' in self.dimension_indexers:
-        #     plev_list = list(zr['plev'][:])
-        #     self.plev_indices_cache['plev'] = [plev_list.index(val) 
-        #                                    for val in self.dimension_indexers['plev'][1]]
-    # def set_timestamp_bounds(self, low, high, debug=False):
-    #     """Filter timestamps loaded from dataloader between bounds.
-
-    #     If low or high is None, only filter in one direction.
-
-    #     Args:
-    #         low: lower bound, inclusive. Set to None to not filter by lower bound.
-    #         high: upper bound, exclusive. Set to None to not filter by upper bound.
-    #     """
-    #     original_length = len(self.timestamps)
-
-    #     if low and high:
-    #         self.timestamps = [
-    #             x for x in self.timestamps if low <= x[-1].astype("datetime64[s]") < high
-    #         ]
-    #     elif low:
-    #         self.timestamps = [x for x in self.timestamps if low <= x[-1].astype("datetime64[s]")]
-    #     elif high:
-    #         self.timestamps = [x for x in self.timestamps if x[-1].astype("datetime64[s]") < high]
-    #     if debug:
-    #         print(
-    #             f"Filtered timestamps from {original_length} to {len(self.timestamps)} examples: "
-    #             f"{self.timestamps[0][-1].astype('datetime64[s]')} to {self.timestamps[-1][-1].astype('datetime64[s]')}."
-    #         )
-    #     self.id2pt = dict(enumerate(self.timestamps))
-
+        # 3. Load the new file (mmap keeps it out of RAM until accessed)
+        # Note: 15GB mmap uses Virtual Memory, not Physical RAM. It is safe to hold a few.
+        handle = torch.load(path, weights_only=False, mmap=True)
+        self._ozone_cache[exp] = handle
+        return handle
+    
     def __len__(self):
         return len(self.id2pt)
         
    
     # def convert_to_tensordict(self, xr_dataset,file_path):
-    def convert_to_tensordict(self, file_path=None):
+    # def convert_to_tensordict(self, file_path=None):
 
-        """
-        Convert xarray dataset to tensordict.
+    #     """
+    #     Convert xarray dataset to tensordict.
 
-        By default, it uses a mapping key from self.variables,
-            e.g. {surface:[data_var1, data_var2, ...], level:[...]}
-        """
-        # Optionally select dimensions.
-        # if self.dimension_indexers and not self.already_ran_index_selection:
-        #     indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
+    #     By default, it uses a mapping key from self.variables,
+    #         e.g. {surface:[data_var1, data_var2, ...], level:[...]}
+    #     """
+    #     # Optionally select dimensions.
+    #     # if self.dimension_indexers and not self.already_ran_index_selection:
+    #     #     indexers = {v[0]: v[1] for k, v in self.dimension_indexers.items() if k != "time"}
 
-        #     xr_dataset = xr_dataset.sel(**indexers)
-        # self.already_ran_index_selection = False  # Reset for next call.
-        with Dataset(file_path, "r") as nc:
-            # Convert coordinate selections to indices
-            indexers = {}
-            if self.dimension_indexers:
-                indexers = select_by_coords(nc, dimension_indexers)
+    #     #     xr_dataset = xr_dataset.sel(**indexers)
+    #     # self.already_ran_index_selection = False  # Reset for next call.
+    #     with Dataset(file_path, "r") as nc:
+    #         # Convert coordinate selections to indices
+    #         indexers = {}
+    #         if self.dimension_indexers:
+    #             indexers = select_by_coords(nc, dimension_indexers)
     
-            tdict_data = {}
-            for key, vars_ in variables.items():
-                if vars_:
-                    arrays = []
-                    for var in vars_:
-                        var_data = nc.variables[var]
+    #         tdict_data = {}
+    #         for key, vars_ in variables.items():
+    #             if vars_:
+    #                 arrays = []
+    #                 for var in vars_:
+    #                     var_data = nc.variables[var]
     
-                        # Build slice object for all dimensions
-                        slices = []
-                        for dim in var_data.dimensions:
-                            if dim in indexers:
-                                slices.append(indexers[dim])
-                            elif dim == 'line':  # example for your line_id dimension
-                                slices.append(line_id)
-                            else:
-                                slices.append(slice(None))
+    #                     # Build slice object for all dimensions
+    #                     slices = []
+    #                     for dim in var_data.dimensions:
+    #                         if dim in indexers:
+    #                             slices.append(indexers[dim])
+    #                         elif dim == 'line':  # example for your line_id dimension
+    #                             slices.append(line_id)
+    #                         else:
+    #                             slices.append(slice(None))
     
-                        data_slice = var_data[tuple(slices)]
-                        arrays.append(torch.tensor(data_slice, dtype=torch.float32))
-                    tdict_data[key] = torch.stack(arrays)
-                else:
-                    tdict_data[key] = torch.empty((0,), dtype=torch.float32)
+    #                     data_slice = var_data[tuple(slices)]
+    #                     arrays.append(torch.tensor(data_slice, dtype=torch.float32))
+    #                 tdict_data[key] = torch.stack(arrays)
+    #             else:
+    #                 tdict_data[key] = torch.empty((0,), dtype=torch.float32)
 
-        return TensorDict(tdict_data)
-        # Make np arrays for each key and make an empty array if no variables for this list. Needed for running experiments with different variable sets
-        # np_arrays = {}
-        # for key, variables in self.variables.items():
-        #     if variables:  # non-empty
-        #         np_arrays[key] = xr_dataset[list(variables)].to_array().to_numpy()
-        #     else:  # empty list -> create an empty array
-        #         np_arrays[key] = np.empty((0,))
+    #     return TensorDict(tdict_data)
+    #     # Make np arrays for each key and make an empty array if no variables for this list. Needed for running experiments with different variable sets
+    #     # np_arrays = {}
+    #     # for key, variables in self.variables.items():
+    #     #     if variables:  # non-empty
+    #     #         np_arrays[key] = xr_dataset[list(variables)].to_array().to_numpy()
+    #     #     else:  # empty list -> create an empty array
+    #     #         np_arrays[key] = np.empty((0,))
 
-        # tdict = TensorDict(
-        #     {key: torch.from_numpy(np_array).float() for key, np_array in np_arrays.items()}
-        # )
+    #     # tdict = TensorDict(
+    #     #     {key: torch.from_numpy(np_array).float() for key, np_array in np_arrays.items()}
+    #     # )
 
-        from netCDF4 import Dataset
-        with Dataset(file_path, "r") as nc:
-            tdict_data = {}
-            for key, variables in self.variables.items():
-                if variables:
-                    arrays = [torch.tensor(nc[var][line_id], dtype=torch.float32) for var in variables]
-                    tdict_data[key] = torch.stack(arrays)
-                else:
-                    tdict_data[key] = torch.empty((0,), dtype=torch.float32)
-        return TensorDict(tdict_data)
-        #     tdict_data = TensorDict()
+    #     from netCDF4 import Dataset
+    #     with Dataset(file_path, "r") as nc:
+    #         tdict_data = {}
+    #         for key, variables in self.variables.items():
+    #             if variables:
+    #                 arrays = [torch.tensor(nc[var][line_id], dtype=torch.float32) for var in variables]
+    #                 tdict_data[key] = torch.stack(arrays)
+    #             else:
+    #                 tdict_data[key] = torch.empty((0,), dtype=torch.float32)
+    #     return TensorDict(tdict_data)
+    #     #     tdict_data = TensorDict()
         
-        # for key, variables in self.variables.items():
-        #     if variables:  # non-empty
-        #         xr_data = xr_dataset[list(variables)].to_array()
-        #         data = xr_data.data  # now this is in-memory numpy array
+    #     # for key, variables in self.variables.items():
+    #     #     if variables:  # non-empty
+    #     #         xr_data = xr_dataset[list(variables)].to_array()
+    #     #         data = xr_data.data  # now this is in-memory numpy array
 
-        #         # convert directly to torch tensor
-        #         tdict_data[key] = torch.as_tensor(data, dtype=torch.float32)
-        #     else:  # empty list
-        #         tdict_data[key] = torch.empty((0,), dtype=torch.float32)
+    #     #         # convert directly to torch tensor
+    #     #         tdict_data[key] = torch.as_tensor(data, dtype=torch.float32)
+    #     #     else:  # empty list
+    #     #         tdict_data[key] = torch.empty((0,), dtype=torch.float32)
         
-        # tdict = TensorDict(tdict_data)
+    #     # tdict = TensorDict(tdict_data)
 
 
-        # import xarray.backends.file_manager as fm
+    #     # import xarray.backends.file_manager as fm
         
-        # def cleanup_xarray():
-        #     fm.CachingFileManager._caches.clear()
-        #     gc.collect()
+    #     # def cleanup_xarray():
+    #     #     fm.CachingFileManager._caches.clear()
+    #     #     gc.collect()
 
-        # cleanup_xarray()
+    #     # cleanup_xarray()
 
 
 
@@ -321,345 +257,196 @@ class XarrayDataset(torch.utils.data.Dataset):
         # return tdict
 
 
-    def __getitem__2(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        import gc
-        file_id, line_id, timestamp = self.id2pt[i]
+    # def __getitem__2(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
+    #     import gc
+    #     file_id, line_id, timestamp = self.id2pt[i]
 
-        file_path=self.files[file_id]
+    #     file_path=self.files[file_id]
         
-        tdict_data = TensorDict()
+    #     tdict_data = TensorDict()
         
-        with Dataset(file_path, "r") as nc:
-            # Cache indices
-            if not hasattr(self, '_index_cache'):
-                self._index_cache = {}
+    #     with Dataset(file_path, "r") as nc:
+    #         # Cache indices
+    #         if not hasattr(self, '_index_cache'):
+    #             self._index_cache = {}
             
-            if file_path not in self._index_cache:
-                cache = {}
-                if 'plev' in self.dimension_indexers and 'plev' in nc.variables:
-                    cache['plev'] = [list(nc['plev'][:]).index(val) for val in self.dimension_indexers['plev'][1]]
-                if 'lev' in self.dimension_indexers and 'lev' in nc.variables:
-                    lev_vals = [round(float(x), 3) for x in nc['lev'][:]]
-                    cache['lev'] = [lev_vals.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
-                self._index_cache[file_path] = cache
+    #         if file_path not in self._index_cache:
+    #             cache = {}
+    #             if 'plev' in self.dimension_indexers and 'plev' in nc.variables:
+    #                 cache['plev'] = [list(nc['plev'][:]).index(val) for val in self.dimension_indexers['plev'][1]]
+    #             if 'lev' in self.dimension_indexers and 'lev' in nc.variables:
+    #                 lev_vals = [round(float(x), 3) for x in nc['lev'][:]]
+    #                 cache['lev'] = [lev_vals.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
+    #             self._index_cache[file_path] = cache
             
-            indices = self._index_cache[file_path]
+    #         indices = self._index_cache[file_path]
             
-            for key, vars_ in self.variables.items():
-                tensor_list = []
+    #         for key, vars_ in self.variables.items():
+    #             tensor_list = []
                 
-                for var in vars_:
-                    # CRITICAL: Load entire slice into memory first
-                    if key == 'surface':
-                        # Load to numpy, then immediately copy and convert
-                        temp = np.array(nc[var][line_id], dtype=np.float32)
-                        tensor = torch.from_numpy(temp).unsqueeze(0)
-                    elif key == 'level':
-                        temp = np.array(nc[var][line_id, indices['plev'], :, :], dtype=np.float32)
-                        tensor = torch.from_numpy(temp)
-                    elif key == 'lev':
-                        temp = np.array(nc[var][line_id, indices['lev'], :], dtype=np.float32)
-                        tensor = torch.from_numpy(temp)
-                    elif key in ['spatial_forcings', 'non_spatial_forcings', 'ozone']:
-                        temp = np.array(nc[var][line_id], dtype=np.float32)
-                        tensor = torch.from_numpy(temp)
+    #             for var in vars_:
+    #                 # CRITICAL: Load entire slice into memory first
+    #                 if key == 'surface':
+    #                     # Load to numpy, then immediately copy and convert
+    #                     temp = np.array(nc[var][line_id], dtype=np.float32)
+    #                     tensor = torch.from_numpy(temp).unsqueeze(0)
+    #                 elif key == 'level':
+    #                     temp = np.array(nc[var][line_id, indices['plev'], :, :], dtype=np.float32)
+    #                     tensor = torch.from_numpy(temp)
+    #                 elif key == 'lev':
+    #                     temp = np.array(nc[var][line_id, indices['lev'], :], dtype=np.float32)
+    #                     tensor = torch.from_numpy(temp)
+    #                 elif key in ['spatial_forcings', 'non_spatial_forcings', 'ozone']:
+    #                     temp = np.array(nc[var][line_id], dtype=np.float32)
+    #                     tensor = torch.from_numpy(temp)
                     
-                    # Detach from any computation graph
-                    tensor = tensor.detach().clone()
-                    tensor_list.append(tensor)
+    #                 # Detach from any computation graph
+    #                 tensor = tensor.detach().clone()
+    #                 tensor_list.append(tensor)
                     
-                    del temp, tensor
+    #                 del temp, tensor
                 
-                tdict_data[key] = torch.stack(tensor_list).detach().clone()
-                del tensor_list
+    #             tdict_data[key] = torch.stack(tensor_list).detach().clone()
+    #             del tensor_list
         
-        # Force cleanup
-        gc.collect()
+    #     # Force cleanup
+    #     gc.collect()
         
-        return tdict_data
+    #     return tdict_data
 
     def _ensure_cache(self):
         if getattr(self, "_file_cache", None) is None:
             self._file_cache = {}
 
-    def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
-        # import gc
+    # def __getitem__(self, i, return_timestamp=False, interpolate_nans=None, warning_on_nan=None):
+    #     # import gc
         
+    #     file_id, line_id, timestamp = self.id2pt[i]
+    #     # file_id, line_id, timestamp = 0,0,0
+    #     file_path = self.files[file_id]
+    #     # data = TensorDict.load_memmap(file_path)
+        
+    #     # out = TensorDict({'lev':data['lev'][:,line_id],
+    #     #           'level':data['level'][:,line_id],
+    #     #           'surface':data['surface'][:,line_id,None],
+    #     #           'non_spatial_forcings':data['non_spatial_forcings'][:,line_id],
+    #     #           'spatial_forcings':torch.cat([data['spatial_forcings'][:,line_id],data['ozone'][0,line_id]]) if 'ozone' in data.keys() else data['spatial_forcings'][:,line_id]})
+    #     # return out
+
+    #     self._ensure_cache()
+    #     if file_path not in self._file_cache:
+    #         # open once per process (and per worker)
+    #         self._file_cache[file_path] = TensorDict.load_memmap(file_path)
+    #     data = self._file_cache[file_path]
+    #     if(self.full_ozone):
+    #         exp = file_path.split("/")[-1].split(".")[0].split("_")[1]
+    #         if(exp == 'piControl'):
+    #             ozone = torch.load(f'/scratch/gclyne/reference_data/ozone_historical.pt',weights_only=False,mmap=True)
+    #             data['ozone'] =  ozone[line_id%12].clone()
+
+    #         else:
+    #             ozone = torch.load(f'/scratch/gclyne/reference_data/ozone_{exp}.pt',weights_only=False,mmap=True)
+    #             data['ozone'] =  ozone[line_id].clone()
+
+    #         # ozone[line_id] 
+        
+    #     out = TensorDict({
+    #         'lev': data['lev'][:, line_id],
+    #         'level': data['level'][:, line_id],
+    #         'surface': data['surface'][:, line_id, None],
+    #         'non_spatial_forcings': data['non_spatial_forcings'][:, line_id],
+    #         'spatial_forcings':
+    #             torch.cat([data['spatial_forcings'][:, line_id], data['ozone']])
+    #             if 'ozone' in data.keys()
+    #             else data['spatial_forcings'][:, line_id]
+    #     })
+    #     if('methane' not in self.variables['spatial_forcings']):
+    #         out['spatial_forcings'] = out['spatial_forcings'][3:]
+    #     if('ozone_0' not in self.variables['spatial_forcings']):
+    #         out['spatial_forcings'] = out['spatial_forcings'][:-6]
+    #     if('load_ASNO3M' not in self.variables['spatial_forcings']):
+    #         out['spatial_forcings'] = torch.concatenate([out['spatial_forcings'][:3],out['spatial_forcings'][9:]],dim=0)
+    #     if(len(self.variables['non_spatial_forcings']) == 0):
+    #         out['non_spatial_forcings'] = torch.tensor([])  
+    #     out['level'] = out['level'][:len(self.variables['level'])]
+    #     return out
+
+    def __getitem__(self, i):
         file_id, line_id, timestamp = self.id2pt[i]
-        # file_id, line_id, timestamp = 0,0,0
         file_path = self.files[file_id]
-        # data = TensorDict.load_memmap(file_path)
-        # # print(data)
-        
-        # out = TensorDict({'lev':data['lev'][:,line_id],
-        #           'level':data['level'][:,line_id],
-        #           'surface':data['surface'][:,line_id,None],
-        #           'non_spatial_forcings':data['non_spatial_forcings'][:,line_id],
-        #           'spatial_forcings':torch.cat([data['spatial_forcings'][:,line_id],data['ozone'][0,line_id]]) if 'ozone' in data.keys() else data['spatial_forcings'][:,line_id]})
-        # # print(out)
-        # return out
 
         self._ensure_cache()
+        
+        # --- OPTIMIZATION 1: Efficient Main Data Cache ---
         if file_path not in self._file_cache:
-            # open once per process (and per worker)
             self._file_cache[file_path] = TensorDict.load_memmap(file_path)
-
         data = self._file_cache[file_path]
 
-        out = TensorDict({
-            'lev': data['lev'][:, line_id],
-            'level': data['level'][:, line_id],
-            'surface': data['surface'][:, line_id, None],
-            'non_spatial_forcings': data['non_spatial_forcings'][:, line_id],
-            'spatial_forcings':
-                torch.cat([data['spatial_forcings'][:, line_id], data['ozone'][0, line_id]])
-                if 'ozone' in data.keys()
-                else data['spatial_forcings'][:, line_id]
-        })
-        # print(self.variables)
+        # --- OPTIMIZATION 2: Efficient Ozone Caching ---
+        # ozone_tensor = None
+        # if self.full_ozone:
+        #     # Move string parsing here (only runs once per file, not per sample if we cached by file_path)
+        #     # However, since 'exp' depends on file_path, let's cache the ozone handles based on 'exp'
+            
+        #     # Extract experiment name
+        #     # We can optimize this by pre-calculating exp per file_id in __init__, but this is okay for now
+        #     exp = file_path.split("/")[-1].split(".")[0].split("_")[1] # THIS IS BAD FOR PERFORMANCE
+            
+
+            
+        #     # 4. Reuse the EXISTING handle
+        #     # ozone_source = self.ozone_handles[ozone_path]
+        #     # if exp not in self._ozone_cache:
+        #     # Load ONCE and store the handle
+        #     if exp == 'piControl':
+        #         path = f'{self.forcings_path}/ozone_historical.pt'
+        #     else:
+        #         path = f'{self.forcings_path}/ozone_{exp}.pt'
+            
+        #     #     # Keep the mmap open in memory
+        #     #     self._ozone_cache[exp] = torch.load(path, weights_only=False, mmap=True)
+                
+        #     # Access the cached handle directly
+        #     # ozone_source = self._ozone_cache[exp]
+        #     # ozone_source = self._get_ozone_handle(exp, path)
+        #     ozone_source = torch.load(path, weights_only=False, mmap=True)
+        #     # Handle index mapping
+        #     idx = line_id % 12 if exp == 'piControl' else line_id
+        #     ozone_tensor = ozone_source[idx].clone() # No .clone() yet, delay copy
+        
+        # # --- OPTIMIZATION 3: Lazy Concatenation ---
+        # # Prepare the spatial forcings components
+        spatial_forcings = data['spatial_forcings'][:, line_id]
+        if(('ozone_0' not in self.variables['spatial_forcings'])): 
+            # if(self.full_ozone):
+            #     out['spatial_forcings'] = torch.concatenate([out['spatial_forcings'][-72:-66],out['spatial_forcings'][-66:]])  
+            # else:
+            spatial_forcings = spatial_forcings[:-6]
+        if self.full_ozone:
+            spatial_forcings = torch.cat([spatial_forcings,data['ozone'][line_id]])          
+        if('level' in data.keys()):
+            out = TensorDict({
+                'lev': data['lev'][:, line_id],
+                'level': data['level'][:, line_id][:len(self.variables['level'])], # Slice early
+                'surface': data['surface'][:, line_id, None],
+                'non_spatial_forcings': data['non_spatial_forcings'][:, line_id],
+                'spatial_forcings': spatial_forcings 
+            })
+            out['level'] = out['level'][:len(self.variables['level'])]
+
+        else:
+            out = TensorDict({
+                'lev': data['lev'][:, line_id],
+                'surface': data['surface'][:, line_id, None],
+                'non_spatial_forcings': data['non_spatial_forcings'][:, line_id],
+                'spatial_forcings': data['spatial_forcings'][:, line_id] #override ozone logic here 
+            })
+        #ORDER is very important here. first check if aero is in, which we cut out of the middle if not. then we can remove the beginning which is ghg, finally we check if we remove the end, ozone
+        if('load_ASNO3M' not in self.variables['spatial_forcings']):
+            out['spatial_forcings'] = torch.concatenate([out['spatial_forcings'][:3],out['spatial_forcings'][9:]],dim=0)
+        if('methane' not in self.variables['spatial_forcings']):
+            out['spatial_forcings'] = out['spatial_forcings'][3:]
         if(len(self.variables['non_spatial_forcings']) == 0):
-            out['non_spatial_forcings'] = []
+            out['non_spatial_forcings'] = torch.tensor([])  
         return out
 
-
-
-        
-        # # Load all data into pure Python objects FIRST, outside the with block
-        # data_dict = TensorDict()
-        
-        # with Dataset(file_path, "r") as nc:
-        #     # Get indices once
-        #     if 'plev' in self.dimension_indexers:
-        #         plev_list = [float(x) for x in nc['plev'][:]]
-        #         plev_indices = [plev_list.index(val) for val in self.dimension_indexers['plev'][1]]
-        #     else:
-        #         plev_indices = None
-            
-        #     if 'lev' in self.dimension_indexers:
-        #         lev_list = [round(float(x), 3) for x in nc['lev'][:]]
-        #         lev_indices = [lev_list.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
-        #     else:
-        #         lev_indices = None
-            
-        #     # Read ALL data as Python lists (completely detached from netCDF)
-        #     for key, vars_ in self.variables.items():
-        #         # print(key)
-        #         # data_dict[key] = []
-        #         data_list = []
-        #         for var in vars_:
-        #             if key == 'surface':
-        #                 data = nc[var][line_id][:]  # Convert to Python list
-        #             elif key == 'level':
-        #                 data = nc[var][line_id, plev_indices, :, :][:]
-        #             elif key == 'lev':
-        #                 data = nc[var][line_id, lev_indices,:][:]
-        #             elif key in ['spatial_forcings','ozone']:
-    
-        #                 data = nc[var][line_id][:]
-        #             elif key in ['non_spatial_forcings']:
-        #                 data = nc[var][line_id]
-        #                 # print(data)
-        #                 if(type(data) is float):
-        #                     data = [data]
-        #             # print(var)
-        #             # print(len(data))
-        #             # print(data[0])
-        #             data_list.append(data)
-        #         data_dict[key] = data_list
-        
-        # # netCDF file is now CLOSED - no references remain
-        # gc.collect()
-        
-        # # Now convert Python lists to tensors
-        # tdict_data = TensorDict()
-        # for key, data_list in data_dict.items():
-        #     arrays = []
-        #     # print('key',key)
-        #     # print(len(data_list))
-        #     for data in data_list:
-
-        #         tensor = torch.tensor(data, dtype=torch.float32)
-        #         if key == 'surface':
-        #             tensor = tensor.unsqueeze(0)
-        #         arrays.append(tensor)
-        
-        #     tdict_data[key] = torch.stack(arrays)
-        #     del arrays
-        
-        # del data_dict
-        # gc.collect()
-        
-        # return tdict_data
-        
-        #with zarr
-        # tdict_data = TensorDict()
-
-        # zr = zarr.open(file_path, mode='r')
-        # for key, vars_ in self.variables.items():
-        #     arrays = []
-        #     for var in vars_:
-        #         if key == 'surface':
-        #             var_data = zr[var].oindex[line_id]
-        #             var_data = torch.tensor(np.array(var_data, copy=True))[None]
-        #         elif key == 'lev':
-        #             lev_indices_temp = [round(float(x), 3) for x in list(zr['lev'][:])]
-        #             lev_indices = [lev_indices_temp.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
-        #             # Use oindex for fancy indexing
-        #             var_data = torch.tensor(np.array(zr[var].oindex[line_id, lev_indices, :], copy=True))
-        #         elif key == 'lev':
-        #             lev_indices_temp = [round(float(x), 3) for x in list(zr['lev'][:])]
-        #             lev_indices = [lev_indices_temp.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
-        #             var_data = torch.tensor(np.array(zr[var].oindex[line_id, lev_indices, :], copy=True))
-        #         elif key in ['spatial_forcings', 'non_spatial_forcings', 'ozone']:
-        #             var_data = torch.tensor(np.array(zr[var].oindex[line_id], copy=True))
-        #         arrays.append(var_data)
-        #     tdict_data[key] = torch.stack(arrays)
-        #     del arrays  # Explicit cleanup
-        
-        # tdict_data = TensorDict()
-
-        # Open with consolidated metadata (much faster)
-        # zr = zarr.open_consolidated(file_path, mode='r') if zarr.consolidate_metadata else zarr.open(file_path, mode='r')
-        
-        # PRE-COMPUTE indices outside the loop (CRITICAL!)
-        # lev_indices_temp = [round(float(x), 3) for x in zr['lev'][:]]
-        # lev_indices_cache = {}
-        # if 'lev' in self.dimension_indexers:
-        #     lev_indices_cache['lev'] = [lev_indices_temp.index(round(float(val), 3)) 
-        #                                   for val in self.dimension_indexers['lev'][1]]
-        
-        # plev_indices_cache = {}
-        # if 'plev' in self.dimension_indexers:
-        #     plev_list = list(zr['plev'][:])
-        #     plev_indices_cache['plev'] = [plev_list.index(val) 
-        #                                    for val in self.dimension_indexers['plev'][1]]
-        
-        # Now loop through variables
-        # for key, vars_ in self.variables.items():
-        #     arrays = []
-        #     for var in vars_:
-        #         if key == 'surface':
-        #             # Use direct slicing instead of oindex when possible
-        #             var_data = torch.from_numpy(zr[var][line_id:line_id+1].copy())
-                    
-        #         elif key == 'level':
-        #             plev_indices = self.plev_indices_cache['plev']
-        #             # Use oindex for fancy indexing
-        #             var_data = torch.from_numpy(zr[var].oindex[line_id, plev_indices, :, :].copy())
-                    
-        #         elif key == 'lev':
-        #             lev_indices = self.lev_indices_cache['lev']
-        #             # Use oindex for fancy indexing
-        #             var_data = torch.from_numpy(zr[var].oindex[line_id, lev_indices, :].copy())
-                    
-        #         elif key in ['spatial_forcings']:
-        #             var_data = torch.from_numpy(zr[var][line_id].copy())
-        #         elif key in ['non_spatial_forcings' ]:
-        #             var_data = torch.tensor(zr[var][line_id])
-        #         # elif key in ['ozone']:
-        #         #     key = 'spatial_forcings'
-        #         #     var_data = torch.from_numpy(zr[var][line_id].copy())
-
-        #         arrays.append(var_data)
-        #     if(key == 'spatial_forcings'):
-        #         for i in range(66):
-        #             arrays.append(torch.from_numpy(zr['ozone'][line_id,i].copy()))
-        #     if(key == 'ozone'):
-        #         continue
-        #     tdict_data[key] = torch.stack(arrays)
-        #     del arrays
-
-            # print(tdict_data)
-
-
-
-
-
-
-
-        
-
-        
-        # with Dataset(file_path, "r") as nc:
-        #     for key, vars_ in self.variables.items():
-        #         arrays = []
-        #         for var in vars_:
-        #             if key == 'surface':
-        #                 var_data = nc[var][line_id]
-        #                 var_data = torch.tensor(np.array(var_data, copy=True))[None]
-        #             elif key == 'level':
-        #                 plev_indices = [list(nc['plev'][:]).index(val) for val in self.dimension_indexers['plev'][1]]
-        #                 var_data = torch.tensor(np.array(nc[var][line_id, plev_indices, :, :], copy=True))
-        #             elif key == 'lev':
-        #                 lev_indices_temp = [round(float(x), 3) for x in list(nc['lev'][:])]
-        #                 lev_indices = [lev_indices_temp.index(round(float(val), 3)) for val in self.dimension_indexers['lev'][1]]
-        #                 var_data = torch.tensor(np.array(nc[var][line_id, lev_indices, :], copy=True))
-        #             elif key in ['spatial_forcings', 'non_spatial_forcings', 'ozone']:
-        #                 var_data = torch.tensor(np.array(nc[var][line_id], copy=True))
-        #             arrays.append(var_data)
-        #         if(key == 'spatial_forcings'):
-        #             for i in range(66):
-        #                 arrays.append(torch.from_numpy(nc['ozone'][line_id,i].copy()))
-        #         if(key == 'ozone'):
-        #             continue
-        #         tdict_data[key] = torch.stack(arrays)
-        #         del arrays  # Explicit cleanup
-        # with Dataset(file_path, "r") as nc:
-        #     # Convert coordinate selections to indices
-        #     indexers = {}
-        #     print(self.dimension_indexers)
-        #     if self.dimension_indexers:
-        #         indexers = select_by_coords(nc, self.dimension_indexers)
-        #     print(indexers)
-        #     tdict_data = {}
-        #     for key, vars_ in variables.items():
-        #         if vars_:
-        #             arrays = []
-        #             for var in vars_:
-        #                 var_data = nc.variables[var]
-    
-        #                 # Build slice object for all dimensions
-        #                 slices = []
-        #                 for dim in var_data.dimensions:
-        #                     if dim in indexers:
-        #                         slices.append(indexers[dim])
-        #                     # elif dim == 'line':  # example for your line_id dimension
-        #                     #     slices.append(line_id)
-        #                     else:
-        #                         slices.append(slice(None))
-    
-        #                 data_slice = var_data[tuple(slices)]
-        #                 arrays.append(torch.tensor(data_slice, dtype=torch.float32))
-        #             tdict_data[key] = torch.stack(arrays)
-        #         else:
-        #             tdict_data[key] = torch.empty((0,), dtype=torch.float32)
-
-        # return tdict_data
-
-
-        
-        # with Dataset(file_path, "r") as nc:
-        #     tdict_data = {}
-        #     for key, variables in self.variables.items():
-        #         if variables:
-        #             arrays = [torch.tensor(nc[var][line_id], dtype=torch.float32) for var in variables]
-        #             tdict_data[key] = torch.stack(arrays)
-        #         else:
-        #             tdict_data[key] = torch.empty((0,), dtype=torch.float32)
-        # return TensorDict(tdict_data)
-        # tdict = self.convert_to_tensordict(file_path=self.files[file_id])
-
-        # cached_xrdataset.close()
-
-        # obsi.close()
-
-        # if warning_on_nan:
-        #     if any([x.isnan().any().item() for x in tdict.values()]):
-        #         warnings.warn(f"NaN values detected in {file_id} {line_id} {self.files[file_id]}")
-
-        # if return_timestamp or self.return_timestamp:
-        #     timestamp = self.cached_xrdataset.time[line_id].values.item()
-        #     timestamp = torch.tensor(timestamp // 10**9, dtype=torch.int32)
-        #     return tdict, timestamp
-
-        # return tdict
