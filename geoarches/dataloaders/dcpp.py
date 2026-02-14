@@ -285,7 +285,7 @@ class DCPPForecast(XarrayDataset):
         else:
             dict_out = {k: ((v - means) / stds if "state" in k else v) for k, v in batch.items()}
             dict_out = {
-                k: replace_inf_and_large_values(v, 1e35) if "state" in k else v
+                k: replace_inf_and_large_values(v, 1e35,0) if "state" in k else v
                 for k, v in dict_out.items()
             }
             return dict_out
