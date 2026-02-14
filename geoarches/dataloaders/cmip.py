@@ -336,7 +336,7 @@ class CMIPForecast(XarrayDataset):
         ]  # add dim for stacking later
        
         self.orography = (self.orography - self.orography.mean()) / self.orography.std()
-
+    
     def convert_to_tensordict(self, xr_dataset):
         """
         input xarr should be a single time slice

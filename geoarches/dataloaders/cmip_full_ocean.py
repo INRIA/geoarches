@@ -1,5 +1,5 @@
 import importlib.resources
-
+import datetime
 import torch
 from tensordict.tensordict import TensorDict
 
@@ -11,7 +11,13 @@ from geoarches.utils.tensordict_utils import (
 
 from .. import stats as geoarches_stats
 from .netcdf import XarrayDataset
-
+def timestamp_to_index(ts, start_year=1852, start_month=1): #the file starts after two years
+    # Convert seconds from epoch to a datetime object
+    dt = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=ts)
+    # Calculate the monthly index
+    index = (dt.year - start_year) * 12 + (dt.month - start_month)
+    # print(index,dt.year,dt.month)
+    return index
 
 class CMIPForecastLeadTime(XarrayDataset):
     """
@@ -39,6 +45,7 @@ class CMIPForecastLeadTime(XarrayDataset):
         surface_variables=None,
         level_variables=None,
         add_orography=False,
+        add_climate_indices=False,
         spatial_forcing_variables=[
             "methane",
             # "cfc11",
@@ -138,58 +145,27 @@ class CMIPForecastLeadTime(XarrayDataset):
         )
         if filename_filter is None:
             filename_filter = filename_filters[domain]
-        if variables is None:
-            variables = dict(
-                surface=surface_variables,
-                level=level_variables,
-                lev=["thetao"],
-                spatial_forcings=spatial_forcing_variables,
-                non_spatial_forcings=non_spatial_forcing_variables,
-            )
+
 
         dimension_indexers = {"plev": ("plev", pressure_levels), "lev": ("lev", depth_levels)}
-        
-        self.master_list_spatial_forcing_variables = [
-            "methane",
-            # "cfc11",
-            "carbon",
-            "nitrous",
-            "load_ASNO3M",
-            "load_CSNO3M",
-            "load_CINO3M",
-            "load_SO4",
-            "load_AIBCM",
-            "load_ASBCM",
-        ]
-        if(self.full_ozone):
-            variables['ozone'] = ['ozone']
-        # else:
-        #     variables['ozone'] = ["ozone_0","ozone_1","ozone_2","ozone_3","ozone_4","ozone_5"]
-            # self.master_list_spatial_forcing_variables.append('ozone')
-        if(not self.full_ozone):
-            self.master_list_spatial_forcing_variables = self.master_list_spatial_forcing_variables + ["ozone_0",
-            "ozone_1",
-            "ozone_2",
-            "ozone_3",
-            "ozone_4",
-            "ozone_5"]
-        self.master_list_non_spatial_forcing_variables = [
-            "ssi_0",
-            "ssi_1",
-            "ssi_2",
-            "ssi_3",
-            "ssi_4",
-            "ssi_5",
-            "exp_id",
-        ]
         super().__init__(
             path,
             filename_filter=filename_filter,
             variables=variables,
             limit_examples=limit_examples,
             dimension_indexers=dimension_indexers,
-            timestamp_key=lambda x: (x[0], x[1]),
+            timestamp_key=lambda x: (x[0], x[1]), # sort by file, then index of time in file. 
+            add_climate_indices=add_climate_indices
         )
+
+        self.variables = dict(
+            surface=surface_variables,
+            level=level_variables,
+            lev=["thetao"],
+            spatial_forcings=spatial_forcing_variables,
+            non_spatial_forcings=non_spatial_forcing_variables,
+        )
+        self.surface_variable_master_list = ['tos','siconc','sithick','zos','net_flux','evspsbl','huss']
         if self.norm_scheme == 'zeroes':
             self.data_mean = TensorDict(
                 surface=torch.tensor(0),
@@ -202,141 +178,68 @@ class CMIPForecastLeadTime(XarrayDataset):
                 surface=torch.tensor(1),
                 level=torch.tensor(1),
                 lev=torch.tensor(1),
-                spatial_forcings=torch.tensor(0),
-                non_spatial_forcings=torch.tensor(0)
+                spatial_forcings=torch.tensor(1),
+                non_spatial_forcings=torch.tensor(1)
             )
         else:
-                # return torch.load(f'{geoarches_stats_path}/cmip_stats_{getattr(cfg, "norm_scheme", None)}.pt')
             stats_file_path = f'cmip_stats_{self.norm_scheme}.pt'
-            # if self.full_ozone: 
-            #     stats_file_path = "cmip_stats_full_ozone.pt"
-            # elif norm_scheme == 'zg_non_log':
-            #     stats_file_path = "cmip_stats_zg_non_log.pt"
-
-            # elif norm_scheme == 'full_ocean':
-            #     stats_file_path = "cmip_stats_full_ocean.pt"
-            # elif norm_scheme == 'zg_log':
-            #     stats_file_path = 'cmip_stats_zg_log.pt'
-            # elif norm_scheme == 'longer_temps':
-            #     stats_file_path = 'cmip_stats_longer_temp.pt'
-
-            # elif ("piControl" in train_filter) and (norm_scheme == 'spatial_new'):
-            #     stats_file_path = "cmip_stats_test_welfords.pt"
-            # elif "piControl" in train_filter:
-            #     stats_file_path = "cmip_stats_piControl.pt"
-            # else:
-            #     stats_file_path = "cmip_stats_test_welfords_without_piControl.pt"
             geoarches_stats_path = importlib.resources.files(geoarches_stats)
             norm_file_path = geoarches_stats_path / stats_file_path
             spatial_norm_stats = torch.load(norm_file_path,weights_only=False)
-            # a hack to add exp_id without needing to normalize it.
-            spatial_norm_stats["non_spatial_forcings_mean"] = torch.concat(
-                [spatial_norm_stats["non_spatial_forcings_mean"], torch.tensor([0])]
+            self.data_mean = TensorDict(
+                surface=spatial_norm_stats["surface_mean"],
+                lev=spatial_norm_stats["lev_mean"],
+                spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
+                non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
             )
-            spatial_norm_stats["non_spatial_forcings_std"] = torch.concat(
-                [spatial_norm_stats["non_spatial_forcings_std"], torch.tensor([1])]
+            self.data_std = TensorDict(
+                surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
+                lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
+                spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
+                    axis=(-1, -2), keepdim=True
+                ),
+                non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
             )
-            if ('full_ocean' in path):
-                self.data_mean = TensorDict(
-                    surface=spatial_norm_stats["surface_mean"],
-                    lev=spatial_norm_stats["lev_mean"],
-                    spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
-                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
-                )
-                self.data_std = TensorDict(
-                    surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
-                    lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
-                    spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
-                        axis=(-1, -2), keepdim=True
-                    ),
-                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
-                )
-            else:
-                self.data_mean = TensorDict(
-                    surface=spatial_norm_stats["surface_mean"],
-                    level=spatial_norm_stats["level_mean"],
-                    lev=spatial_norm_stats["lev_mean"],
-                    spatial_forcings=spatial_norm_stats["spatial_forcings_mean"],
-                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_mean"],
-                )
-                self.data_std = TensorDict(
-                    surface=spatial_norm_stats["surface_std"].nanmean(axis=(-1, -2), keepdim=True),
-                    level=spatial_norm_stats["level_std"].nanmean(axis=(-1, -2), keepdim=True),
-                    lev=spatial_norm_stats["lev_std"].nanmean(axis=(-1, -2), keepdim=True),
-                    spatial_forcings=spatial_norm_stats["spatial_forcings_std"].nanmean(
-                        axis=(-1, -2), keepdim=True
-                    ),
-                    non_spatial_forcings=spatial_norm_stats["non_spatial_forcings_std"],
-                )
-                # if(len(level_variables) == 4): #special case when zg is removed, need to be more precise here
-                #     self.data_mean['level'] = self.data_mean['level'][:len(level_variables)]     
-                #     self.data_std['level'] = self.data_std['level'][:len(level_variables)]
-            #this is redundant with norm_scheme == zg_log
-            # if(self.zg_log):
-            #     geoarches_stats_path = importlib.resources.files(geoarches_stats)
-            #     norm_file_path = geoarches_stats_path / 'cmip_stats_zg_log.pt'
-            #     spatial_norm_stats = torch.load(norm_file_path,weights_only=False)
-            #     if(norm_scheme == 'full_ocean'):
-            #         self.data_mean['level'][-1] = spatial_norm_stats['level_mean'][-1,1:]
-            #         self.data_std['level'][-1] = spatial_norm_stats['level_std'][-1,1:].nanmean(axis=(-1, -2),keepdims=True)
-            #     else:
-            #         self.data_mean['level'][-1] = spatial_norm_stats['level_mean'][-1]
-            #         self.data_std['level'][-1] = spatial_norm_stats['level_std'][-1].nanmean(axis=(-1, -2),keepdims=True)
-            # if(len(level_variables) == 4): #special no zg case
-            #     self.data_mean['level'] = self.data_mean['level'][:len(level_variables)]     
-            #     self.data_std['level'] = self.data_std['level'][:len(level_variables)]       
 
-            if(not self.full_ozone):
-                if(len(self.spatial_forcing_variables) ==0):
-                    self.data_mean["spatial_forcings"] = 0
-                    self.data_std['spatial_forcings'] = 1
-                else:
-                    self.data_mean["spatial_forcings"] = [
-                        self.data_mean["spatial_forcings"][self.master_list_spatial_forcing_variables.index(val)]
-                        for i, val in enumerate(self.spatial_forcing_variables)
-                        if val in self.master_list_spatial_forcing_variables
-                    ]
+        self.data_mean["spatial_forcings"] = self.data_mean["spatial_forcings"][:-1]
+        self.data_std["spatial_forcings"] = self.data_std["spatial_forcings"][:-1]
+        #remove ice         
+        self.data_mean["surface"] = [
+            self.data_mean["surface"][self.surface_variable_master_list.index(val)] for i,val 
+            in enumerate(self.variables['surface'])
+            if val in self.surface_variable_master_list
+        ]
+        self.data_std["surface"] = [
+            self.data_std["surface"][self.surface_variable_master_list.index(val)] for i,val 
+            in enumerate(self.variables['surface'])
+            if val in self.surface_variable_master_list
+        ]
 
-                    self.data_std["spatial_forcings"] = [
-                        self.data_std["spatial_forcings"][self.master_list_spatial_forcing_variables.index(val)]
-                        for i, val in enumerate(self.spatial_forcing_variables)
-                        if val in self.master_list_spatial_forcing_variables
-                    ]
-                self.data_std["non_spatial_forcings"] = torch.tensor([
-                    self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
-                    for i, val in enumerate(self.non_spatial_forcing_variables)
-                    if val in self.master_list_non_spatial_forcing_variables
-                ])
-            else:
-                #accidentally added orography to full_ozone normalization
-                self.data_mean["spatial_forcings"] = self.data_mean["spatial_forcings"][:-1]
-                self.data_mean["non_spatial_forcings"] = self.data_mean["non_spatial_forcings"][:-1]
-                self.data_std["spatial_forcings"] = self.data_std["spatial_forcings"][:-1]
-                self.data_std["non_spatial_forcings"] = self.data_std["non_spatial_forcings"][:-1]
-        self.data_std["non_spatial_forcings"] = torch.tensor([
-            self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
-            for i, val in enumerate(self.non_spatial_forcing_variables)
-            if val in self.master_list_non_spatial_forcing_variables
-        ])
-        self.data_mean["non_spatial_forcings"] = torch.tensor([
-            self.data_mean["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
-            for i, val in enumerate(self.non_spatial_forcing_variables)
-            if val in self.master_list_non_spatial_forcing_variables
-        ])
-        self.surface_variables = surface_variables
-        # self.level_variables = [
-        #     a + " " + str(p // 100) for a in level_variables for p in pressure_levels
-        # ]
-        times_seconds = [v[2].item() // 10**9 for k, v in self.id2pt.items()]
-        self.next_timestamp_map = {k: v for k, v in list(zip(times_seconds, times_seconds[1:]))}
+        self.valid_indices = []
+        ref_step = min(self.lead_times) // self.timedelta
+        prev_offset = self.load_prev * ref_step
+        max_future_offset = max(self.lead_times) // self.timedelta
 
-        # override netcdf functionality
-        self.timestamps = sorted(self.timestamps, key=lambda x: (x[0], x[1]))  # sort by timestamp
+
+        #here we need to check the line_id of each file, therefore cannot just clip the whole length. 
+        #see netcdf, as if add_el_nino is activated, it also clips the first 24 steps
+        for k in range(len(self.timestamps)):
+            # Check prev
+            if k - prev_offset < 0 or self.timestamps[k - prev_offset][0] != self.timestamps[k][0]:
+                continue
+            
+            # Check future
+            if k + max_future_offset >= len(self.timestamps) or self.timestamps[k + max_future_offset][0] != self.timestamps[k][0]:
+                continue
+                
+            self.valid_indices.append(k)
+
         self.orography = torch.load(f"{forcings_path}/orography.pt")[
             None
         ]  # add dim for stacking later
        
         self.orography = (self.orography - self.orography.mean()) / self.orography.std()
+        self.climate_indices = torch.load(f'{forcings_path}/climate_indices.pt')
 
     def convert_to_tensordict(self, xr_dataset):
         """
@@ -347,26 +250,18 @@ class CMIPForecastLeadTime(XarrayDataset):
         return tdict
 
     def __len__(self):
-        # Take into account previous and/or future timestamps loaded for one example.
-        # Convert lead times (months) to index steps using timedelta
-        ref_step = min(self.lead_times) // self.timedelta
-        max_future_step = max(self.lead_times) // self.timedelta
-        offset_steps = max_future_step + (self.load_prev * ref_step)
-        return super().__len__() - offset_steps
+        return len(self.valid_indices)
 
     
     def __getitem__(self, i, normalize=True):
 
-        # Shift index if previous state is requested. Use reference step (smallest lead).
-        ref_step = min(self.lead_times) // self.timedelta
-        i = i + self.load_prev * ref_step
-
+        idx = self.valid_indices[i]
         out = TensorDict()
         
-        out["state"] = super().__getitem__(i).clone()
+        out["state"] = super().__getitem__(idx).clone()
 
         out["timestamp"] = torch.tensor(
-            self.id2pt[i][2].item() // 10**9,
+            self.id2pt[idx][2].item() // 10**9,
             dtype=torch.int64,
         )
         
@@ -375,7 +270,8 @@ class CMIPForecastLeadTime(XarrayDataset):
         if self.return_all_lead_times:
             next_states = []
             for step in lead_steps:
-                next_states.append(super().__getitem__(i + step).clone())
+
+                next_states.append(super().__getitem__(idx + step).clone())
             
             out["next_state"] = torch.stack(next_states, dim=0)
             # Expose which lead time (months) was selected for this example
@@ -387,31 +283,16 @@ class CMIPForecastLeadTime(XarrayDataset):
             else:
                 chosen_idx = int(torch.randint(low=0, high=len(lead_steps), size=(1,)).item())
             chosen_step = lead_steps[chosen_idx]
-            out["next_state"] = super().__getitem__(i + chosen_step).clone()
+            if(chosen_step ==12):
+                timestamp_to_index(self.id2pt[idx][2].item() // 10**9)
+                timestamp_to_index(self.id2pt[idx + chosen_step][2].item() // 10**9)
+            out["next_state"] = super().__getitem__(idx + chosen_step).clone()
             out["lead_time_months"] = torch.tensor(self.lead_times[chosen_idx], dtype=torch.int64)
             out["lead_time"] = torch.tensor([chosen_step], dtype=torch.int64)
 
         # Previous state (use reference step)
-        out["prev_state"] = super().__getitem__(i - ref_step).clone()
-        # if(self.one_year_lead_time):
-
-        #     #add year placeholder, this kind of doubles importance of ta for now, but need to have a place holder for next year pred for autoregression
-        #     year_tas = out['state']['surface'][self.surface_variables.index('tas')][None]
-        #     year_ta = out['state']['level'][self.level_variables.index('ta')][None]
-        #     out['state']['surface'] = torch.concatenate([out['state']['surface'],year_tas],dim=0)
-        #     out['state']['level'] = torch.concatenate([out['state']['level'],year_ta],dim=0)
-
-        #     next_year = super().__getitem__(i+ self.lead_time_months // self.timedelta+12)
-        #     next_year_tas = next_year['surface'][self.surface_variables.index('tas')][None]
-        #     next_year_ta = next_year['level'][self.level_variables.index('ta')][None]
-        #     out['next_state']['surface'] = torch.concatenate([out['next_state']['surface'],next_year_tas],dim=0)
-        #     out['next_state']['level'] = torch.concatenate([out['next_state']['level'],next_year_ta],dim=0)
-
-        #     prev_year = super().__getitem__(i - self.lead_time_months // self.timedelta - 12)
-        #     prev_year_tas = prev_year['surface'][self.surface_variables.index('tas')][None]
-        #     prev_year_ta = prev_year['level'][self.level_variables.index('ta')][None]
-        #     out['prev_state']['surface'] = torch.concatenate([out['prev_state']['surface'],prev_year_tas],dim=0)
-        #     out['prev_state']['level'] = torch.concatenate([out['prev_state']['level'],prev_year_ta],dim=0)
+        ref_step = min(self.lead_times) // self.timedelta
+        out["prev_state"] = super().__getitem__(idx - ref_step).clone()
 
         # Replace inf/large values IN-PLACE instead of cloning
         for k, v in out.items():
@@ -420,15 +301,24 @@ class CMIPForecastLeadTime(XarrayDataset):
                     # In-place replacement  
                     mask = (tensor.abs() > 1e30) | torch.isinf(tensor)
                     tensor[mask] = torch.nan
-        # if(self.aerosol_log):
-        #     out['state']['spatial_forcings'][3:9] = torch.log(out['state']['spatial_forcings'][3:9])
-        #     out['next_state']['spatial_forcings'][3:9] = torch.log(out['next_state']['spatial_forcings'][3:9])
-        #     out['prev_state']['spatial_forcings'][3:9] = torch.log(out['prev_state']['spatial_forcings'][3:9])
 
+        surface_filter_indices = [
+            self.surface_variable_master_list.index(val) for i,val 
+            in enumerate(self.variables['surface'])
+            if val in self.surface_variable_master_list
+        ]
+        if(self.return_all_lead_times):
+            out["next_state"]['surface'] = out["next_state"]["surface"][:,surface_filter_indices]
+            out["state"]['surface'] = out["state"]["surface"][surface_filter_indices]
+            out["prev_state"]['surface'] = out["prev_state"]["surface"][surface_filter_indices]
+        else:
+            out["next_state"]['surface'] = out["next_state"]["surface"][surface_filter_indices]
+            out["state"]['surface'] = out["state"]["surface"][surface_filter_indices]
+            out["prev_state"]['surface'] = out["prev_state"]["surface"][surface_filter_indices]            
         # # Normalize in-place if possible
         if normalize:
             out = self.normalize(out)
-            
+
             for k, v in out.items():
                 if "state" in k:
                     for key, value in v.items():
@@ -437,6 +327,9 @@ class CMIPForecastLeadTime(XarrayDataset):
                             v[key] = value.contiguous()
                             value = v[key]
                         torch.nan_to_num(value, out=value)
+
+
+
         # Handle orography
         if self.add_orography:
             for state_key in ['state', 'prev_state', 'next_state']:
@@ -455,6 +348,17 @@ class CMIPForecastLeadTime(XarrayDataset):
                             [old_spatial, oro_expanded], dim=1
                         ).contiguous()
                     del old_spatial
+
+        #need to get timestamp -> which index 
+        # index = timestamp_to_index(self.id2pt[idx][2].item() // 10**9)
+        # if self.add_climate_indices:
+        #     for state_key in ['state', 'prev_state', 'next_state']:
+        #         if state_key in out:
+        #             for climate_index in range(6):
+        #                 old_non_spatial = out[state_key]['non_spatial_forcings']
+        #                 out[state_key]['non_spatial_forcings'] = torch.cat(
+        #                     [old_non_spatial, self.climate_indices[:,climate_index,index]]  , dim=0
+        #                 )
 
         return out
         
@@ -482,10 +386,11 @@ class CMIPForecastLeadTime(XarrayDataset):
                             # Compute normalized value
                             mean_key = means.get(inner_k, 0)
                             std_key = stds.get(inner_k, 1)
-                            
+            
                             # Normalize with minimal intermediate tensors
                             normalized = inner_v.sub(mean_key).div_(std_key)
                             batch[k][inner_k] = normalized
+
                     else:
                         # Simple tensor case
                         normalized = v.sub(means).div_(stds)
@@ -493,28 +398,6 @@ class CMIPForecastLeadTime(XarrayDataset):
             
             return batch
 
-    # def denormalize(self, batch, stateless=False, month=None):
-    #     if stateless:
-    #         device = batch.device
-    #     else:
-    #         device = list(batch.values())[0].device
-    #     means = self.data_mean.to(device)
-    #     stds = self.data_std.to(device)
-    #     for key in ['non_spatial_forcings', 'spatial_forcings']:
-    #         if key in means:
-    #             del means[key]
-    #         if key in stds:
-    #             del stds[key]
-    #         if key in batch['state']:
-    #             del batch['state'][key]
-    #         if key in batch['next_state']:
-    #             del batch['next_state'][key]
-    #         if key in batch['prev_state']:
-    #             del batch['prev_state'][key]
-    #     if stateless:
-    #         return (batch * stds) + means
-    #     else:
-    #         return {k: ((v * stds) + means if "state" in k else v) for k, v in batch.items()}
     def denormalize(self, batch, stateless=False, month=None):
         if stateless:
             device = batch.device

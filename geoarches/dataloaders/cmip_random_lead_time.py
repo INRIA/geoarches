@@ -302,11 +302,13 @@ class CMIPForecastLeadTime(XarrayDataset):
                         for i, val in enumerate(self.spatial_forcing_variables)
                         if val in self.master_list_spatial_forcing_variables
                     ]
-                self.data_std["non_spatial_forcings"] = torch.tensor([
-                    self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
-                    for i, val in enumerate(self.non_spatial_forcing_variables)
-                    if val in self.master_list_non_spatial_forcing_variables
-                ])
+
+                #is this an error? 
+                # self.data_std["non_spatial_forcings"] = torch.tensor([
+                #     self.data_std["non_spatial_forcings"][self.master_list_non_spatial_forcing_variables.index(val)]
+                #     for i, val in enumerate(self.non_spatial_forcing_variables)
+                #     if val in self.master_list_non_spatial_forcing_variables
+                # ])
             else:
                 #accidentally added orography to full_ozone normalization
                 self.data_mean["spatial_forcings"] = self.data_mean["spatial_forcings"][:-1]

@@ -4,6 +4,34 @@ import torch
 import torch.nn as nn
 
 
+import torch
+import torch.nn as nn
+
+class LearnedEmbedder(nn.Module):
+    """
+    Embeds discrete timesteps into vector representations using a learned lookup table.
+    """
+    def __init__(self, hidden_size, num_steps=1000):
+        super().__init__()
+        # We replace the sinusoidal logic with a standard Embedding layer
+        self.embedding = nn.Embedding(num_steps, hidden_size)
+        
+        # Keeping the MLP structure to match the capacity of your original version
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size),
+        )
+
+    def forward(self, t):
+        """
+        :param t: a 1-D Tensor of N indices (integers).
+        :return: an (N, hidden_size) Tensor of embeddings.
+        """
+        # Ensure t is long type for the embedding lookup
+        t_emb = self.embedding(t.long().clamp(0, self.embedding.num_embeddings - 1))
+        return self.mlp(t_emb)
+
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
