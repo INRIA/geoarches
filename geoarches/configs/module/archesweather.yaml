@@ -37,6 +37,7 @@ backbone:
   tensor_size: [8, 60, 120] # after embed
   emb_dim: 192
   cond_dim: 256
+  num_heads: [6, 12, 12, 6]
   window_size: [1, 6, 10]
   droppath_coeff: 0.2
   dropout: 0
