@@ -5,6 +5,7 @@ from typing import Callable
 import torch
 import xarray as xr
 from einops import rearrange
+from omegaconf import ListConfig
 from torchmetrics import Metric
 
 from geoarches.dataloaders import era5
@@ -175,12 +176,12 @@ class Era5BrierSkillScore(TensorDictMetricBase):
 
     def __init__(
         self,
+        surface_variables=era5.arches_default_surface_variables,
+        level_variables=era5.arches_default_level_variables,
+        pressure_levels=era5.arches_default_pressure_levels,
         quantiles_filepath="era5-quantiles-2016_2022.nc",
         high_quantile_levels=[0.99, 0.999, 0.9999],
         low_quantiles_levels=[0.01, 0.001, 0.0001],
-        surface_variables=era5.surface_variables,
-        level_variables=era5.level_variables,
-        pressure_levels=era5.pressure_levels,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
         save_memory: bool = False,
@@ -202,17 +203,22 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
         """
+        if isinstance(surface_variables, ListConfig):
+            surface_variables = list(surface_variables)
+            level_variables = list(level_variables)
+            pressure_levels = list(pressure_levels)
+
         # Quantiles for each var across gridpoints and times.
         with resources.as_file(resources.files(geoarches_stats).joinpath(quantiles_filepath)) as f:
             q = xr.open_dataset(f).transpose(..., "latitude", "longitude")
         self.surface_high_quantiles = torch.from_numpy(
-            q[era5.surface_variables]
+            q[surface_variables]
             .sel({"quantile": high_quantile_levels}, method="nearest")
             .to_array()
             .to_numpy()
         ).unsqueeze(-3)  # Add level dimension.
         self.surface_low_quantiles = torch.from_numpy(
-            q[era5.surface_variables]
+            q[surface_variables]
             .sel({"quantile": low_quantiles_levels}, method="nearest")
             .to_array()
             .to_numpy()

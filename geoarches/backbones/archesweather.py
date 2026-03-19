@@ -1,4 +1,5 @@
 import importlib
+from enum import Enum
 
 import numpy as np
 import torch
@@ -20,6 +21,11 @@ from .archesweather_layers import (
 )
 
 
+class ForcingsEmbedding(str, Enum):
+    SURFACE = "surface"
+    SEPARATE = "separate"
+
+
 class WeatherEncodeDecodeLayer(nn.Module):
     """
     gathers layers for the encoder and decoder
@@ -33,20 +39,42 @@ class WeatherEncodeDecodeLayer(nn.Module):
         patch_size=(2, 2, 2),
         surface_ch=4,
         level_ch=6,
+        forcings_ch=0,
         n_concatenated_states=0,
         final_interpolation=False,
+        circular_padding=False,
+        forcings_embedding: ForcingsEmbedding | str | None = None,
         auto_move_to_device=True,
+        constant_mask_file="archesweather_constant_masks",
     ) -> None:
+        """
+        Args:
+            img_size: (levels, lat, lon)
+            emb_dim: Hidden embedding dimension.
+            out_emb_dim: Output embedding dimension.
+            patch_size: Patch size for the 2D and 3D convolutions.
+            surface_ch: Number of channels for 2D variables.
+            level_ch: Number of channels for 3D variables (with level dimension).
+            forcings_ch: Number of channels for the forcing variables.
+            n_concatenated_states: Number of input states concatenated with the input state.
+            final_interpolation: Whether to interpolate the output to the original image size.
+            forcings_embedding: How to embed the forcings.
+                SURFACE: Concatenate forcings to the surface and use the same surface projection.
+                SEPARATE: Add a separate projection for forcings.
+            auto_move_to_device: Whether to automatically move the constant masks to the device.
+        """
         super().__init__()
         self.__dict__.update(locals())
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
-            geoarches_stats_path / "archesweather_constant_masks.pt", weights_only=True
+            geoarches_stats_path / f"{constant_mask_file}.pt", weights_only=True
         )
         constant_dims = self.constant_masks.shape[0]
 
         surface_ch_in = constant_dims + surface_ch + n_concatenated_states * surface_ch
+        if self.forcings_embedding == ForcingsEmbedding.SURFACE:
+            surface_ch_in += forcings_ch
         level_ch_in = level_ch + n_concatenated_states * level_ch
 
         if torch.backends.mps.is_available():
@@ -62,6 +90,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.surface_proj = nn.Conv2d(
             surface_ch_in, emb_dim, kernel_size=patch_size[1:], stride=patch_size[1:]
         )
+        if forcings_embedding == ForcingsEmbedding.SEPARATE:
+            self.forcings_proj = nn.Conv2d(
+                forcings_ch, emb_dim, kernel_size=patch_size[1:], stride=patch_size[1:]
+            )
 
         l_pad = patch_size[0] - img_size[0] % patch_size[0]
         level_pads = [l_pad // 2, l_pad - l_pad // 2]
@@ -69,22 +101,26 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
 
         # decode layers
+        if circular_padding:
+            pad_args = dict(padding="same", padding_mode="circular")
+        else:
+            pad_args = dict(padding=1, padding_mode="zeros")
 
         self.surface_deconv = nn.Conv2d(
             out_emb_dim,
             surface_ch * patch_size[-1] ** 2,
             kernel_size=3,
             stride=1,
-            padding=1,
             bias=0,
+            **pad_args,
         )
         self.level_deconv = nn.Conv2d(
             out_emb_dim // 2,
             level_ch * patch_size[-1] ** 2,
             kernel_size=3,
             stride=1,
-            padding=1,
             bias=0,
+            **pad_args,
         )
         self.pixelshuffle = nn.PixelShuffle(patch_size[-1])
         ICNR_init(
@@ -98,18 +134,30 @@ class WeatherEncodeDecodeLayer(nn.Module):
             upscale_factor=patch_size[-1],
         )
 
-    def encode(self, state: TensorDict, cond_state: TensorDict = None):
+    def encode(
+        self,
+        state: TensorDict,
+        cond_state: TensorDict | None = None,
+        forcings: torch.Tensor = None,
+    ):
         """
         cond state is a condition state that is concatenated to the main state
         """
+        if forcings is not None and self.forcings_embedding is None:
+            raise ValueError("Passed forcings but typer of forcings_embedding is not set.")
+        if self.forcings_embedding and forcings is None:
+            raise ValueError(
+                "Expected forcings (self.forcings_embedding is set) but not forcings passed as input."
+            )
+
         bs = state.shape[0]
         device = state.device
         if self.auto_move_to_device and (self.constant_masks.device != device):
             self.constant_masks = self.constant_masks.to(device)
 
         # embed
-        level = state["level"]
-        surface = state["surface"].squeeze(-3)
+        level = state["level"]  # B, Var, Lev, Lat, Lon
+        surface = state["surface"].squeeze(-3)  # B, Var, Lat, Lon
 
         # remove south pole if necessary
         if surface.shape[-2] % 2:
@@ -124,20 +172,36 @@ class WeatherEncodeDecodeLayer(nn.Module):
             cond_surface = cond_state["surface"].squeeze(-3)
             cond_level = cond_state["level"]
 
+            # Remove south pole if necessary.
             if cond_state["surface"].shape[-2] % 2:
                 cond_surface = cond_surface[..., :-1, :]
                 cond_level = cond_level[..., :-1, :]
             surface = torch.cat([surface, cond_surface], dim=1)
             level = torch.cat([level, cond_level], dim=1)
 
+        # Remove south pole if necessary.
+        if forcings is not None and forcings.shape[-2] % 2:
+            forcings = forcings[..., :-1, :]
+        if self.forcings_embedding == ForcingsEmbedding.SURFACE:
+            surface = torch.cat([surface, forcings], dim=1)
+
         surface = self.surface_proj(surface)
         level = self.level_proj(self.level_padder(level))
 
         x = torch.concat([surface.unsqueeze(2), level], dim=2)
+
+        if self.forcings_embedding == ForcingsEmbedding.SEPARATE:
+            forcings = self.forcings_proj(forcings)
+            x = torch.concat([forcings.unsqueeze(2), x], dim=2)
+
         return x
 
     def decode(self, x):
-        surface, level = x[:, :, 0], x[:, :, 1:]
+        if self.forcings_embedding == ForcingsEmbedding.SEPARATE:
+            # Forcings were concatenated first to level dimension.
+            surface, level = x[:, :, 1], x[:, :, 2:]  # B, C, Lev, Lat, Lon
+        else:
+            surface, level = x[:, :, 0], x[:, :, 1:]
 
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)
@@ -197,7 +261,7 @@ class ArchesWeatherCondBackbone(nn.Module):
         super().__init__()
         self.__dict__.update(locals())
         drop_path = np.linspace(
-            0, droppath_coeff / depth_multiplier, 8 * depth_multiplier
+            0, droppath_coeff / depth_multiplier, int(8 * depth_multiplier)
         ).tolist()
         # In addition, three constant masks(the topography mask, land-sea mask and soil type mask)
         self.zdim = tensor_size[0]
@@ -207,7 +271,7 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer2_shape = (self.layer1_shape[0] // 2, self.layer1_shape[1] // 2)
 
         if first_interaction_layer == "linear":
-            self.interaction_layer = LinVert(in_features=emb_dim)
+            self.interaction_layer = LinVert(in_features=emb_dim, zdim=self.zdim)
 
         layer_args = dict(
             cond_dim=cond_dim,
@@ -225,9 +289,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer1 = CondBasicLayer(
             dim=emb_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[0],
-            drop_path=drop_path[: 2 * depth_multiplier],
+            drop_path=drop_path[: int(2 * depth_multiplier)],
             **layer_args,
             **kwargs,
         )
@@ -239,18 +303,18 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer2 = CondBasicLayer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[1],
-            drop_path=drop_path[2 * depth_multiplier :],
+            drop_path=drop_path[int(2 * depth_multiplier) :],
             **layer_args,
             **kwargs,
         )
         self.layer3 = CondBasicLayer(
             dim=emb_dim * 2,
             input_resolution=(self.zdim, *self.layer2_shape),
-            depth=6 * depth_multiplier,
+            depth=int(6 * depth_multiplier),
             num_heads=num_heads[2],
-            drop_path=drop_path[2 * depth_multiplier :],
+            drop_path=drop_path[int(2 * depth_multiplier) :],
             **layer_args,
             **kwargs,
         )
@@ -261,9 +325,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer4 = CondBasicLayer(
             dim=out_dim,
             input_resolution=(self.zdim, *self.layer1_shape),
-            depth=2 * depth_multiplier,
+            depth=int(2 * depth_multiplier),
             num_heads=num_heads[3],
-            drop_path=drop_path[: 2 * depth_multiplier],
+            drop_path=drop_path[: int(2 * depth_multiplier)],
             **layer_args,
             **kwargs,
         )
@@ -293,6 +357,6 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer4(x, cond_emb)
 
         output = x
-        output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+        output = output.transpose(1, 2).reshape(output.shape[0], -1, self.zdim, *self.layer1_shape)
 
         return output

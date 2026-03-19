@@ -9,12 +9,11 @@ import torch
 import torch.nn as nn
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from hydra.utils import instantiate
-from tensordict.tensordict import TensorDict
 from tqdm import tqdm
 
 import geoarches.stats as geoarches_stats
-from geoarches.backbones.dit import TimestepEmbedder
-from geoarches.dataloaders import era5, zarr
+from geoarches.backbones import dit
+from geoarches.dataloaders import zarr
 from geoarches.lightning_modules import BaseLightningModule
 from geoarches.utils.tensordict_utils import tensordict_apply, tensordict_cat
 
@@ -29,19 +28,20 @@ class DiffusionModule(BaseLightningModule):
     def __init__(
         self,
         cfg,
+        stats_cfg,
         name="diffusion",
         cond_dim=32,
+        # Temporary flag to allow backward compatibility with older checkpoints.
+        cond_times_backward_compatible=False,
+        cond_times=["month", "hour_of_day"],
         num_train_timesteps=1000,
         scheduler="flow",  # only available option
         prediction_type="sample",  # or velocity
         beta_schedule="squaredcos_cap_v2",
         beta_start=0.0001,
         beta_end=0.012,
-        loss_weighting_strategy=None,
         conditional="",  # things that the model is conditioned
         load_deterministic_model=False,
-        loss_delta_normalization=False,
-        state_normalization=False,
         pow=2,
         lr=1e-4,
         betas=(0.9, 0.98),
@@ -51,6 +51,9 @@ class DiffusionModule(BaseLightningModule):
         num_cycles=0.5,
         learn_residual=False,
         sd3_timestep_sampling=True,
+        noise_scheduler=None,
+        inference_scheduler=None,
+        use_masked_loss=True,
         **kwargs,
     ):
         """
@@ -62,6 +65,10 @@ class DiffusionModule(BaseLightningModule):
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
+
+        stats = instantiate(stats_cfg.module)
+        self.variables = stats.variables
+        self.levels = stats.levels
 
         self.det_model = None
         if load_deterministic_model:
@@ -75,19 +82,27 @@ class DiffusionModule(BaseLightningModule):
                 self.det_model = AvgModule(load_deterministic_model)
 
         # cond_dim should be given as arg to the backbone
+        # State time conditioning.
+        self.cond_times_backward_compatible = cond_times_backward_compatible
+        if cond_times_backward_compatible:
+            self.month_embedder = dit.TimestepEmbedder(cond_dim)
+            self.hour_embedder = dit.TimestepEmbedder(cond_dim)
+        else:
+            self.time_embedders = nn.ModuleDict(
+                {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
+            )
+        # Noise level.
+        self.timestep_embedder = dit.TimestepEmbedder(cond_dim)
 
-        self.month_embedder = TimestepEmbedder(cond_dim)
-        self.hour_embedder = TimestepEmbedder(cond_dim)
-        self.timestep_embedder = TimestepEmbedder(cond_dim)
-
-        self.noise_scheduler = FlowMatchEulerDiscreteScheduler(
+        self.noise_scheduler = noise_scheduler or FlowMatchEulerDiscreteScheduler(
             num_train_timesteps=num_train_timesteps
         )
 
-        self.inference_scheduler = deepcopy(self.noise_scheduler)
+        self.inference_scheduler = inference_scheduler or deepcopy(self.noise_scheduler)
 
-        area_weights = torch.arange(-90, 90 + 1e-6, 1.5).mul(torch.pi / 180).cos()
-        area_weights = (area_weights / area_weights.mean())[:, None]
+        self.loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
+        self.state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
+        self.state_normalization = stats_cfg.compute_state_scaler_args.state_normalization
 
         # set up metrics
         self.val_metrics = nn.ModuleList(
@@ -99,79 +114,34 @@ class DiffusionModule(BaseLightningModule):
                 for metric_name, metric in cfg.inference.metrics.items()
             }
         )
-        # define coeffs for loss
-
-        pressure_levels = torch.tensor(era5.pressure_levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
-
-        # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
-
-        self.loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-        # scaling loss or states
-        pangu_stats = torch.load(
-            geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
-        )
-        pangu_scaler = TensorDict(
-            level=pangu_stats["level_std"], surface=pangu_stats["surface_std"]
-        )
-
-        if state_normalization == "delta":
-            scaler = TensorDict(
-                level=torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
-            )
-
-        elif state_normalization == "pred":
-            scaler = TensorDict(
-                **torch.load(
-                    geoarches_stats_path / "deltapred24_aws_denorm.pt", weights_only=False
-                )
-            )
-            scaler["level"][-1] *= 3  # we don't care too much about vertical velocity
-
-            self.state_scaler = scaler / pangu_scaler  # inverse because we divide by state_scaler
 
         self.test_outputs = []
         self.validation_samples = {}
 
-    def forward(self, batch, noisy_next_state, timesteps, is_sampling=False):
-        device = batch["state"].device
-
+    def forward(self, batch, noisy_next_state, timesteps, pred_state=None, is_sampling=False):
         input_state = noisy_next_state
         conditional_keys = self.conditional.split("+")  # all the things we condition on
-
-        # whether we need to run the deterministic model
-        if "det" in conditional_keys:
-            assert "pred_state" in batch
-            pred_state = batch["pred_state"]
 
         if "prev" in conditional_keys:
             prev_state = batch["prev_state"]
             input_state = tensordict_cat([prev_state, input_state], dim=1)
         if "det" in conditional_keys:
+            # allow to pass pred_state both from kwarg and batch for backwards compat.
+            pred_state = batch.get("pred_state", pred_state)
             input_state = tensordict_cat([pred_state, input_state], dim=1)
 
-        # conditional by default
-        times = pd.to_datetime(batch["timestamp"].cpu().numpy() * 10**9).tz_localize(None)
-        month = torch.tensor(times.month).to(device)
-        month_emb = self.month_embedder(month)
-        hour = torch.tensor(times.hour).to(device)
-        hour_emb = self.hour_embedder(hour)
+        # Generate conditional embedding by combining embeddings from different time features.
+        if self.cond_times_backward_compatible:
+            cond_emb = dit.get_combined_time_embedding(
+                {"month": self.month_embedder, "hour_of_day": self.hour_embedder}, batch
+            )
+        else:
+            cond_emb = dit.get_combined_time_embedding(self.time_embedders, batch)
+
         timestep_emb = self.timestep_embedder(timesteps)
+        cond_emb = timestep_emb if cond_emb is None else cond_emb + timestep_emb
 
-        cond_emb = month_emb + hour_emb + timestep_emb
-
-        x = self.embedder.encode(batch["state"], input_state)
+        x = self.embedder.encode(batch["state"], input_state, batch.get("forcings", None))
 
         x = self.backbone(x, cond_emb)
         out = self.embedder.decode(x)  # we get tdict
@@ -193,22 +163,28 @@ class DiffusionModule(BaseLightningModule):
             0, self.noise_scheduler.config.num_train_timesteps, (bs,), device=device
         ).long()
 
-        noise = torch.randn_like(batch["next_state"])  # amazing it works
+        noise = batch["next_state"].apply(torch.randn_like)
 
         # by default
         next_state = batch["next_state"]
+        pred_state = None
 
         if self.learn_residual == "default":
             next_state = batch["next_state"] - batch["state"]
 
         elif self.learn_residual == "pred":
-            if "pred_state" not in batch:
-                with torch.no_grad():
-                    batch["pred_state"] = self.det_model(batch).detach()
-            next_state = batch["next_state"] - batch["pred_state"]
+            with torch.no_grad():
+                if "pred_state" in batch:
+                    pred_state = batch["pred_state"]
+                else:
+                    pred_state = self.det_model(batch).detach()
+            next_state = batch["next_state"] - pred_state
+
+        # remove nans in next_state for processing.
+        next_state = tensordict_apply(lambda x: torch.nan_to_num(x, nan=0.0), next_state)
 
         if self.state_normalization:
-            next_state = tensordict_apply(torch.div, next_state, self.state_scaler.to(self.device))
+            next_state = tensordict_apply(torch.mul, next_state, self.state_scaler.to(self.device))
 
         # weighting scheme: logit normal
         if self.sd3_timestep_sampling:
@@ -225,7 +201,9 @@ class DiffusionModule(BaseLightningModule):
             device=device, dtype=next(iter(batch["state"].values())).dtype
         )
 
-        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
+        # search in indices, needs to take minus because schedule_timesteps is
+        # in descending order.
+        step_indices = torch.searchsorted(-schedule_timesteps, -timesteps)
         sigma = sigmas[step_indices].flatten()[:, None, None, None, None]  # shape (bs,)
 
         noisy_next_state = noise.apply(lambda x: x * sigma) + next_state.apply(
@@ -240,6 +218,7 @@ class DiffusionModule(BaseLightningModule):
             batch,
             noisy_next_state,
             timesteps,
+            pred_state=pred_state,
         )
         # compute loss
 
@@ -258,8 +237,18 @@ class DiffusionModule(BaseLightningModule):
             snr_weights = snr_weights.to(self.device)[:, None, None, None, None]
             loss_coeffs = loss_coeffs.apply(lambda x: x * snr_weights)
 
-        weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-        loss = sum(weighted_error.mean().values())
+        # Mask loss where gt is NaN.
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
+        if self.use_masked_loss:
+            pred = pred * mask
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+            weighted_error = weighted_error.sum() / mask.sum()  # mean
+            loss = sum(weighted_error.values())
+        else:
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs).mean()
+            loss = sum(weighted_error.values())
+
         return loss
 
     def sample(
@@ -298,9 +287,13 @@ class DiffusionModule(BaseLightningModule):
         if scale_input_noise is not None:
             noisy_state = noisy_state * scale_input_noise
 
-        if self.learn_residual == "pred" and "pred_state" not in batch:
+        pred_state = None
+        if self.learn_residual == "pred":
             with torch.no_grad():
-                batch["pred_state"] = self.det_model(batch).detach()
+                if "pred_state" in batch:
+                    pred_state = batch["pred_state"]
+                else:
+                    pred_state = self.det_model(batch).detach()
 
         loop_batch = {k: v for k, v in batch.items() if "next" not in k}  # ensures no data leakage
 
@@ -311,6 +304,7 @@ class DiffusionModule(BaseLightningModule):
                     loop_batch,
                     noisy_state,
                     timesteps=torch.tensor([t]).to(self.device),
+                    pred_state=pred_state,
                     is_sampling=True,
                 )
 
@@ -334,14 +328,14 @@ class DiffusionModule(BaseLightningModule):
 
         if self.state_normalization:
             final_state = tensordict_apply(
-                torch.mul, final_state, self.state_scaler.to(self.device)
+                torch.div, final_state, self.state_scaler.to(self.device)
             )
 
         if self.learn_residual == "default":
             final_state = batch["state"] + final_state
 
         elif self.learn_residual == "pred":
-            final_state = batch["pred_state"] + final_state
+            final_state = pred_state + final_state
 
         return final_state
 
@@ -353,9 +347,23 @@ class DiffusionModule(BaseLightningModule):
         iterations=1,
         disable_tqdm=False,
         return_format="tensordict",
+        update_fnc=None,
         **kwargs,
     ):
+        """Multistep rollout.
+
+        batch: input batch with state, prev_state, forcings, timestamp, lead_time_hours
+        batch_nb: index of the batch, used to set the seed
+        member: index of the ensemble member, used to set the seed
+        iterations: number of steps to rollout
+        disable_tqdm: whether to disable the tqdm progress bar
+        update_fnc: function to update the batch after each sample.
+            If None, the batch is updated with the previous state and timestamp and forcings are kept the same.
+        return_format: "tensordict" or "list"
+        """
+
         torch.set_grad_enabled(False)
+
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
 
@@ -363,11 +371,22 @@ class DiffusionModule(BaseLightningModule):
             seed_i = member + 1000 * i + batch_nb * 10**6
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
-            loop_batch = dict(
-                prev_state=loop_batch["state"],
-                state=sample,
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-            )
+            add_forcings = "future_forcings" in loop_batch
+            times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
+            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
+
+            if update_fnc is not None:
+                loop_batch = update_fnc(loop_batch, sample, iteration=i)
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"],
+                    state=sample,
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                    month=torch.tensor(next_month).to(self.device),
+                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
+                )
 
         if return_format == "list":
             return preds_future

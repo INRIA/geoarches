@@ -8,10 +8,10 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as gradient_checkpoint
 from hydra.utils import instantiate
-from tensordict.tensordict import TensorDict
 
-from geoarches.dataloaders import era5, zarr
-from geoarches.metrics.metric_base import compute_lat_weights, compute_lat_weights_weatherbench
+from geoarches.backbones import dit
+from geoarches.dataloaders import zarr
+from geoarches.utils.tensordict_utils import check_pred_has_no_nans, tensordict_apply
 
 from .. import stats as geoarches_stats
 from .base_module import BaseLightningModule
@@ -22,25 +22,24 @@ geoarches_stats_path = importlib.resources.files(geoarches_stats)
 class ForecastModule(BaseLightningModule):
     def __init__(
         self,
-        cfg,  # instead of backbone
+        cfg,  # module config, instead of backbone
+        stats_cfg,
         name="forecast",
         dataset=None,
         pow=2,  # 2 is standard mse
-        loss_delta_normalization=True,
         lr=1e-4,
         betas=(0.9, 0.98),
         weight_decay=1e-5,
         num_warmup_steps=1000,
         num_training_steps=300000,
         num_cycles=0.5,
-        use_graphcast_coeffs=True,
         increase_multistep_period=2,
         add_input_state=False,
         save_test_outputs=False,
-        use_weatherbench_lat_coeffs=True,
-        lead_time_hours=24,
         rollout_iterations=1,
         test_filename_suffix="",
+        check_nans_in_pred=False,  # For debugging nan loss.
+        use_masked_loss=True,
         **kwargs,
     ):
         """should create self.encoder and self.decoder in subclasses"""
@@ -50,53 +49,17 @@ class ForecastModule(BaseLightningModule):
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
 
-        # define coeffs for loss
+        # Instantiate stats module for loss coeffs
+        stats = instantiate(stats_cfg.module)
+        self.variables = stats.variables
+        self.levels = stats.levels
 
-        compute_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
-        area_weights = compute_weights_fn(121)
+        loss_coeffs = stats.compute_loss_coeffs(**stats_cfg.compute_loss_coeffs_args)
+        state_scaler = stats.compute_state_scaler(**stats_cfg.compute_state_scaler_args)
 
-        pressure_levels = torch.tensor(era5.pressure_levels).float()
-        vertical_coeffs = (pressure_levels / pressure_levels.mean()).reshape(-1, 1, 1)
+        self.loss_coeffs = loss_coeffs * state_scaler.pow(self.pow)
 
-        # define relative surface and level weights
-        total_coeff = 6 + 1.3
-        surface_coeffs = 4 * torch.tensor([0.1, 0.1, 1.0, 0.1]).reshape(
-            -1, 1, 1, 1
-        )  # graphcast, mul 4 because we do a mean
-        level_coeffs = 6 * torch.tensor(1).reshape(-1, 1, 1, 1)
-
-        self.loss_coeffs = TensorDict(
-            surface=area_weights * surface_coeffs / total_coeff,
-            level=area_weights * level_coeffs * vertical_coeffs / total_coeff,
-        )
-
-        if loss_delta_normalization:
-            # assumes include vertical wind component
-
-            pangu_stats = torch.load(
-                geoarches_stats_path / "pangu_norm_stats2_with_w.pt", weights_only=True
-            )
-
-            # mul by first to remove norm, div by second to apply fake delta normalization
-            self.loss_delta_scaler = TensorDict(
-                level=pangu_stats["level_std"]
-                / torch.tensor(
-                    [5.9786e02, 7.4878e00, 8.9492e00, 2.7132e00, 9.5222e-04, 0.3]
-                ).reshape(-1, 1, 1, 1),
-                surface=pangu_stats["surface_std"]
-                / torch.tensor([3.8920, 4.5422, 2.0727, 584.0980]).reshape(-1, 1, 1, 1),
-            )
-            self.loss_coeffs = self.loss_coeffs * self.loss_delta_scaler.pow(self.pow)
-
-        compute_lat_weights_fn = (
-            compute_lat_weights_weatherbench
-            if use_weatherbench_lat_coeffs
-            else compute_lat_weights
-        )
+        # Instantiate metric modules
         self.train_metrics = nn.ModuleList(
             [instantiate(metric, **cfg.train.metrics_kwargs) for metric in cfg.train.metrics]
         )
@@ -111,23 +74,36 @@ class ForecastModule(BaseLightningModule):
         )
 
     def forward(self, batch, *args, **kwargs):
-        x = self.embedder.encode(batch["state"], batch.get("prev_state", None))
+        x = self.embedder.encode(
+            batch["state"], batch.get("prev_state", None), batch.get("forcings", None)
+        )
 
         x = self.backbone(x, *args, **kwargs)
         out = self.embedder.decode(x)  # we get tdict
+
+        if self.check_nans_in_pred:
+            _ = tensordict_apply(check_pred_has_no_nans, pred=out, target=batch["next_state"])
 
         if self.add_input_state:
             out += batch["state"]
 
         return out
 
-    def forward_multistep(self, batch, iters=None, return_format="tensordict", use_avg=True):
+    def forward_multistep(
+        self,
+        batch,
+        iters=None,
+        return_format="tensordict",
+        use_avg=True,
+        update_fnc=None,
+        return_loop_batch=False,
+    ):
         # multistep forward with gradient checkpointing to save GPU memory
-        if use_avg and self.avg_modules is not None:
-            out = self.forward_multistep(batch, iters=iters, use_avg=False)
-            for m in self.avg_modules:
-                out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
-            return out / (1 + len(self.avg_modules))
+        """if use_avg and self.avg_modules is not None:
+        out = self.forward_multistep(batch, iters=iters, use_avg=False)
+        for m in self.avg_modules:
+            out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
+        return out / (1 + len(self.avg_modules))"""
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
@@ -138,18 +114,46 @@ class ForecastModule(BaseLightningModule):
                 )
             else:
                 pred = self.forward(loop_batch)
-            preds_future.append(pred)
-            # compute next batch
-            loop_batch = dict(
-                prev_state=loop_batch["state"],
-                state=pred,
-                timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
-            )
+                if use_avg and self.avg_modules is not None:
+                    # average predictions of different models
+                    for m in self.avg_modules:
+                        x = m.forward(loop_batch)
+                        pred = pred + x
+                    pred = pred / (1 + len(self.avg_modules))
 
-        if return_format == "list":
+            preds_future.append(pred)
+
+            # compute next batch
+            add_prev_state = "prev_state" in loop_batch
+            add_forcings = "future_forcings" in loop_batch
+            times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
+            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
+
+            if update_fnc is not None:
+                loop_batch = update_fnc(
+                    loop_batch,
+                    pred,
+                )
+            else:
+                loop_batch = dict(
+                    prev_state=loop_batch["state"] if add_prev_state else None,
+                    state=pred,
+                    # Used only to obtain NaN mask (not true next state)
+                    next_state=loop_batch["next_state"],
+                    timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
+                    hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
+                    month=torch.tensor(next_month).to(self.device),
+                    forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
+                    future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
+                )
+
+        if return_format == "tensordict":
+            preds_future = torch.stack(preds_future, dim=1)
+
+        if return_loop_batch:
+            return preds_future, loop_batch
+        else:
             return preds_future
-        preds_future = torch.stack(preds_future, dim=1)
-        return preds_future
 
     def loss(self, pred, gt, multistep=False, **kwargs):
         loss_coeffs = self.loss_coeffs.to(self.device)
@@ -163,11 +167,19 @@ class ForecastModule(BaseLightningModule):
                 .reshape(-1, 1, 1, 1, 1)
             )
 
-            loss_coeffs.apply(lambda x: x * future_coeffs)
+            loss_coeffs = loss_coeffs.apply(lambda x: x * future_coeffs)
 
-        weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
-
-        loss = sum(weighted_error.mean().values())
+        # Mask loss where gt is NaN.
+        mask = tensordict_apply(lambda g: ~torch.isnan(g), gt)
+        gt = tensordict_apply(lambda g: torch.nan_to_num(g, nan=0.0), gt)
+        if self.use_masked_loss:
+            pred = pred * mask
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs)
+            weighted_error = weighted_error.sum() / mask.sum()  # mean
+            loss = sum(weighted_error.values())
+        else:
+            weighted_error = (pred - gt).abs().pow(self.pow).mul(loss_coeffs).mean()
+            loss = sum(weighted_error.values())
 
         return loss
 
@@ -361,39 +373,42 @@ class ForecastModuleWithCond(ForecastModule):
         self,
         *args,
         cond_dim=32,
-        use_prev=False,
+        cond_times=["month", "hour_of_day"],
+        # Temporary flag to allow backward compatibility with older checkpoints.
+        cond_times_backward_compatible=False,
         use_avg=False,
         avg_with_modules=[],
         **kwargs,
     ):
-        from geoarches.backbones import dit
-
         super().__init__(*args, **kwargs)
         # cond_dim should be given as arg to the backbone
-        self.month_embedder = dit.TimestepEmbedder(cond_dim)
-        self.hour_embedder = dit.TimestepEmbedder(cond_dim)
-        self.use_prev = use_prev
+        self.cond_times_backward_compatible = cond_times_backward_compatible
+        if cond_times_backward_compatible:
+            self.month_embedder = dit.TimestepEmbedder(cond_dim)
+            self.hour_embedder = dit.TimestepEmbedder(cond_dim)
+        else:
+            self.time_embedders = nn.ModuleDict(
+                {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
+            )
         self.use_avg = use_avg
 
         self.avg_modules = None
         if avg_with_modules:
             from geoarches.lightning_modules.base_module import load_module
 
+            print(f"Loading avg modules: {avg_with_modules}")
             self.avg_modules = nn.ModuleList(
                 [load_module(m, return_config=False) for m in avg_with_modules]
             )
             self.strict_loading = False
 
     def forward(self, batch, use_avg=True):
-        device = batch["state"].device
-        # convert time into str
-
-        times = pd.to_datetime(batch["timestamp"].cpu().numpy(), unit="s").tz_localize(None)
-        month = torch.tensor(times.month).to(device)
-        month_emb = self.month_embedder(month)
-        hour = torch.tensor(times.hour).to(device)
-        hour_emb = self.hour_embedder(hour)
-
-        cond_emb = month_emb + hour_emb
+        # Generate conditional embedding by combining embeddings from different time features.
+        if self.cond_times_backward_compatible:
+            cond_emb = dit.get_combined_time_embedding(
+                {"month": self.month_embedder, "hour_of_day": self.hour_embedder}, batch
+            )
+        else:
+            cond_emb = dit.get_combined_time_embedding(self.time_embedders, batch)
 
         return super().forward(batch, cond_emb)
