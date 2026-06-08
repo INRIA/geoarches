@@ -262,9 +262,8 @@ class ForecastModule(BaseLightningModule):
             Path("evalstore") / self.name / f"{dataset.domain}{self.test_filename_suffix}"
         )
         if self.cfg.inference.save_test_outputs:
-            self.zarr_writer = zarr.ZarrIterativeWriter(
-                self.test_filename.parent / f"{dataset.domain}.zarr"
-            )
+            print("saving test outputs to", self.test_filename.with_suffix(".zarr"))
+            self.zarr_writer = zarr.ZarrIterativeWriter(self.test_filename.with_suffix(".zarr"))
 
     def test_step(self, batch, batch_nb):
         # are we doing multistep ?
