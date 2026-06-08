@@ -36,7 +36,6 @@ class ForecastModule(BaseLightningModule):
         use_graphcast_coeffs=True,
         increase_multistep_period=2,
         add_input_state=False,
-        save_test_outputs=False,
         use_weatherbench_lat_coeffs=True,
         lead_time_hours=24,
         rollout_iterations=1,
@@ -47,6 +46,7 @@ class ForecastModule(BaseLightningModule):
         super().__init__()
         # self.save_hyperparameters()
         self.__dict__.update(locals())
+        self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
 
@@ -261,7 +261,7 @@ class ForecastModule(BaseLightningModule):
         self.test_filename = (
             Path("evalstore") / self.name / f"{dataset.domain}{self.test_filename_suffix}"
         )
-        if self.save_test_outputs:
+        if self.cfg.inference.save_test_outputs:
             self.zarr_writer = zarr.ZarrIterativeWriter(
                 self.test_filename.parent / f"{dataset.domain}.zarr"
             )
@@ -283,7 +283,7 @@ class ForecastModule(BaseLightningModule):
                 dataset.denormalize(preds_future),
             )
 
-        if self.save_test_outputs:
+        if self.cfg.inference.save_test_outputs:
             xr_dataset = dataset.convert_trajectory_to_xarray(
                 preds_future,
                 timestamp=batch["timestamp"],
@@ -302,7 +302,7 @@ class ForecastModule(BaseLightningModule):
             torch.save(output, f"{self.test_filename}_{metric_name}.pt")
             outputs.update(output)
 
-        if self.save_test_outputs:
+        if self.cfg.inference.save_test_outputs:
             self.zarr_writer.to_netcdf(dump_id="final")
 
         for metric in self.test_metrics.values():

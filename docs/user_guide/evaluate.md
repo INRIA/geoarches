@@ -1,19 +1,28 @@
 # Run and evaluate models with the CLI
 
-## Run inference and metrics
+There are 2 options to evaluate models:
+
+<ol type="A">
+ <li>Run inference and metrics together.</li>
+ <li>Run interence and metrics separately.</li>
+</ol>
+
+## A. Run inference and metrics
 
 To evaluate a trained model (e.g. `ArchesWeather`) on the test set (year 2020), run:
 
 ```sh
 MODEL=archesweather-m-seed0
-python -m geoarches.main_hydra ++mode=test ++name=$MODEL
+python -m geoarches.main_hydra ++mode=test ++name=$MODEL ++module.name=$MODEL
 ```
 
 This command:
 
-- Automatically loads the config from `modelstore/$MODEL/config.yaml`
+- Automatically loads the hydra config from `modelstore/$MODEL/config.yaml`
 - Automatically loads the latest checkpoint from `modelstore/$MODEL/checkpoints/`
-- Runs the appropriate metrics (deterministic or generative depending on the model)
+- Loads the data split defined in the hydra config under `dataloader.test_args.domain`.
+- Runs the appropriate metrics (deterministic or generative depending on the model) defined in the hydra config under `module.inference.metrics`.
+- Saves metrics under `evalstore/$MODEL/`.
 
 ### Useful options for testing
 
@@ -30,7 +39,7 @@ python -m geoarches.main_hydra ++mode=test ++name=$MODEL \
 3. Sets the number of autoregressive steps to 10.
 4. Matches the rollout length on the dataloader side to ensure consistency.
 
-Additional options for generative models:
+Additional options for the diffusion module:
 
 ```sh
     ++module.inference.num_steps=25 # (1)!   # Number of diffusion steps
@@ -44,14 +53,14 @@ Refer to the [Pipeline API](api.md#pipeline) for a full list of arguments.
 
 ---
 
-## Compute model outputs and metrics separately
+## B. Compute model outputs and metrics separately
 
 You can decouple inference and metric computation. First, run inference and save the outputs:
 
 ```sh
 python -m geoarches.main_hydra \
     ++mode=test \
-    ++name=$MODEL \
+    ++name=$MODEL ++module.name=$MODEL \
     ++module.inference.save_test_outputs=True
 ```
 
@@ -64,7 +73,7 @@ Then, compute metrics using `evaluation/eval_multistep.py`:
 ```sh
 python -m geoarches.evaluation.eval_multistep \
     --pred_path evalstore/$MODEL/ \
-    --output_dir evalstore/$MODEL/ \
+    --output_dir evalstore/${MODEL}_metrics/ \
     --groundtruth_path data/era5/ \
     --multistep 10 \
     --metrics era5_ensemble_metrics \
@@ -100,8 +109,9 @@ You can visualize and compare metrics across models using the `plot.py` script. 
         --output_dir plots/ \
         --metric_paths evalstore/modelx/metrics.nc evalstore/modely/metrics.nc \
         --model_names_for_legend ModelX ModelY \
+        --model_colors orange blue \
         --metrics rankhist \
         --rankhist_prediction_timedeltas 1 7 \
         --figsize 10 4 \
-        --vars Z500 Q700 T850 U850 V850
+        --vars Z500:geopotential:level:500 T850:temperature:level:850 Q700:specific_humidity:level:700 U850:u_component_of_wind:level:850 V850:v_component_of_wind:level:850 \
     ```
