@@ -469,6 +469,9 @@ class DiffusionModule(BaseLightningModule):
 
     def on_test_epoch_end(self):
         # save results
+        if self.cfg.inference.save_test_outputs:
+            self.zarr_writer.to_netcdf(dump_id="final")
+
         if self.cfg.inference.save_test_outputs == "without_metrics":
             return
 
@@ -483,9 +486,6 @@ class DiffusionModule(BaseLightningModule):
 
         fname = self.test_filename.replace(".zarr", "_metrics.pt")
         torch.save(all_metrics, Path("evalstore") / self.name / fname)
-
-        if hasattr(self, "zarr_writer"):
-            self.zarr_writer.to_netcdf(dump_id="final")
 
     def configure_optimizers(self):
         print("configure optimizers")
