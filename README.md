@@ -48,16 +48,21 @@ geoarches is meant to jumpstart your ML pipeline with building blocks for data h
 
 ## Installation
 
-Clone the repository and install the package with Poetry:
+Clone the repository and install the package with either [Poetry](https://python-poetry.org/docs/) (>=2.2) or [uv](https://docs.astral.sh/uv/):
 
 ```sh
 git clone git@github.com:INRIA/geoarches.git
 cd geoarches
+
+# With Poetry
 poetry install
+
+# Or with uv
+uv sync
 ```
 
 > [!NOTE]
-> By default, Poetry will install `geoarches` in editable mode. This allows you to make changes to the package locally, meaning any local changes will automatically be reflected to the code in your environment.
+> Both tools install `geoarches` in editable mode. This allows you to make changes to the package locally, meaning any local changes will automatically be reflected to the code in your environment.
 
 For full installation instructions, see the [documentation](https://geoarches.readthedocs.io/en/latest/getting_started/installation/).
 
