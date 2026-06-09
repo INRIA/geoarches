@@ -52,3 +52,10 @@ You can also choose to create regular folders instead of symlinks. If none of th
 ## Downloading ArchesWeather and ArchesWeatherGen
 
 To download pretrained models and statistics, follow the instructions in the [ArchesWeather section](../archesweather/index.md).
+
+## Downloading data
+
+The `download/` folder contains scripts to download data. In particular, to download ERA5 from Weather Bench to train and evaluate ML models, run:
+```sh
+python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
+```
