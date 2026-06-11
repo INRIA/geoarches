@@ -78,4 +78,4 @@ nav:
       - Setup: archesweather/setup.md
       - Use ArchesWeather: archesweather/run.ipynb
       - Evaluate: archesweather/evaluate.md
-      - Reproduce: archesweather/train.md
+      - Reproduce: archesweather/reproduce.md
