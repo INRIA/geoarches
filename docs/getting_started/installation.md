@@ -51,9 +51,13 @@ You can also choose to create regular folders instead of symlinks. If none of th
 
 ## Downloading data
 
-The `download/` folder contains scripts to download data. In particular, to download ERA5 from Weather Bench to train and evaluate ML models, run:
+The `download/` folder contains scripts to download data. In particular, to download the full ERA5 dataset from Weather Bench to train and evaluate ML models, run:
 ```sh
 python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
+```
+If you only want to run evaluations, you just need to download the year 2020:
+```sh
+python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2020
 ```
 
 ## Working with ArchesWeather and ArchesWeatherGen
