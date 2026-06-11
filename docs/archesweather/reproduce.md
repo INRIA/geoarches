@@ -8,7 +8,7 @@ First, we train four deterministic versions of ArchesWeather on ERA5 data:
 
 ```sh
 for i in {0..3}; do
-    python -m geoarches.main_hydra ++log=True dataloader=era5 module=archesweather ++name=archesweather-m-seed$i
+    python -m geoarches.main_hydra ++log=True dataloader=era5 module=archesweather ++name=archesweather-m-seed$i ++seed=$i
 done
 ```
 
