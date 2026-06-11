@@ -74,7 +74,7 @@ Then, compute metrics using `evaluation/eval_multistep.py`:
 python -m geoarches.evaluation.eval_multistep \
     --pred_path evalstore/$MODEL/ \
     --output_dir evalstore/${MODEL}_metrics/ \
-    --groundtruth_path data/era5/ \
+    --groundtruth_path data/era5_240/full/ \
     --multistep 10 \
     --metrics era5_ensemble_metrics \
     --num_workers 2
