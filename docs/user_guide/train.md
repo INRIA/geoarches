@@ -19,7 +19,7 @@ This will start training the deterministic model **ArchesWeather** on **ERA5** d
 
 !!! note
 
-    The configuration file will be saved to: `modelstore/default_run/config.yaml` and model checkpoints to: `modelstore/default_run/checkpoints/`
+    The configuration file will be saved to: `modelstore/default_run/config.yaml` and model checkpoints to: `modelstore/default_run/checkpoints/`. By default, if a checkpoint already exists in the path, it will be restored to continue training from this state.
 
 ### Useful training options
 
