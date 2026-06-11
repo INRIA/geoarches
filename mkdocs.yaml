@@ -76,6 +76,6 @@ nav:
   - ArchesWeather:
       - archesweather/index.md
       - Setup: archesweather/setup.md
-      - Use ArchesWeather: archesweather/run.ipynb
+      - Run: archesweather/run.ipynb
       - Evaluate: archesweather/evaluate.md
       - Reproduce: archesweather/reproduce.md
