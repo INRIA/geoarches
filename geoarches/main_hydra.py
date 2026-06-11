@@ -277,6 +277,7 @@ def main(cfg: DictConfig):
     if cfg.mode == "train":
         trainer.fit(pl_module, train_loader, val_loader, ckpt_path=ckpt_path)
     elif cfg.mode == "test":
+        assert ckpt_path is not None, f"No checkpoint found, cannot load the model in {cfg.exp_dir}."
         trainer.test(pl_module, test_loader, ckpt_path=ckpt_path)
 
 
