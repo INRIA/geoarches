@@ -425,7 +425,7 @@ class DiffusionModule(BaseLightningModule):
             self.sample_rollout(
                 batch,
                 batch_nb=batch_nb,
-                iterations=self.cfg.inference.metrics_kwargs.rollout_iterations,
+                iterations=self.cfg.inference.rollout_iterations,
                 member=j,
                 disable_tqdm=True,
             )
@@ -454,12 +454,11 @@ class DiffusionModule(BaseLightningModule):
 
         # compute metrics
         if self.cfg.inference.save_test_outputs != "without_metrics":
+            rollout_iterations = self.cfg.inference.metrics_kwargs.rollout_iterations
             for metric in self.test_metrics.values():
                 metric.update(
-                    dataset.denormalize(
-                        batch["future_states"]
-                    ),  # TODO: do eval with future states
-                    [dataset.denormalize(sample) for sample in samples],
+                    dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
+                    [dataset.denormalize(sample) for sample in samples[:rollout_iterations]],
                 )
 
         if hasattr(self, "zarr_writer") and not (batch_nb + 1) % 2:
