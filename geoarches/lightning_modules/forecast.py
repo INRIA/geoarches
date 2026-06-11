@@ -272,14 +272,11 @@ class ForecastModule(BaseLightningModule):
         preds_future = self.forward_multistep(batch, iters=step_iterations)
 
         # compute metrics
-        if "future_states" in batch:
-            ref_state = batch["future_states"]
-        else:
-            ref_state = batch["next_state"][:, None]
+        rollout_iterations = self.cfg.inference.metrics_kwargs.rollout_iterations
         for metric in self.test_metrics.values():
             metric.update(
-                dataset.denormalize(ref_state),
-                dataset.denormalize(preds_future),
+                dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
+                dataset.denormalize(preds_future[:, :rollout_iterations]),
             )
 
         if self.cfg.inference.save_test_outputs:
