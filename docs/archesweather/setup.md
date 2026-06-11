@@ -2,7 +2,7 @@
 
 ### 1. Install the package
 
-To get started, follow the [installation guide](../getting_started/installation.md) to install the package and all required dependencies.
+To get started, if not already done, follow the [installation guide](../getting_started/installation.md) to install the package with all required dependencies and download the data.
 
 !!! tip
 

@@ -1,4 +1,4 @@
-# Train ArchesWeather and ArchesWeatherGen
+# Reproduce ArchesWeather and ArchesWeatherGen
 
 This section provides the **full** training pipeline to retrain **ArchesWeatherGen** from scratch. It assumes that you have already installed the `geoarches` package and downloaded the necessary data.
 

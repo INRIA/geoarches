@@ -37,4 +37,5 @@ This makes it easier to rebase or merge when upstream updates are available. See
 
 ---
 
-For more information on how to use the library, explore the [User Guide](../user_guide/index.md).
+For more information on how to use the library, explore the [User Guide](../user_guide/index.md). For information specific to ArchesWeather, explore the [ArchesWeather section](../archesweather/index.md).
+
