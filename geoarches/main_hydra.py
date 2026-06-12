@@ -21,6 +21,7 @@ import torch
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from lightning.pytorch.callbacks import TQDMProgressBar
+from lightning.pytorch.plugins import TorchCheckpointIO
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -89,6 +90,26 @@ class CheckpointEveryNSteps(L.Callback):
         print("saving checkpoint to", ckpt_path / filename)
         ckpt_path.mkdir(exist_ok=True, parents=True)
         trainer.save_checkpoint(ckpt_path / filename)
+
+
+class GeoArchesCheckpointIO(TorchCheckpointIO):
+    """Load legacy checkpoints that predate Lightning's version metadata."""
+
+    def load_checkpoint(self, path, map_location=None, weights_only=None):
+        checkpoint = super().load_checkpoint(
+            path, map_location=map_location, weights_only=weights_only
+        )
+        if (
+            isinstance(checkpoint, dict)
+            and "pytorch-lightning_version" not in checkpoint
+            and "state_dict" in checkpoint
+        ):
+            checkpoint["pytorch-lightning_version"] = L.__version__
+            print(
+                "Checkpoint is missing `pytorch-lightning_version`; "
+                f"using current Lightning version {L.__version__}."
+            )
+        return checkpoint
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
@@ -263,7 +284,7 @@ def main(cfg: DictConfig):
         enable_checkpointing=False,
         callbacks=[TQDMProgressBar(refresh_rate=100 if cfg.mode == "train" else 1), checkpointer],
         logger=logger,
-        plugins=[],
+        plugins=[GeoArchesCheckpointIO()],
         limit_train_batches=getattr(cfg, "limit_train_batches", None),
         limit_val_batches=cfg.limit_val_batches,
         limit_test_batches=getattr(cfg, "limit_test_batches", cfg.limit_val_batches),
