@@ -454,7 +454,10 @@ class DiffusionModule(BaseLightningModule):
 
         # compute metrics
         if self.cfg.inference.save_test_outputs != "without_metrics":
-            rollout_iterations = self.cfg.inference.metrics_kwargs.rollout_iterations
+            rollout_iterations = min(
+                dataset.multistep, self.cfg.inference.metrics_kwargs.rollout_iterations
+            )
+
             for metric in self.test_metrics.values():
                 metric.update(
                     dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
