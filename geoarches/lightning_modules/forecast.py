@@ -268,11 +268,12 @@ class ForecastModule(BaseLightningModule):
     def test_step(self, batch, batch_nb):
         # are we doing multistep ?
         dataset = self.trainer.test_dataloaders.dataset
-        step_iterations = dataset.multistep
-        preds_future = self.forward_multistep(batch, iters=step_iterations)
+        preds_future = self.forward_multistep(batch, iters=self.cfg.inference.rollout_iterations)
 
         # compute metrics
-        rollout_iterations = self.cfg.inference.metrics_kwargs.rollout_iterations
+        rollout_iterations = min(
+            dataset.multistep, self.cfg.inference.metrics_kwargs.rollout_iterations
+        )
         for metric in self.test_metrics.values():
             metric.update(
                 dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
