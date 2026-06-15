@@ -1,13 +1,20 @@
+import dataclasses
+import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 import numpy as np
 import pandas as pd
-import tensordict
 import torch
 import xarray as xr
 from hydra.utils import instantiate
+from tensordict.tensordict import TensorDict
+
+from geoarches.dataloaders import nan_util, netcdf
+from geoarches.dataloaders.netcdf import XarrayDataset
+from geoarches.utils.normalization import NormalizationStatistics
+from geoarches.utils.tensordict_utils import tensordict_apply
 
 from .era5_constants import (
     arches_default_level_variables,
@@ -16,7 +23,6 @@ from .era5_constants import (
     level_variables_short,
     surface_variables_short,
 )
-from .netcdf import XarrayDataset
 
 filename_filters = dict(
     all=(lambda _: True),
@@ -35,14 +41,129 @@ filename_filters = dict(
     # AIMIP requires train and val on 1979-2014. We choose val on 2014 and rest on train.
     # We read the years before and after (see above comment for why).
     aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
+    aimip_trainval=lambda x: any(str(y) in x for y in range(1979, 2016)),
     aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
+    aimip_rollout_full=lambda x: any(str(y) in x for y in range(1978, 2025)),
+    aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
+    aimip_rollout_z0012=lambda x: any(str(y) in x for y in range(1978, 2025))
+    and ("0h" in x or "12h" in x),
 )
+
+# we will deprecate filename_filters and use timestamp bounds instead.
+# valid time is the time of the state given as input to the model.
+# the convention is (first valid time, last valid time (inclusive), interval in hours)
+# if "train" is in the domain name, then end_time is last forecast time (i.e. last time as ground truth)
+# aimip has 09-30 as last valid time to produce first forecast at 10-01
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class DomainTimeInfo:
+    """Dataclass for domain time information.
+    start_time and end_time are inclusive.
+    allow_overflow: whether the start_time and end_time include load_prev and
+    multistep or not.
+    """
+
+    start_time: str
+    end_time: str
+    timedelta: int
+    allow_overflow: bool = True
+
+
+# convert below to above format
+domain_time_info = {
+    "all": DomainTimeInfo(
+        start_time="1940-01-01T00:00:00",
+        end_time="2025-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "train": DomainTimeInfo(
+        start_time="1979-01-01T00:00:00",
+        end_time="2018-12-31T18:00:00",
+        timedelta=6,
+        allow_overflow=False,
+    ),
+    "last_train": DomainTimeInfo(
+        start_time="2018-01-01T00:00:00",
+        end_time="2018-12-31T18:00:00",
+        timedelta=6,
+        allow_overflow=False,
+    ),
+    "val": DomainTimeInfo(
+        start_time="2019-01-01T00:00:00",
+        end_time="2019-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "test": DomainTimeInfo(
+        start_time="2020-01-01T00:00:00",
+        end_time="2020-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "test_z0012": DomainTimeInfo(
+        start_time="2020-01-01T00:00:00",
+        end_time="2020-12-31T12:00:00",
+        timedelta=12,
+    ),
+    "aimip_train": DomainTimeInfo(
+        start_time="1979-01-01T00:00:00",
+        end_time="2013-12-31T18:00:00",
+        timedelta=6,
+        allow_overflow=False,
+    ),
+    "aimip_val": DomainTimeInfo(
+        start_time="2014-01-01T00:00:00",
+        end_time="2014-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "aimip_trainval": DomainTimeInfo(
+        start_time="1979-01-02T00:00:00",  # set to 2nd here and allow overflow.
+        end_time="2014-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "aimip_rollout_full": DomainTimeInfo(
+        start_time="1978-09-30T00:00:00",
+        end_time="2024-12-31T18:00:00",
+        timedelta=6,
+    ),
+    "aimip_rollout_z00": DomainTimeInfo(
+        start_time="1978-09-30T00:00:00",
+        end_time="2024-12-31T00:00:00",
+        timedelta=24,
+    ),
+    "aimip_rollout_z0012": DomainTimeInfo(
+        start_time="1978-09-30T00:00:00",
+        end_time="2024-12-31T18:00:00",
+        timedelta=12,
+    ),
+}
+
 
 default_dimension_indexers = {
     "latitude": np.arange(90, -90 - 1e-6, -180 / 120),  # decreasing lats
     "longitude": np.arange(0, 360, 360 / 240),
     "level": arches_default_pressure_levels,
 }
+
+
+def compute_timestamp_bounds(
+    domain: str, multistep: int = 0, lead_time_hours: int = 0, load_prev=False
+):
+    if domain not in domain_time_info:
+        raise ValueError(f"Domain {domain} not found in domain_timestamp_bounds.")
+
+    time_info = domain_time_info[domain]
+    start_time = np.datetime64(time_info.start_time)
+    end_time = np.datetime64(time_info.end_time)
+
+    # if allow_overflow, adjust start and end times.
+    if time_info.allow_overflow:
+        start_time -= int(load_prev) * np.timedelta64(lead_time_hours, "h")
+        end_time += multistep * np.timedelta64(lead_time_hours, "h")
+
+    # end_time is excluded by default so we need to add a small extra
+    end_time += np.timedelta64(1, "s")
+
+    return start_time, end_time, time_info.timedelta
 
 
 def get_surface_variable_indices(variables=arches_default_surface_variables):
@@ -72,7 +193,11 @@ def get_headline_level_variable_indices(
 
 class Era5Dataset(XarrayDataset):
     """
-    This class is just for loading era5-like data, without any future or pred state.
+    This class is just for loading era5-like data, without any future or prev state.
+
+    Main functions are convert_to_tensordict() for loading data and
+    convert_to_xarray() for saving data back in xarray format.
+
     Does not do any normalization either.
     """
 
@@ -80,33 +205,52 @@ class Era5Dataset(XarrayDataset):
         self,
         path: str = "data/era5_240/full/",
         domain: str = "train",
-        filename_filter: Callable | None = None,
+        filename_filter: Callable | None | bool = None,
         variables: Dict[str, List[str]] | None = None,
         dimension_indexers: Dict[str, Any] = default_dimension_indexers,
-        transpose_order: tuple[Any, ...] = (..., "level", "latitude", "longitude"),
+        transpose_order: tuple[Any, ...] = (
+            ...,
+            "level",
+            "latitude",
+            "longitude",
+        ),
+        set_timestamp_bounds: bool = True,
         return_timestamp: bool = False,
         warning_on_nan: bool = True,
-        interpolate_nans: bool = False,
+        interpolate_nans: nan_util.NanInterpolationMethod | None = None,
     ):
-        """
-        Args:
-            path: Single filepath or directory holding files (prognostic vars).
-            domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..).
-                Used if `filename_filter` is None.
-            filename_filter: To filter files within `path` based on filename.  If set, does not use `domain` param.
-                If None, filters files based on `domain`.
-            variables: Variables to load from dataset. Dict holding variable lists mapped by their keys to be processed into tensordict.
-                e.g. {surface:[...], level:[...]}. By default uses standard 6 level and 4 surface vars.
-            dimension_indexers: Dict of dimensions to select using Dataset.sel().
-                And used to convert tensordicts back to xarray dataset in convert_to_xarray().
-            return_timestamp: Whether to return tuple of (example, timestamp) from __getitem__().
+        """Args:
+
+        path: Single filepath or directory holding files (prognostic vars).
+        domain: Specify data split for the default filename filters (eg. train,
+        val, test, testz0012..).
+            Used if `filename_filter` is None.
+        filename_filter: To filter files within `path` based on filename.  If
+        set, does not use `domain` param.
+            If None, filters files based on `domain`.
+        variables: Variables to load from dataset. Dict holding variable lists
+        mapped by their keys to be processed into tensordict.
+            e.g. {surface:[...], level:[...]}. By default uses standard 6 level
+            and 4 surface vars.
+        dimension_indexers: Dict of dimensions to select using Dataset.sel().
+            And used to convert tensordicts back to xarray dataset in
+            convert_to_xarray().
+        set_timestamp_bounds: Whether to set timestamp bounds based on domain.
+        If disabled, it does not filter out timestamps, which is needed in
+        Era5Forecast where we need to re-select timestamps after init.
+        return_timestamp: Whether to return tuple of (example, timestamp) from
+        __getitem__().
         """
         if filename_filter is None:
+            # TODO(geco): at some point redefine behavior of filename_filter
             filename_filter = filename_filters[domain]
+        elif filename_filter is False:  # pylint: disable=g-bool-id-comparison
+            filename_filter = lambda _: True  # pylint: disable=unnecessary-lambda
 
         if variables is None:
             variables = dict(
-                surface=arches_default_surface_variables, level=arches_default_level_variables
+                surface=arches_default_surface_variables,
+                level=arches_default_level_variables,
             )
 
         super().__init__(
@@ -120,12 +264,34 @@ class Era5Dataset(XarrayDataset):
             interpolate_nans=interpolate_nans,
         )
 
-    def convert_to_tensordict(self, xr_dataset):
+        # Get xarraycoords for convert_to_xarray().
+        # Assumes:
+        #   (1) all files have the same coords.
+        #   (2) convert_to_xarray() undoes all transformations from convert_to_tensordict().
+        with xr.open_dataset(self.files[0], **self.xr_options) as xr_dataset:
+            xr_dataset = netcdf.optionally_rename_dimensions(xr_dataset)
+            xr_dataset = netcdf.select_dimensions(xr_dataset, self.dimension_indexers)
+            self.coords = {k: v.to_numpy() for k, v in xr_dataset.coords.items()}
+
+        # set timestamp bounds based on domain
+        if set_timestamp_bounds:
+            start_time, end_time, self.timedelta = compute_timestamp_bounds(domain)
+            self.set_timestamp_bounds(start_time, end_time)
+            self.filter_timestamps_by_hour()
+
+    def filter_timestamps_by_hour(self):
+        """Filters timestamp by hour."""
+        self.timestamps = [
+            x for x in self.timestamps if pd.Timestamp(x[-1]).hour % self.timedelta == 0
+        ]
+        self.id2pt = dict(enumerate(self.timestamps))
+
+    def convert_to_tensordict(self, xr_dataset, debug: bool = False):
         """
         input xarr should be a single time slice
         """
 
-        tdict = super().convert_to_tensordict(xr_dataset)
+        tdict = super().convert_to_tensordict(xr_dataset, debug=debug)
         # we don't do operations on xr datasets since it takes more time than on tensors
 
         # unsqueeze surface (important)
@@ -133,7 +299,7 @@ class Era5Dataset(XarrayDataset):
             tdict["surface"] = tdict["surface"].unsqueeze(-3)
 
         # do we need to flip lats ?
-        if xr_dataset.latitude[0] < xr_dataset.latitude[-1]:
+        if self.coords["latitude"][0] < self.coords["latitude"][-1]:
             tdict = tdict.apply(lambda x: x.flip(-2))
 
         # focus on Europe
@@ -144,10 +310,21 @@ class Era5Dataset(XarrayDataset):
         return tdict
 
     def convert_to_xarray(self, tdict, timestamp, levels=None):
-        """
-        we dont take prediction timedelta into account here
-        timestamp is necessary to convert to xarray
-        compressed means we only store 3 levels (500, 700, 850)
+        """Convert tensordict back to xarray. Useful for saving predictions.
+
+        Important: Must undo all tensor operations from convert_to_tensordict()
+        so that xarray dimensions match the original (self.coords).
+
+        We don't take prediction timedelta into account here.
+        (See convert_trajectory_to_xarray()).
+
+        Args:
+            tdict: tensordict to convert to xarray.
+            timestamp: Array of timestamps (in seconds) to assign to xarray.
+            level: Optional subset of levels to store (useful for compression).
+
+        Returns:
+            xr.Dataset with same variables and coords as the original dataset.
         """
         tdict = tdict.cpu()
         halflon = tdict["surface"].shape[-1] // 2
@@ -158,17 +335,18 @@ class Era5Dataset(XarrayDataset):
         # roll does not work with named dimensions, use cat
         tdict = tdict.apply(lambda x: x.roll(-halflon, -1))
 
+        # flip back lats if needed
+        if self.coords["latitude"][0] < self.coords["latitude"][-1]:
+            tdict = tdict.apply(lambda x: x.flip(-2))
+
         # squeeze
         surface = tdict["surface"].squeeze(-3)
         level = tdict["level"]
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)
-
-        # TODO(geco): what if we have things like slices ?
-
-        coords = {
-            k: list(v) for k, v in self.dimension_indexers.items() if not isinstance(v, slice)
+        coords = self.coords = {
+            k: v for k, v in self.coords.items() if k in ("latitude", "longitude", "level")
         }
         coords = coords | {"time": times}
 
@@ -202,9 +380,9 @@ class Era5Dataset(XarrayDataset):
         )
 
         if levels is not None:
-            xr_dataset = xr_dataset.sel({"level": levels})
+            xr_dataset = xr_dataset.sel(level=levels)
 
-        xr_dataset = xr_dataset.chunk({"time": 1})
+        xr_dataset = xr_dataset.chunk(time=1)
         return xr_dataset
 
     def convert_trajectory_to_xarray(
@@ -225,7 +403,8 @@ class Era5Dataset(XarrayDataset):
         ]
         prediction_timedeltas = [timedelta(days=i) for i in range(1, step_iterations + 1)]
         merged_xr_dataset = xr.concat(
-            xr_timedelta_list, pd.Index(prediction_timedeltas, name="prediction_timedelta")
+            xr_timedelta_list,
+            pd.Index(prediction_timedeltas, name="prediction_timedelta"),
         )
         return merged_xr_dataset
 
@@ -242,10 +421,11 @@ class Era5Forecast(Era5Dataset):
         self,
         stats_cfg,
         path: str = "data/era5_240/full/",
-        forcings_path: str = None,
+        forcings_path: str | None = None,
+        forcings_stats_path: str | None = None,
         domain: str = "train",
         filename_filter: Callable | None = None,
-        timedelta_hours: int = None,
+        timedelta_hours: int | None = None,
         variables: Dict[str, List[str]] | None = None,
         forcing_vars: List[str] | None = None,
         dimension_indexers: Dict[str, Any] = default_dimension_indexers,
@@ -255,8 +435,9 @@ class Era5Forecast(Era5Dataset):
         load_clim: bool = False,
         switch_recent_data_after_steps: int = 250000,
         warning_on_nan: bool = True,
-        interpolate_input: bool = False,
-        interpolate_target: bool = False,
+        interpolate_input: nan_util.NanInterpolationMethod | None = None,
+        interpolate_target: nan_util.NanInterpolationMethod | None = None,
+        set_timestamp_bounds: bool = True,
     ):
         """
         Args:
@@ -264,6 +445,8 @@ class Era5Forecast(Era5Dataset):
             path: Single filepath or directory holding files.
             forcings_path: Single filepath or directory holding forcing files.
                 If None, no forcing files are loaded.
+            forcings_stats_path: Single filepath holding forcing statistics files.
+                If None, forcings are not normalized (assumes forcings are already normalized).
             domain: Specify data split for the default filename filters (eg. train, val, test, testz0012..)
             filename_filter: To filter files within `path` based on filename. If set, does not use `domain` param.
                 If None, filters files based on `domain`.
@@ -278,21 +461,28 @@ class Era5Forecast(Era5Dataset):
             forcing_vars: List of forcing variables to load from forcings dataset (if forcings_path is set).
             dimension_indexers: Dict of dimensions to select using Dataset.sel(dimension_indexers).
                 Used to select levels and lat/lon resolution.
+                Set to None to select all values in each dimension in the xr dataset.
+                Must set dimension_indexers=dict(levels=...) if using stats_cfg.
             warning_on_nan: Whether to raise a warning if NaN values are encountered in model input (prev and current state).
             interpolate_input: Whether to interpolate NaN values for model input (prev and current state).
             interpolate_target: Whether to interpolate NaN values for model target (next state).
+            set_timestamp_bounds: Whether to set timestamp bounds based on domain.
         """
-        self.__dict__.update(locals())
-        # TODO(geco): remove this dict update and add variable manually.
-
-        del self.__dict__["stats_cfg"]  # Not needed and causes pickle issues in PyGrain.
+        self.lead_time_hours = lead_time_hours
+        self.multistep = multistep
+        self.load_prev = load_prev
+        self.load_clim = load_clim
+        self.switch_recent_data_after_steps = switch_recent_data_after_steps
+        self.interpolate_input = interpolate_input
+        self.interpolate_target = interpolate_target
 
         super().__init__(
             path,
             filename_filter=filename_filter,
             domain=domain,
             variables=variables,
-            dimension_indexers=(default_dimension_indexers | (dimension_indexers or {})),
+            dimension_indexers=dimension_indexers,
+            set_timestamp_bounds=False,
             warning_on_nan=warning_on_nan,
             interpolate_nans=None,  # uses interpolate_input and interpolate_target
         )
@@ -304,10 +494,11 @@ class Era5Forecast(Era5Dataset):
             )
         if forcings_path:
             print("##### FORCINGS: ", forcing_vars, " #####")
+            forcing_vars = dict(forcings=forcing_vars)
             self.forcings_ds = Era5Dataset(
                 forcings_path,
                 domain="all",
-                variables=dict(forcings=forcing_vars),
+                variables=forcing_vars,
                 dimension_indexers={k: i for k, i in dimension_indexers.items() if k != "level"},
                 transpose_order=(..., "latitude", "longitude"),
                 warning_on_nan=warning_on_nan,
@@ -315,46 +506,35 @@ class Era5Forecast(Era5Dataset):
             )
 
         # depending on domain, re-set timestamp bounds
+        if not self.set_timestamp_bounds and timedelta_hours is None:
+            raise ValueError(
+                "Either set_timestamp_bounds must be True or timedelta_hours must be set manually."
+            )
+        if set_timestamp_bounds:
+            start_time, end_time, tdelta = compute_timestamp_bounds(
+                domain, self.multistep, self.lead_time_hours, self.load_prev
+            )
 
-        if domain in ("val", "test", "test_z0012", "aimip_val"):
-            # re-select timestamps
-            if domain.startswith("val"):
-                year = 2019
-            elif domain.startswith("test"):
-                year = 2020
-            elif domain == "aimip_val":
-                year = 2014
-            else:
-                raise ValueError(f"Unsupported domain for reselecting timestamp bounds: {domain}")
-            start_time = np.datetime64(f"{year}-01-01T00:00:00")
-            if self.load_prev:
-                start_time = start_time - self.lead_time_hours * np.timedelta64(1, "h")
-            # end_time is exclusive.
-            end_time = np.datetime64(
-                f"{year + 1}-01-01T00:00:00"
-            ) + self.multistep * self.lead_time_hours * np.timedelta64(1, "h")
-            print("start time", start_time)
-            super().set_timestamp_bounds(start_time, end_time)
-
-        if timedelta_hours:
-            self.timedelta = timedelta_hours
+            self.set_timestamp_bounds(start_time, end_time)
+            self.timedelta = timedelta_hours or tdelta
         else:
-            self.timedelta = 6 if "z0012" not in domain else 12
-        self.current_multistep = 1
+            self.timedelta = timedelta_hours
+
+        self.filter_timestamps_by_hour()
 
         # Load normalization statistics.
-        self.norm_scheme = False
-        if stats_cfg:
+        self.data_mean, self.data_std = None, None
+        if stats_cfg is not None:
             stats = instantiate(stats_cfg.module)
             self.data_mean, self.data_std = stats.load_normalization_stats()
-            self.norm_scheme = True
 
             # Check variables and levels.
             dataset_levels = self.dimension_indexers["level"]
             if not np.equal(dataset_levels, stats.levels).all():
                 raise ValueError(
-                    "Levels in normalization statistics do not match levels in dataset dimension indexers.\n"
-                    f"Dataset levels: {dataset_levels}\nStatistics levels: {stats.levels}"
+                    "Levels in normalization statistics do not match levels in dataset"
+                    " dimension indexers.\nDataset levels:"
+                    f" {dataset_levels}\nStatistics levels: {stats.levels}"
                 )
             # Compare variables in dataset and in normalization statistics,
             # converting self.variables since they are stored with different
@@ -365,6 +545,21 @@ class Era5Forecast(Era5Dataset):
                     "Variables in normalization statistics do not match variables in dataset.\n"
                     f"Dataset variables: {self.variables}\nStatistics variables: {stats.variables}"
                 )
+        if forcings_stats_path is not None:
+            forcing_stats = NormalizationStatistics(
+                norm_file=forcings_stats_path, variables=forcing_vars, levels=None
+            )
+            self.forcings_mean, self.forcings_std = forcing_stats.load_normalization_stats()
+            self.forcings_mean, self.forcings_std = (
+                self.forcings_mean.squeeze(1),
+                self.forcings_std.squeeze(1),
+            )
+        else:
+            warnings.warn(
+                "No forcings_stats_path provided. Forcings will not be normalized.", UserWarning
+            )
+            self.forcings_mean = None
+            self.forcings_std = None
 
         # Load climatology.
         self.clim_path = Path(path).parent.joinpath("era5_240_clim.nc")
@@ -392,8 +587,10 @@ class Era5Forecast(Era5Dataset):
         out["day_of_year"] = torch.tensor(timestamp.dayofyear)
         out["month"] = torch.tensor(timestamp.month)
 
-        out["state"] = super().__getitem__(
-            i, interpolate_nans=self.interpolate_input, warning_on_nan=self.warning_on_nan
+        out["state"], out["nan_mask"] = super().__getitem__(
+            i,
+            return_nan_mask=True,
+            interpolate_nans=self.interpolate_input,
         )
 
         out["lead_time_hours"] = torch.tensor(self.lead_time_hours).int()
@@ -405,7 +602,6 @@ class Era5Forecast(Era5Dataset):
             out["next_state"] = super().__getitem__(
                 i + T // self.timedelta,
                 interpolate_nans=self.interpolate_target,
-                warning_on_nan=self.warning_on_nan and self.interpolate_target,
             )
 
         # Load multiple future timestamps if specified.
@@ -416,16 +612,16 @@ class Era5Forecast(Era5Dataset):
                     super().__getitem__(
                         i + k * T // self.timedelta,
                         interpolate_nans=self.interpolate_target,
-                        warning_on_nan=self.warning_on_nan and self.interpolate_target,
                     )
                 )
-            out["future_states"] = tensordict.stack(future_states, dim=0)
+            out["future_states"] = tensordict_apply(
+                lambda *arrs, dim: torch.stack(arrs, dim=dim), *future_states, dim=0
+            )
 
         if self.load_prev:
             out["prev_state"] = super().__getitem__(
                 i - self.lead_time_hours // self.timedelta,
                 interpolate_nans=self.interpolate_input,
-                warning_on_nan=self.warning_on_nan,
             )
 
         if self.load_clim:
@@ -439,20 +635,43 @@ class Era5Forecast(Era5Dataset):
             if self.multistep > 1:
                 out["future_forcings"] = self.load_future_forcings(datetime)
 
-        if normalize and self.norm_scheme:
+        if normalize and (self.data_mean is not None or self.forcings_mean is not None):
             out = self.normalize(out)
+
+        # Optionally, interpolate NaNs in the output after normalization.
+        for state in ["prev_state", "state", "forcings"]:
+            if state in out:
+                out[state] = nan_util.post_norm_interpolate_nans(
+                    out[state], self.interpolate_input
+                )
+        for state in ["next_state", "future_states"]:
+            if state in out:
+                out[state] = nan_util.post_norm_interpolate_nans(
+                    out[state], self.interpolate_target
+                )
 
         return out
 
     def load_forcings(self, timestamp: np.datetime64):
-        """Load forcings data for a given timestamp."""
+        """Load forcings data for a given timestamp.
+
+        Forcing timestamps are assumed to be on the first day of the month.
+        We load forcings data that corresponds to the month of the next_state.
+        """
+        # Create mapping from month timestamp to index in forcings dataset.
         if not hasattr(self.forcings_ds, "timestamp_to_idx"):
             timestamp_values = [t[2] for t in self.forcings_ds.timestamps]
             self.forcings_ds.timestamp_to_idx = {
                 str(t.astype("datetime64[M]")): i for i, t in enumerate(timestamp_values)
             }
 
-        first_day_of_month = timestamp.astype("datetime64[M]")
+        next_timestamp = timestamp + np.timedelta64(self.lead_time_hours, "h")
+        first_day_of_month = next_timestamp.astype("datetime64[M]")
+        if str(first_day_of_month) not in self.forcings_ds.timestamp_to_idx:
+            raise ValueError(
+                f"Tried to load forcings data for {first_day_of_month} but DONE."
+                f"state timestamp: {timestamp}, next_state timestamp: {next_timestamp}."
+            )
         index = self.forcings_ds.timestamp_to_idx[str(first_day_of_month)]
         return self.forcings_ds[index]["forcings"]
 
@@ -469,23 +688,36 @@ class Era5Forecast(Era5Dataset):
         return future_forcings
 
     def normalize(self, batch):
-        if not self.norm_scheme:
+        if self.data_mean is None and self.forcings_mean is None:
             return batch
 
         device = list(batch.values())[0].device
+        out = {k: v for k, v in batch.items()}  # copy
 
-        means = self.data_mean.to(device)
-        stds = self.data_std.to(device)
+        if self.data_mean is not None:
+            means = self.data_mean.to(device)
+            stds = self.data_std.to(device)
 
-        if "surface" in batch:
-            # we can normalize directly
-            return (batch - means) / stds
-        out = {k: ((v - means) / stds if "state" in k else v) for k, v in batch.items()}
+            if isinstance(batch, TensorDict):
+                # we can normalize directly
+                return (batch - means) / stds
+
+            out = {k: ((v - means) / stds if "state" in k else v) for k, v in out.items()}
+
+        if self.forcings_mean is not None:
+            out = {
+                k: (
+                    (v - self.forcings_mean["forcings"]) / self.forcings_std["forcings"]
+                    if "forcings" in k
+                    else v
+                )
+                for k, v in out.items()
+            }
 
         return out
 
     def denormalize(self, batch):
-        if not self.norm_scheme:
+        if self.data_mean is None:
             return batch
 
         device = list(batch.values())[0].device

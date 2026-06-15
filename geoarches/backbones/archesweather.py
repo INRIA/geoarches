@@ -42,7 +42,8 @@ class WeatherEncodeDecodeLayer(nn.Module):
         forcings_ch=0,
         n_concatenated_states=0,
         final_interpolation=False,
-        forcings_embedding: ForcingsEmbedding | None = None,
+        circular_padding=False,
+        forcings_embedding: ForcingsEmbedding | str | None = None,
         auto_move_to_device=True,
         constant_mask_file="archesweather_constant_masks",
     ) -> None:
@@ -100,22 +101,26 @@ class WeatherEncodeDecodeLayer(nn.Module):
         self.level_padder = nn.ZeroPad3d((0, 0, 0, 0, *level_pads))
 
         # decode layers
+        if circular_padding:
+            pad_args = dict(padding="same", padding_mode="circular")
+        else:
+            pad_args = dict(padding=1, padding_mode="zeros")
 
         self.surface_deconv = nn.Conv2d(
             out_emb_dim,
             surface_ch * patch_size[-1] ** 2,
             kernel_size=3,
             stride=1,
-            padding=1,
             bias=0,
+            **pad_args,
         )
         self.level_deconv = nn.Conv2d(
             out_emb_dim // 2,
             level_ch * patch_size[-1] ** 2,
             kernel_size=3,
             stride=1,
-            padding=1,
             bias=0,
+            **pad_args,
         )
         self.pixelshuffle = nn.PixelShuffle(patch_size[-1])
         ICNR_init(
@@ -130,7 +135,10 @@ class WeatherEncodeDecodeLayer(nn.Module):
         )
 
     def encode(
-        self, state: TensorDict, cond_state: TensorDict = None, forcings: torch.Tensor = None
+        self,
+        state: TensorDict,
+        cond_state: TensorDict | None = None,
+        forcings: torch.Tensor = None,
     ):
         """
         cond state is a condition state that is concatenated to the main state
@@ -189,7 +197,11 @@ class WeatherEncodeDecodeLayer(nn.Module):
         return x
 
     def decode(self, x):
-        surface, level = x[:, :, 0], x[:, :, 1:]
+        if self.forcings_embedding == ForcingsEmbedding.SEPARATE:
+            # Forcings were concatenated first to level dimension.
+            surface, level = x[:, :, 1], x[:, :, 2:]  # B, C, Lev, Lat, Lon
+        else:
+            surface, level = x[:, :, 0], x[:, :, 1:]
 
         output_surface = self.surface_deconv(surface)
         output_surface = self.pixelshuffle(output_surface)
@@ -259,7 +271,7 @@ class ArchesWeatherCondBackbone(nn.Module):
         self.layer2_shape = (self.layer1_shape[0] // 2, self.layer1_shape[1] // 2)
 
         if first_interaction_layer == "linear":
-            self.interaction_layer = LinVert(in_features=emb_dim)
+            self.interaction_layer = LinVert(in_features=emb_dim, zdim=self.zdim)
 
         layer_args = dict(
             cond_dim=cond_dim,
@@ -345,6 +357,6 @@ class ArchesWeatherCondBackbone(nn.Module):
         x = self.layer4(x, cond_emb)
 
         output = x
-        output = output.transpose(1, 2).reshape(output.shape[0], -1, 8, *self.layer1_shape)
+        output = output.transpose(1, 2).reshape(output.shape[0], -1, self.zdim, *self.layer1_shape)
 
         return output

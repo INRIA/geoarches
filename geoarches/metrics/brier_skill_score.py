@@ -5,6 +5,7 @@ from typing import Callable
 import torch
 import xarray as xr
 from einops import rearrange
+from omegaconf import ListConfig
 from torchmetrics import Metric
 
 from geoarches.dataloaders import era5
@@ -202,6 +203,11 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                 Set to explicitly handle metrics computed on predictions from multistep rollout.
                 See param `lead_time_hours`.
         """
+        if isinstance(surface_variables, ListConfig):
+            surface_variables = list(surface_variables)
+            level_variables = list(level_variables)
+            pressure_levels = list(pressure_levels)
+
         # Quantiles for each var across gridpoints and times.
         with resources.as_file(resources.files(geoarches_stats).joinpath(quantiles_filepath)) as f:
             q = xr.open_dataset(f).transpose(..., "latitude", "longitude")

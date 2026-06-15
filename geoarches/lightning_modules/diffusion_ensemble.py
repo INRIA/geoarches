@@ -72,7 +72,7 @@ class EnsembleDiffusionModule(DiffusionModule, L.LightningModule):
             [Era5EnsembleMetrics(**test_kwargs), Era5BrierSkillScore(**test_kwargs)]
         )
 
-    def sample(self, batch, seed, member=0, *args, **kwargs):
+    def sample(self, batch, seed=None, member=0, *args, **kwargs):
         # if model_idx is None, sample with a different model at each step
 
         if self.deterministic_mode == "mix":
@@ -96,7 +96,7 @@ class EnsembleDiffusionModule(DiffusionModule, L.LightningModule):
     def sample_rollout(
         self,
         batch,
-        batch_nb,
+        batch_nb=None,
         iterations=1,
         member=0,
         disable_tqdm=True,
