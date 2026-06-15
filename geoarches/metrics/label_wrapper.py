@@ -1,4 +1,5 @@
 import itertools
+import warnings
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence
 
@@ -59,7 +60,16 @@ class LabelDictWrapper(Metric):
         labeled_dict = dict()
         for var, index in self.variable_indices.items():
             for metric_name, metric in raw_metric_dict.items():
-                labeled_dict[f"{metric_name}_{var}"] = metric.__getitem__((..., *index))
+                # Remove dashes for compatibility with convert_metric_dict_to_xarray().
+                metric_name = metric_name.replace("_", "-")
+                if any(s in metric_name for s in ["spatial", "per-gridpt", "per-gridpoint"]):
+                    # Account for lat, lon dims
+                    warnings.warn(
+                        "Assuming that metric {metric_name} has lat, lon dimensions. Not supported for WandDB."
+                    )
+                    labeled_dict[f"{metric_name}_{var}"] = metric[..., *index, :, :]
+                else:
+                    labeled_dict[f"{metric_name}_{var}"] = metric[..., *index]
         return labeled_dict
 
     def update(self, *args: Any, **kwargs: Any) -> None:
@@ -134,6 +144,7 @@ def convert_metric_dict_to_xarray(
         labels = label.split("_")
         if len(labels) - 2 != len(extra_dimensions):
             raise ValueError(
+                f"Assumes metric name {label} is in format <metric>_<var>_<dim1>...."
                 f"Expected length of extra_dimensions for key {label} to be: {len(labels) - 2}. Got extra_dimensions={extra_dimensions}."
             )
         metrics.add(labels[0])
