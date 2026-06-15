@@ -13,7 +13,7 @@ To evaluate a trained model (e.g. `ArchesWeather`) on the test set (year 2020), 
 
 ```sh
 MODEL=archesweather-m-seed0
-python -m geoarches.main_hydra ++mode=test ++name=$MODEL ++module.name=$MODEL
+python -m geoarches.main_hydra ++mode=test ++name=$MODEL
 ```
 
 This command:
