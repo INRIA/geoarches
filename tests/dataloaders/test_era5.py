@@ -651,17 +651,17 @@ class TestEra5ForecastWithPanguNormalization(TestBase):
 
 
 class TestEra5ForecastWithForcings:
-    @classmethod
-    @pytest.fixture(autouse=True)
-    def setup_class(self, tmp_path_factory):
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_class(self, tmp_path_factory, request):
+        cls = request.cls
         # Use tmp_path_factory to create a class-level temporary directory.
-        self.test_dir = tmp_path_factory.mktemp("data")
+        cls.test_dir = tmp_path_factory.mktemp("data")
         # Start from 2023-12-31 to check that we load forcings from 2024-01-01 (timestamp of next_state).
         times = pd.date_range("2023-12-31", periods=6, freq="6h")  # datetime64[ns]
 
         # 3 files with 2 timestamps each.
         for i in range(3):
-            file_path = self.test_dir / f"fake_era5_{i}.nc"
+            file_path = cls.test_dir / f"fake_era5_{i}.nc"
             time = times[i * 2 : i * 2 + 2]
 
             # Create some dummy data
@@ -689,18 +689,18 @@ class TestEra5ForecastWithForcings:
             ds.to_netcdf(file_path)
 
         # Forcings dataset.
-        self.test_forcings_dir = tmp_path_factory.mktemp("forcings")
+        cls.test_forcings_dir = tmp_path_factory.mktemp("forcings")
         # Create the time coordinate with a monthly frequency
         time = pd.date_range("2023-12-01", periods=2, freq="MS")
 
-        file_path = self.test_forcings_dir / "fake_forcings.nc"
+        file_path = cls.test_forcings_dir / "fake_forcings.nc"
 
         sea_ice_cover_data = np.random.rand(len(time), LAT, LON)
         sea_ice_cover_data[:, :, 0] = np.nan
         sea_surface_temperature_data = np.random.rand(len(time), LAT, LON)
         sea_surface_temperature_data[:, :, 0] = np.nan
 
-        self.sea_ice_cover_data = torch.from_numpy(sea_ice_cover_data).to(torch.float32)
+        cls.sea_ice_cover_data = torch.from_numpy(sea_ice_cover_data).to(torch.float32)
 
         ds = xr.Dataset(
             data_vars={
