@@ -64,7 +64,9 @@ class WeatherEncodeDecodeLayer(nn.Module):
             auto_move_to_device: Whether to automatically move the constant masks to the device.
         """
         super().__init__()
-        self.__dict__.update(locals())
+        self.__dict__.update(
+            {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
+        )
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         self.constant_masks = torch.load(
@@ -259,7 +261,9 @@ class ArchesWeatherCondBackbone(nn.Module):
         **kwargs,
     ):
         super().__init__()
-        self.__dict__.update(locals())
+        self.__dict__.update(
+            {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
+        )
         drop_path = np.linspace(
             0, droppath_coeff / depth_multiplier, int(8 * depth_multiplier)
         ).tolist()

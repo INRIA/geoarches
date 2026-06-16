@@ -28,16 +28,16 @@ class TestBase:
     with 6-hourly frequency.
     """
 
-    @classmethod
-    @pytest.fixture(autouse=True)
-    def setup_class(self, tmp_path_factory):
+    @pytest.fixture(scope="class", autouse=True)
+    def _setup_class(self, tmp_path_factory, request):
         # Use tmp_path_factory to create a class-level temporary directory.
-        self.test_dir = tmp_path_factory.mktemp("data")
+        cls = request.cls
+        cls.test_dir = tmp_path_factory.mktemp("data")
         times = pd.date_range("2024-01-01", periods=6, freq="6h")  # datetime64[ns]
 
         # 3 files with 2 timestamps each.
         for i in range(3):
-            file_path = self.test_dir / f"fake_era5_{i}.nc"
+            file_path = cls.test_dir / f"fake_era5_{i}.nc"
             time = times[i * 2 : i * 2 + 2]
 
             # Create some dummy data
