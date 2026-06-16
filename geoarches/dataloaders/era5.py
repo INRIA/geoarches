@@ -340,8 +340,8 @@ class Era5Dataset(XarrayDataset):
             tdict = tdict.apply(lambda x: x.flip(-2))
 
         # squeeze
-        surface = tdict["surface"].squeeze(-3)
-        level = tdict["level"]
+        surface = tdict["surface"].squeeze(-3).numpy()
+        level = tdict["level"].numpy()
 
         # Xarray coordinates.
         times = pd.to_datetime(timestamp.cpu().numpy(), unit="s").tz_localize(None)

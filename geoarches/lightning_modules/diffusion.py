@@ -60,7 +60,9 @@ class DiffusionModule(BaseLightningModule):
         loss_delta_normalization: str, either delta or pred.
         """
         super().__init__()
-        self.__dict__.update(locals())
+        self.__dict__.update(
+            {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
+        )
 
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device

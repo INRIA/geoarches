@@ -45,7 +45,9 @@ class ForecastModule(BaseLightningModule):
         """should create self.encoder and self.decoder in subclasses"""
         super().__init__()
         # self.save_hyperparameters()
-        self.__dict__.update(locals())
+        self.__dict__.update(
+            {k: v for k, v in locals().items() if k != "self" and not k.startswith("_")}
+        )
         self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
