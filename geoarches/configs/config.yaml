@@ -15,7 +15,8 @@ project: ${module.project}
 name: default
 
 exp_dir: modelstore/${name} # Checkpoint dir
-resume: True  # To resume a previous run, loads checkpoint and cfg from `exp_dir`.
+resume: False  # Set True to continue an existing run from `exp_dir`.
+load_ckpt:  # Optional experiment directory or .ckpt file to initialize a new run from.
 
 seed: 0
 max_steps: 300000
