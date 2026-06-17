@@ -21,6 +21,42 @@ This will start training the deterministic model **ArchesWeather** on **ERA5** d
 
     The configuration file will be saved to: `modelstore/default_run/config.yaml` and model checkpoints to: `modelstore/default_run/checkpoints/`
 
+`name` must be new when starting training. If `modelstore/default_run/` already exists, choose another name or explicitly resume the run.
+
+### Continue an existing run
+
+To continue training from the latest checkpoint in an existing experiment, set `resume=True`:
+
+```sh
+python -m geoarches.main_hydra \
+    ++name=default_run \
+    ++resume=True
+```
+
+You can select a specific checkpoint by matching part of its filename:
+
+```sh
+python -m geoarches.main_hydra \
+    ++name=default_run \
+    ++resume=True \
+    ++ckpt_filename_match=100000
+```
+
+### Fine-tune from an existing checkpoint
+
+Fine-tuning starts a new run and initializes its model weights from another experiment or checkpoint file:
+
+```sh
+python -m geoarches.main_hydra \
+    module=archesweather \
+    dataloader=era5 \
+    ++name=default_run_ft \
+    ++load_ckpt=modelstore/default_run \
+    ++ckpt_filename_match=100000
+```
+
+Unlike `resume=True`, `load_ckpt` does not restore optimizer state, scheduler state, or global step.
+
 ### Useful training options
 
 ```sh
