@@ -21,9 +21,8 @@ from omegaconf import OmegaConf
 
 from geoarches.main_hydra import main as hydra_main
 
-def create_dummy_era5_data(
-    data_dir: Path, num_timestamps: int = 6, lat: int = 121, lon: int = 240
-):
+
+def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6):
     """Create minimal dummy ERA5 data for integration tests."""
     # Use full ERA5 grid dimensions
     # The dataloader expects these exact coordinate values
@@ -80,8 +79,9 @@ def create_dummy_era5_data(
 
         # Create dummy data with full ERA5 grid dimensions
         # This ensures compatibility with the dataloader's coordinate selection
-        level_var_data = np.random.randn(len(time), len(LEVELS), LAT_COORDS, LON_COORDS)
-        surface_var_data = np.random.randn(len(time), LAT_COORDS, LON_COORDS)
+        rng = np.random.default_rng(42)
+        level_var_data = rng.standard_normal((len(time), len(LEVELS), LAT_COORDS, LON_COORDS))
+        surface_var_data = rng.standard_normal((len(time), LAT_COORDS, LON_COORDS))
 
         data_vars = {}
         # Add level variables
@@ -114,6 +114,7 @@ def create_dummy_era5_data(
         ds.to_netcdf(file_path)
 
     return data_dir
+
 
 def test_config_composition():
     """Test that Hydra config composition works correctly."""
