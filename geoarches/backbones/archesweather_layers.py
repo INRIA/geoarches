@@ -406,9 +406,14 @@ class EarthSpecificBlock(nn.Module):
         attn_mask = None
 
         if axis_attn:
-            from axial_attention import AxialAttention, AxialPositionalEmbedding
+            from axial_attention import (  # pytype: disable=import-error
+                AxialAttention,
+                AxialPositionalEmbedding,
+            )
 
-            self.axis_pos = AxialPositionalEmbedding(dim=dim, shape=(8,), emb_dim_index=-1)
+            self.axis_pos = AxialPositionalEmbedding(
+                dim=dim, shape=(self.input_resolution[0],), emb_dim_index=-1
+            )
             self.axis_attn = AxialAttention(
                 dim=dim,  # embedding dimension
                 dim_index=-1,  # where is the embedding dimension
@@ -593,20 +598,23 @@ class LinVert(nn.Module):
     a modification of Mlp that takes the full column
     """
 
-    def __init__(self, in_features, drop=0.0, **kwargs):
+    def __init__(self, in_features, zdim=8, drop=0.0, **kwargs):
         super().__init__()
-        self.fc1 = nn.Linear(8 * in_features, 8 * in_features)
+        self.fc1 = nn.Linear(zdim * in_features, zdim * in_features)
+        self.zdim = zdim
 
     def forward(self, x: torch.Tensor):
         shortcut = x
         x2 = (
-            shortcut.reshape((shortcut.shape[0], 8, -1, shortcut.shape[-1]))
+            shortcut.reshape((shortcut.shape[0], self.zdim, -1, shortcut.shape[-1]))
             .movedim(1, -2)
             .flatten(-2, -1)
-        )  # B, lat*lon, 8*C
+        )  # B, lat*lon, pl*C
         x2 = self.fc1(x2)
         x2 = (
-            x2.reshape((x2.shape[0], -1, 8, shortcut.shape[-1])).movedim(-2, 1).flatten(1, 2)
-        )  # B, 8*lat*lon, C
+            x2.reshape((x2.shape[0], -1, self.zdim, shortcut.shape[-1]))
+            .movedim(-2, 1)
+            .flatten(1, 2)
+        )  # B, pl*lat*lon, C
 
         return shortcut + x2

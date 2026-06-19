@@ -228,5 +228,5 @@ class LabelXarrayWrapper(Metric):
     def update(self, *args: Any, **kwargs: Any) -> None:
         self.metric.update(*args, **kwargs)
 
-    def compute(self) -> dict[str, torch.tensor]:
+    def compute(self) -> xr.Dataset:
         return self._convert(self.metric.compute())
