@@ -471,7 +471,7 @@ class DiffusionModule(BaseLightningModule):
 
     def on_test_epoch_end(self):
         # save results
-        if self.cfg.inference.save_test_outputs:
+        if self.cfg.inference.save_test_outputs and self.zarr_writer.path.exists():
             self.zarr_writer.to_netcdf(dump_id="final")
 
         if self.cfg.inference.save_test_outputs == "without_metrics":
