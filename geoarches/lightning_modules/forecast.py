@@ -299,7 +299,7 @@ class ForecastModule(BaseLightningModule):
             torch.save(output, f"{self.test_filename}_{metric_name}.pt")
             outputs.update(output)
 
-        if self.cfg.inference.save_test_outputs:
+        if self.cfg.inference.save_test_outputs and self.zarr_writer.path.exists():
             self.zarr_writer.to_netcdf(dump_id="final")
 
         for metric in self.test_metrics.values():
