@@ -11,7 +11,10 @@ To get started, follow the [installation guide](../getting_started/installation.
 ### 2. Download pretrained models
 
 The following script downloads four deterministic models (`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face:
-geoarches/download/dl_aw_models.sh
+```sh
+conda activate geoarches
+./geoarches/download/dl_aw_models.sh
+```
 
 For each model, we download the pytorch checkpoint as well as the hydra config needed to evaluate the model.
 
