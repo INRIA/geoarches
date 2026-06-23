@@ -3,7 +3,6 @@ dataloader:
     _target_: geoarches.dataloaders.era5pred.Era5ForecastWithPrediction
     path: data/era5_240/full/
     lead_time_hours: 24
-    norm_scheme: pangu
     load_prev: true
     load_hard_neg: false
     domain: train
@@ -13,6 +12,34 @@ dataloader:
   test_args:
     multistep: 2
     domain: test_z0012
+stats:
+  module:
+    _target_: geoarches.utils.normalization.NormalizationStatistics
+    norm_file: pangu_norm_stats.nc
+    variables:
+      surface:
+          - 10m_u_component_of_wind
+          - 10m_v_component_of_wind
+          - 2m_temperature
+          - mean_sea_level_pressure
+      level:
+          - geopotential
+          - u_component_of_wind
+          - v_component_of_wind
+          - temperature
+          - specific_humidity
+          - vertical_velocity
+    levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+  compute_loss_coeffs_args:
+    latitude: 121
+    use_weatherbench_lat_coeffs: true
+    loss_weight_per_variable:
+      surface: [0.1, 0.1, 1.0, 0.1]
+      level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  compute_state_scaler_args:
+    state_normalization: pred
+    downweight_vertical_velocity: true
+  residual_stats_path: deltapred24_aws_denorm.pt
 module:
   project: atmo-diffusion
   module:
@@ -31,9 +58,7 @@ module:
     - modelstore/archesweather-m-skip-seed1
     learn_residual: pred
     conditional: prev+det
-    loss_delta_normalization: false
     loss_weighting_strategy: debiased
-    state_normalization: pred
     pow: 2
     use_classifier: false
     add_input_state: false
@@ -45,6 +70,7 @@ module:
     weight_decay: 0.01
     num_warmup_steps: 500
     num_training_steps: 60000
+    cond_times_backward_compatible: true
   val:
     num_members: 5
     rollout_iterations: 1
@@ -61,6 +87,7 @@ module:
     rollout_iterations: 10
     cf_guidance: 1
     s_churn: 0.0
+    scale_input_noise: 1.05
     save_test_outputs: false
     metrics:
       era5_ensemble:
