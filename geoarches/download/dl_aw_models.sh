@@ -12,10 +12,10 @@ for MOD in "${MODELS[@]}"; do
     
     # Download files
     wget -q -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
-    wget -q -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
+    cp paper/configs/$MOD.yaml modelstore/$MOD/config.yaml
     
     # Patch the checkpoint using Python
-    python3 -c "
+    python3 << EOF
 import torch
 path = 'modelstore/$MOD/checkpoints/checkpoint.ckpt'
 ckpt = torch.load(path, map_location='cpu', weights_only=False)
@@ -25,7 +25,7 @@ if 'pytorch-lightning_version' not in ckpt:
     ckpt['pytorch-lightning_version'] = '2.5.0.post0'
 torch.save(ckpt, path)
 print('✓ $MOD checkpoint downloaded.')
-"
+EOF
 done
 
 echo "All models downloaded and patched."

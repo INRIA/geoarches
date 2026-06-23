@@ -1,0 +1,101 @@
+dataloader:
+  dataset:
+    _target_: geoarches.dataloaders.era5.Era5Forecast
+    path: data/era5_240/full/
+    lead_time_hours: 24
+    norm_scheme: pangu
+    load_prev: true
+  validation_args:
+    multistep: 2
+    domain: val
+  test_args:
+    multistep: 2
+    domain: test_z0012
+module:
+  project: atmo-comp
+  module:
+    _target_: geoarches.lightning_modules.forecast.ForecastModuleWithCond
+    name: archesweather-m-seed1
+    cond_dim: 256
+    lr: 0.0003
+    betas:
+    - 0.9
+    - 0.98
+    weight_decay: 0.05
+    num_warmup_steps: 5000
+    num_training_steps: 300000
+    use_graphcast_coeffs: true
+    use_prev: true
+    loss_delta_normalization: true
+  train:
+    rollout_iterations: 1
+    metrics:
+    - _target_: geoarches.metrics.deterministic_metrics.Era5DeterministicMetrics
+      lead_time_hours: 24
+    metrics_kwargs:
+      rollout_iterations: 1
+  val:
+    rollout_iterations: 2
+    metrics:
+    - _target_: geoarches.metrics.deterministic_metrics.Era5DeterministicMetrics
+      lead_time_hours: 24
+    metrics_kwargs:
+      rollout_iterations: 1
+  inference:
+    rollout_iterations: 2
+    metrics:
+      era5_deterministic_metrics:
+        _target_: geoarches.metrics.deterministic_metrics.Era5DeterministicMetrics
+        lead_time_hours: 24
+    metrics_kwargs:
+      rollout_iterations: 2
+  backbone:
+    _target_: geoarches.backbones.archesweather.ArchesWeatherCondBackbone
+    tensor_size:
+    - 8
+    - 60
+    - 120
+    emb_dim: 192
+    cond_dim: 256
+    window_size:
+    - 1
+    - 6
+    - 10
+    droppath_coeff: 0.2
+    dropout: 0
+    depth_multiplier: 2
+    use_skip: true
+    first_interaction_layer: linear
+    axis_attn: true
+    mlp_layer: swiglu
+    mlp_ratio: 4.0
+  embedder:
+    _target_: geoarches.backbones.archesweather.WeatherEncodeDecodeLayer
+    img_size:
+    - 13
+    - 121
+    - 240
+    emb_dim: 192
+    out_emb_dim: 384
+    patch_size:
+    - 2
+    - 2
+    - 2
+    surface_ch: 4
+    level_ch: 6
+    n_concatenated_states: 1
+    final_interpolation: false
+log: true
+name: archesweather-m-seed1
+project: atmo-comp
+exp_dir: modelstore/archesweather-m-seed1
+seed: 1
+max_steps: 300000
+batch_size: 4
+resume: true
+save_step_frequency: 50000
+log_freq: 100
+limit_val_batches: null
+accumulate_grad_batches: 1
+debug: false
+mode: train
