@@ -34,6 +34,12 @@ parser.add_argument(
     type=str,
     help="Comma separated list of model uids, names of checkpoint folders stored under `modelstore/` dir.",
 )
+parser.add_argument(
+    "--domain",
+    default="all",
+    type=str,
+    help="Data domain to run inference on.",
+)
 
 
 args = parser.parse_args()
@@ -63,7 +69,7 @@ else:
 ds = instantiate(
     cfg.dataloader.dataset,
     path="data/era5_240/full/",
-    domain="all",
+    domain=args.domain,
 )
 
 
@@ -75,14 +81,16 @@ dl = torch.utils.data.DataLoader(
     ds, batch_size=1, num_workers=3, shuffle=False, collate_fn=collate_fn
 )
 
-current_year = 1979
 xr_list = []
 for i, batch in tqdm(enumerate(dl)):
+    current_year = pd.to_datetime(batch["timestamp"][0], utc=True, unit="s").year
+    next_year = pd.to_datetime(
+        batch["timestamp"][0] + ds.timedelta * 3600, utc=True, unit="s"
+    ).year
+
     fname = Path(args.output_path).joinpath(f"era5_240_pred_{current_year}_0h.nc")
     if fname.exists():
         continue
-
-    next_year = pd.to_datetime(batch["timestamp"][0] + 6 * 3600, utc=True, unit="s").year
 
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for (k, v) in batch.items()}
     out = module.forward(batch)

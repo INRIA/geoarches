@@ -45,3 +45,5 @@ In particular, we use the [`LightningModule`](https://lightning.ai/docs/pytorch/
 ### Weights & Biases (W&B)
 
 Optionally, you can log training metrics with [Weights & Biases](https://docs.wandb.ai). It provides experiment tracking for your runs.
+
+See the [train instructions](train.md#log-experiments-to-weights-biases) for more details.

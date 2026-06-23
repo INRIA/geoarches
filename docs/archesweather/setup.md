@@ -11,17 +11,12 @@ To get started, follow the [installation guide](../getting_started/installation.
 ### 2. Download pretrained models
 
 The following script downloads four deterministic models (`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face:
-
 ```sh
-src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
-
-for MOD in "${MODELS[@]}"; do
-    mkdir -p "modelstore/$MOD/checkpoints"
-    wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
-    wget -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
-done
+conda activate geoarches
+./geoarches/download/dl_aw_models.sh
 ```
+
+For each model, we download the pytorch checkpoint as well as the hydra config needed to evaluate the model.
 
 You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. For training, refer to the [train section](./train.md).
 
