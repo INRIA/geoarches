@@ -129,7 +129,7 @@ class DeterministicRMSE(Metric, MetricBase):
                   holds one tensor per variable and metric pair ie. mse_wind_speed.
         """
         all_metrics = dict(
-            rmse_before_time_avg=self.rmse_before_time_avg / self.nsamples,
+            rmsebeforetimeavg=self.rmse_before_time_avg / self.nsamples,
             mse=self.mse / self.nsamples,
             rmse=(self.mse / self.nsamples).sqrt(),
         )
