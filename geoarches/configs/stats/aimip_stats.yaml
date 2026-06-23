@@ -1,6 +1,6 @@
 module:
-  norm_file: "aimip_norm_stats.nc"
   _target_: geoarches.utils.normalization.NormalizationStatistics
+  norm_file: aimip_norm_stats.nc
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
   variables: 
@@ -21,7 +21,7 @@ module:
   # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
 
-  # if diffusion model, path to the precomputed 
+  # if diffusion model (state_normalization=pred), path to the precomputed 
   # delta stats of predictions is needed, else 
   # null to use diff_std to normalize for deltas 
   # between next_state and state 
@@ -36,5 +36,5 @@ compute_loss_coeffs_args:
   use_weatherbench_lat_coeffs: true
 
 compute_state_scaler_args:
-  state_normalization: "delta"
+  state_normalization: delta
   downweight_vertical_velocity: false
