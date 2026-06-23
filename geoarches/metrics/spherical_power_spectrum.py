@@ -94,9 +94,9 @@ class PowerSpectrum(Metric):
 
     def compute(self) -> torch.Tensor:
         """Compute final metrics utliizing internal states."""
-        output = dict(power_spectrum=self.pred_spectrum / self.nsamples)
+        output = dict(powerspectrum=self.pred_spectrum / self.nsamples)
         if self.compute_target_spectrum:
-            output["ref_power_spectrum"] = self.target_spectrum / self.nsamples
+            output["refpowerspectrum"] = self.target_spectrum / self.nsamples
         return output
 
 
