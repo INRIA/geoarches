@@ -19,7 +19,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         load_prev=False,
         load_hard_neg=False,
         variables=None,
-        dimension_indexers=None,
+        dimension_indexers=era5.default_dimension_indexers,
         pred_dimension_indexers=None,
         interpolate_input: nan_util.NanInterpolationMethod | None = None,
         **kwargs,
