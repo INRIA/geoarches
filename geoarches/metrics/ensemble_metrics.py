@@ -137,9 +137,6 @@ class EnsembleMetrics(Metric, MetricBase):
         # for frmse see
         # https://github.com/google-research/weatherbench2/blob/main/weatherbench2/metrics.py#L500
 
-        assert self.nsamples > 0, "nsamples is zero, division by zero."
-        assert nmembers > 0, "nmembers is zero, division by zero."
-
         metrics = dict(
             mse=self.mse / self.nsamples,
             frmse=(self.mse / self.nsamples - self.var / self.nsamples / nmembers).sqrt(),
@@ -172,9 +169,9 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
 
     def __init__(
         self,
-        surface_variables=era5.surface_variables,
-        level_variables=era5.level_variables,
-        pressure_levels=era5.pressure_levels,
+        surface_variables=era5.arches_default_surface_variables,
+        level_variables=era5.arches_default_level_variables,
+        pressure_levels=era5.arches_default_pressure_levels,
         save_memory: bool = False,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
@@ -197,8 +194,11 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
         """
         # Initialize separate metrics for level vars and surface vars.
         kwargs = {}
+        rollout_dim = () if rollout_iterations is None else (rollout_iterations,)
         if surface_variables:
-            surface_ensemble_metric = EnsembleMetrics(data_shape=(len(surface_variables), 1))
+            surface_ensemble_metric = EnsembleMetrics(
+                data_shape=(*rollout_dim, len(surface_variables), 1)
+            )
             # Wrap metric with LabelDictWrapper to return dictionary with labelled metrics (for wandb logging).
             kwargs["surface"] = LabelDictWrapper(
                 surface_ensemble_metric,
@@ -210,7 +210,7 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
             )
         if level_variables:
             level_ensemble_metric = EnsembleMetrics(
-                data_shape=(len(level_variables), len(pressure_levels)),
+                data_shape=(*rollout_dim, len(level_variables), len(pressure_levels)),
                 save_memory=save_memory,  # Save memory on level vars only.
             )
             kwargs["level"] = LabelDictWrapper(

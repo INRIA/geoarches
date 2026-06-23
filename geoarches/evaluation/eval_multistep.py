@@ -179,13 +179,13 @@ def main():
     parser.add_argument(
         "--level_vars",
         nargs="*",  # Accepts 0 or more arguments as a list.
-        default=era5.level_variables,
+        default=era5.arches_default_level_variables,
         help="Level vars to load from preds. Order is respected when read into tensors. Can be empty.",
     )
     parser.add_argument(
         "--surface_vars",
         nargs="*",  # Accepts 0 or more arguments as a list.
-        default=era5.surface_variables,
+        default=era5.arches_default_surface_variables,
         help="Surface vars to load from preds. Order is respected when read into tensors. Can be empty.",
     )
     parser.add_argument(
@@ -237,16 +237,17 @@ def main():
     print(f"Computing: {metrics.keys()}")
 
     # Groundtruth.
+    dimension_indexers = dict(level=[500, 700, 850])  # Use only these pressure levels.
     ds_test = era5.Era5Forecast(
+        stats_cfg=None,  # No normalization.
         path=args.groundtruth_path,
         # filename_filter=lambda x: ("2020" in x) and ("0h" in x or "12h" in x),
         domain="test_z0012",
         lead_time_hours=24,
         multistep=args.multistep,
         load_prev=False,
-        norm_scheme=None,
         variables=variables,
-        dimension_indexers=dict(level=[500, 700, 850]),
+        dimension_indexers=dimension_indexers,
         load_clim=True if args.eval_clim else False,  # Set if evaluating climatology.
     )
 
@@ -264,15 +265,17 @@ def main():
         return True
 
     if not args.eval_clim:
+        dimension_indexers["prediction_timedelta"] = [
+            timedelta(days=i) for i in range(1, args.multistep + 1)
+        ]
+
+        # Load predictions.
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
             filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
-            dimension_indexers=dict(
-                prediction_timedelta=[timedelta(days=i) for i in range(1, args.multistep + 1)],
-                level=[500, 700, 850],
-            ),
+            dimension_indexers=dimension_indexers,
         )
         print(f"Reading {len(ds_pred.files)} files from pred_path: {args.pred_path}.")
 

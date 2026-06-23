@@ -31,7 +31,7 @@ def get_random_code():
     # generate random code that alternates letters and numbers
     chars = random.choices(string.ascii_lowercase, k=3)
     nums = random.choices(string.digits, k=3)
-    return "".join([f"{chars}{num}" for char, num in zip(chars, nums)])
+    return "".join([f"{char}{num}" for char, num in zip(chars, nums)])
 
 
 def collate_fn(lst):
@@ -114,7 +114,7 @@ def main(cfg: DictConfig):
     ckpt_dir = Path(cfg.exp_dir).joinpath("checkpoints")
     if ckpt_dir.exists():
         print("Experiment already exists. Trying to resume it.")
-        exp_cfg = OmegaConf.load(Path(cfg.exp_dir) / "config.yaml")
+        exp_cfg = OmegaConf.load(str(Path(cfg.exp_dir) / "config.yaml"))
         if cfg.resume or cfg.mode == "test":
             # we just copy cluster info
             cfg.module = exp_cfg.module
@@ -179,15 +179,19 @@ def main(cfg: DictConfig):
         print("registering exp on main node")
         hparams = OmegaConf.to_container(cfg, resolve=True)
         print(hparams)
-        logger.log_hyperparams(hparams)
+        logger.log_hyperparams(hparams)  # pytype: disable=attribute-error
         Path(cfg.exp_dir).mkdir(exist_ok=True, parents=True)
         with open(Path(cfg.exp_dir) / "config.yaml", "w") as f:
             f.write(OmegaConf.to_yaml(cfg, resolve=True))
 
     if cfg.mode == "train":
         val_args = getattr(cfg.dataloader, "validation_args", {})
-        valset = instantiate(cfg.dataloader.dataset, **val_args)
-        trainset = instantiate(cfg.dataloader.dataset)  # will automatically pickup cfg split
+        valset = instantiate(cfg.dataloader.dataset, cfg.stats, **val_args)
+        trainset = instantiate(
+            # will automatically pickup cfg split
+            cfg.dataloader.dataset,
+            cfg.stats,
+        )
 
         val_loader = torch.utils.data.DataLoader(
             valset,
@@ -206,7 +210,7 @@ def main(cfg: DictConfig):
         )
     elif cfg.mode == "test":
         test_args = getattr(cfg.dataloader, "test_args", {})
-        testset = instantiate(cfg.dataloader.dataset, **test_args)
+        testset = instantiate(cfg.dataloader.dataset, cfg.stats, **test_args)
         test_loader = torch.utils.data.DataLoader(
             testset,
             batch_size=cfg.batch_size,
@@ -217,7 +221,7 @@ def main(cfg: DictConfig):
 
     # Resolve interpolations in the entire config before passing `cfg.module`
     OmegaConf.resolve(cfg.module)
-    pl_module = instantiate(cfg.module.module, cfg.module)
+    pl_module = instantiate(cfg.module.module, cfg.module, cfg.stats)
 
     if hasattr(cfg, "load_ckpt"):
         # load weights w/o resuming run
