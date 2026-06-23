@@ -127,7 +127,6 @@ def test_config_composition():
         assert hasattr(cfg, "mode")
         assert hasattr(cfg, "dataloader")
         assert hasattr(cfg, "module")
-        assert hasattr(cfg, "stats")
         assert hasattr(cfg, "cluster")
         assert cfg.max_steps == 5
         assert cfg.log is False
@@ -157,7 +156,7 @@ def test_real_dataloader_instantiation(tmp_path):
         # Test dataloader instantiation (as done in main_hydra.py)
         from hydra.utils import instantiate
 
-        dataset = instantiate(cfg.dataloader.dataset, cfg.stats)
+        dataset = instantiate(cfg.dataloader.dataset)
         assert dataset is not None
         assert hasattr(dataset, "__len__")
         assert hasattr(dataset, "__getitem__")
