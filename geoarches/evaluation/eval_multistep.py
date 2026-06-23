@@ -272,6 +272,7 @@ def main():
         # Load predictions.
         ds_pred = era5.Era5Dataset(
             path=args.pred_path,
+            domain="all",
             filename_filter=_pred_filename_filter,  # Update filename_filter to filter within pred_path.
             variables=variables,
             return_timestamp=True,
