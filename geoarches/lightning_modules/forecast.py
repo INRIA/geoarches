@@ -110,6 +110,8 @@ class ForecastModule(BaseLightningModule):
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
+        add_prev_state = "prev_state" in loop_batch
+        add_forcings = "future_forcings" in loop_batch
         for _ in range(iters):
             if torch.is_grad_enabled():
                 pred = gradient_checkpoint.checkpoint(
@@ -127,8 +129,6 @@ class ForecastModule(BaseLightningModule):
             preds_future.append(pred)
 
             # compute next batch
-            add_prev_state = "prev_state" in loop_batch
-            add_forcings = "future_forcings" in loop_batch
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
             next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
 
