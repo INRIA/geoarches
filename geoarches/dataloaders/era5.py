@@ -27,14 +27,14 @@ from .era5_constants import (
 filename_filters = dict(
     all=(lambda _: True),
     empty=(lambda _: False),
-    last_train=lambda x: ("2018" in x),
-    last_train_z0012=lambda x: ("2018" in x and ("0h" in x or "12h" in x)),
+    last_train=lambda x: "2018" in x,
+    last_train_z0012=lambda x: "2018" in x and ("0h" in x or "12h" in x),
     train=lambda x: not ("2019" in x or "2020" in x or "2021" in x),
     # Splits val and test  are from 2019 and 2020 respectively, but
     # we read the years before and after to account for offsets when
     # loading previous and future timestamps for an example.
-    val=lambda x: ("2018" in x or "2019" in x or "2020" in x),
-    test=lambda x: ("2019" in x or "2020" in x or "2021" in x),
+    val=lambda x: "2018" in x or "2019" in x or "2020" in x,
+    test=lambda x: "2019" in x or "2020" in x or "2021" in x,
     test_z0012=lambda x: ("2019" in x or "2020" in x or "2021" in x) and ("0h" in x or "12h" in x),
     test2022_z0012=lambda x: ("2022" in x) and ("0h" in x or "12h" in x),  # check if that works ?
     recent2=lambda x: any([str(y) in x for y in range(2007, 2019)]),
@@ -42,11 +42,12 @@ filename_filters = dict(
     # We read the years before and after (see above comment for why).
     aimip_train=lambda x: any(str(y) in x for y in range(1979, 2014)),
     aimip_trainval=lambda x: any(str(y) in x for y in range(1979, 2016)),
-    aimip_val=lambda x: ("2013" in x or "2014" in x or "2015" in x),
+    aimip_val=lambda x: "2013" in x or "2014" in x or "2015" in x,
     aimip_rollout_full=lambda x: any(str(y) in x for y in range(1978, 2025)),
     aimip_rollout_z00=lambda x: any(str(y) in x for y in range(1978, 2025)) and ("0h" in x),
-    aimip_rollout_z0012=lambda x: any(str(y) in x for y in range(1978, 2025))
-    and ("0h" in x or "12h" in x),
+    aimip_rollout_z0012=lambda x: (
+        any(str(y) in x for y in range(1978, 2025)) and ("0h" in x or "12h" in x)
+    ),
 )
 
 # we will deprecate filename_filters and use timestamp bounds instead.
@@ -241,6 +242,7 @@ class Era5Dataset(XarrayDataset):
         return_timestamp: Whether to return tuple of (example, timestamp) from
         __getitem__().
         """
+        self.domain = domain
         if filename_filter is None:
             # TODO(geco): at some point redefine behavior of filename_filter
             filename_filter = filename_filters[domain]
