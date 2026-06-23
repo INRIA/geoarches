@@ -38,6 +38,53 @@ def collate_fn(lst):
     return {k: torch.stack([x[k] for x in lst]) for k in lst[0]}
 
 
+def select_checkpoint(path: str | Path, ckpt_filename_match: str | None = None) -> Path:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Checkpoint source does not exist: {path}")
+
+    if path.is_file():
+        if ckpt_filename_match is not None and ckpt_filename_match not in path.name:
+            raise ValueError(
+                f"Checkpoint file {path} does not match ckpt_filename_match="
+                f"{ckpt_filename_match!r}."
+            )
+        return path
+
+    ckpt_dir = path / "checkpoints" if (path / "checkpoints").is_dir() else path
+    ckpts = sorted(ckpt_dir.glob("*.ckpt"), key=os.path.getmtime)
+    if ckpt_filename_match is not None:
+        ckpts = [x for x in ckpts if str(ckpt_filename_match) in x.name]
+    if not ckpts:
+        msg = f"No checkpoints found in {ckpt_dir}"
+        if ckpt_filename_match is not None:
+            msg += f" matching {ckpt_filename_match!r}"
+        raise FileNotFoundError(msg + ".")
+    print("Found checkpoints", ckpts)
+    print("Using checkpoint", ckpts[-1])
+    return ckpts[-1]
+
+
+def merge_existing_run_config(cfg: DictConfig, exp_cfg: DictConfig):
+    # we just copy cluster info
+    cfg.module = exp_cfg.module
+    cfg.dataloader = exp_cfg.dataloader
+    # then we update with cli overrides
+    print("\nhydra config", cfg)
+    try:
+        # if not submitit
+        cli_overrides = HydraConfig.get().overrides.task
+        print("got cli arguments from direct launch")
+    except:  # noqa E722
+        cli_overrides = getattr(cfg, "cli_overrides", [])
+
+    cli_overrides = [x.removeprefix("++") for x in cli_overrides if x.startswith("+")]
+
+    OmegaConf.set_struct(cfg, False)  # to merge
+    cfg.merge_with_dotlist(cli_overrides)
+    print("updated cfg", cfg, "\n")
+
+
 class CheckpointEveryNSteps(L.Callback):
     """
     Save a checkpoint every N steps, instead of Lightning's default that checkpoints
@@ -110,57 +157,38 @@ def main(cfg: DictConfig):
     # delete submitit handler to let PL take care of resuming
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
-    # first, check if exp exists
-    ckpt_dir = Path(cfg.exp_dir).joinpath("checkpoints")
-    if ckpt_dir.exists():
-        print("Experiment already exists. Trying to resume it.")
-        exp_cfg = OmegaConf.load(Path(cfg.exp_dir) / "config.yaml")
-        if cfg.resume or cfg.mode == "test":
-            # we just copy cluster info
-            cfg.module = exp_cfg.module
-            cfg.dataloader = exp_cfg.dataloader
-            # then we update we cli overrides
-            print("hydra config", cfg)
-            try:
-                # if not submitit
-                cli_overrides = HydraConfig.get().overrides.task
-                print("got cli arguments from direct launch")
-            except:  # noqa E722
-                cli_overrides = getattr(cfg, "cli_overrides", [])
+    if cfg.mode not in {"train", "test"}:
+        raise ValueError(f"Unsupported mode={cfg.mode!r}. Expected 'train' or 'test'.")
 
-            cli_overrides = [x.removeprefix("++") for x in cli_overrides if x.startswith("+")]
+    exp_dir = Path(cfg.exp_dir)
+    exp_cfg_path = exp_dir / "config.yaml"
+    exp_exists = exp_dir.exists()
+    load_ckpt = cfg.get("load_ckpt")
+    load_existing_run = cfg.mode == "test" or cfg.resume
 
-            OmegaConf.set_struct(cfg, False)  # to merge
-            cfg.merge_with_dotlist(cli_overrides)
-
-            print("updated cfg", cfg)
-            # normally commented code useless
-            # cli_cfg = compose(overrides=cli_overrides)
-            # OmegaConf.set_struct(cfg, False)  # to merge
-            # cfg = OmegaConf.merge(cfg, cli_cfg)
-
-        else:
-            # check that new config and old config match
-            OmegaConf.resolve(cfg)
-            if OmegaConf.to_yaml(cfg.module) != OmegaConf.to_yaml(exp_cfg.module):
-                print("Module config mismatch. Exiting")
-                print("Old config", OmegaConf.to_yaml(exp_cfg.module))
-                print("New config", OmegaConf.to_yaml(cfg.module))
-
-            if OmegaConf.to_yaml(cfg.dataloader) != OmegaConf.to_yaml(exp_cfg.dataloader):
-                print("Dataloader config mismatch. Exiting.")
-                print("Old config", OmegaConf.to_yaml(exp_cfg.dataloader))
-                print("New config", OmegaConf.to_yaml(cfg.dataloader))
-                return
-
-        # trying to find checkpoints
-        ckpts = list(sorted(ckpt_dir.iterdir(), key=os.path.getmtime))
-        if len(ckpts):
-            print("Found checkpoints", ckpts)
-            if hasattr(cfg, "ckpt_filename_match"):
-                ckpts = [x for x in ckpts if str(cfg.ckpt_filename_match) in x.name]
-            print("Using checkpoint", ckpts[-1])
-            ckpt_path = ckpts[-1]
+    if load_existing_run:
+        if load_ckpt is not None:
+            raise ValueError(
+                "`load_ckpt` is only supported when starting a new training run (e.g., for fine-tuning)."
+            )
+        if not exp_exists:
+            raise FileNotFoundError(f"Experiment does not exist: {exp_dir}")
+        if not exp_cfg_path.exists():
+            raise FileNotFoundError(f"Experiment config does not exist: {exp_cfg_path}")
+        if cfg.resume:
+            print("Experiment already exists. Resuming it.")
+        exp_cfg = OmegaConf.load(exp_cfg_path)
+        merge_existing_run_config(cfg, exp_cfg)
+        ckpt_path = select_checkpoint(cfg.exp_dir, cfg.get("ckpt_filename_match"))
+        print("Lightning will restore full trainer state from the checkpoint.")
+    else:
+        if exp_exists:
+            raise FileExistsError(
+                f"Experiment already exists: {exp_dir}. Use a new `name`/`exp_dir`, or set "
+                "`resume=True` to continue training."
+            )
+        if load_ckpt is None and cfg.get("ckpt_filename_match") is not None:
+            raise ValueError("`ckpt_filename_match` requires `load_ckpt` when starting a new run.")
 
     if cfg.log:
         print("wandb mode", cfg.cluster.wandb_mode)
@@ -175,13 +203,13 @@ def main(cfg: DictConfig):
             offline=(cfg.cluster.wandb_mode != "online"),
         )
 
-    if cfg.log and main_node and not Path(cfg.exp_dir).joinpath("checkpoints").exists():
+    if not load_existing_run and main_node:
         print("registering exp on main node")
         hparams = OmegaConf.to_container(cfg, resolve=True)
-        print(hparams)
-        logger.log_hyperparams(hparams)
-        Path(cfg.exp_dir).mkdir(exist_ok=True, parents=True)
-        with open(Path(cfg.exp_dir) / "config.yaml", "w") as f:
+        if cfg.log:
+            logger.log_hyperparams(hparams)
+        exp_dir.mkdir(exist_ok=False, parents=True)
+        with open(exp_dir / "config.yaml", "w") as f:
             f.write(OmegaConf.to_yaml(cfg, resolve=True))
 
     if cfg.mode == "train":
@@ -219,11 +247,15 @@ def main(cfg: DictConfig):
     OmegaConf.resolve(cfg.module)
     pl_module = instantiate(cfg.module.module, cfg.module)
 
-    if hasattr(cfg, "load_ckpt"):
-        # load weights w/o resuming run
-        load_ckpt_dir = Path(cfg.load_ckpt).joinpath("checkpoints")
-        ckpts = list(sorted(load_ckpt_dir.iterdir(), key=os.path.getmtime))
-        load_ckpt_path = ckpts[-1]
+    if load_ckpt is not None:
+        assert ckpt_path is None, (
+            "`load_ckpt` initializes weights for a new run; it must not also resume a checkpoint."
+        )
+        # load weights w/o resuming optimizer/scheduler/global step
+        load_ckpt_path = select_checkpoint(load_ckpt, cfg.get("ckpt_filename_match"))
+        print(
+            "Loading model weights from the checkpoint without resuming optimizer/scheduler/global step."
+        )
         pl_module.load_state_dict(
             torch.load(load_ckpt_path, map_location="cpu", weights_only=False)["state_dict"]
         )
@@ -244,6 +276,7 @@ def main(cfg: DictConfig):
                 checkpointer.save()
                 from geoarches.submit import main as geoarches_submit
 
+                cfg.resume = True
                 geoarches_submit(cfg)
             exit()
 
