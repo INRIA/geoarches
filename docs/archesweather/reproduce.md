@@ -1,16 +1,6 @@
-# Train ArchesWeather and ArchesWeatherGen
+# Reproduce ArchesWeather and ArchesWeatherGen
 
 This section provides the **full** training pipeline to retrain **ArchesWeatherGen** from scratch. It assumes that you have already installed the `geoarches` package and downloaded the necessary data.
-
-!!! info "Before you start"
-
-    You can define the following aliases in your shell config (e.g. `.bashrc` or `.zshrc`) to simplify the commands:
-
-    ```sh
-    alias train=python -m geoarches.main_hydra ++log=True
-    alias test=python -m geoarches.main_hydra ++mode=test
-    alias strain=python -m geoarches.submit
-    ```
 
 ## Step 1. Training ArchesWeather
 
@@ -18,7 +8,7 @@ First, we train four deterministic versions of ArchesWeather on ERA5 data:
 
 ```sh
 for i in {0..3}; do
-    train dataloader=era5 module=archesweather ++name=archesweather-m-seed$i
+    python -m geoarches.main_hydra ++log=True dataloader=era5 module=archesweather ++name=archesweather-m-seed$i ++seed=$i
 done
 ```
 
@@ -52,7 +42,7 @@ Once residuals are computed, we train the flow matching model:
 M4ARGS="++dataloader.dataset.pred_path=data/outputs/deterministic/archesweather-m4 \
 ++module.module.load_deterministic_model=[archesweather-m-seed0,archesweather-m-seed1,archesweather-m-seed2,archesweather-m-seed3] "
 
-train module=archesweathergen dataloader=era5pred \
+python -m geoarches.main_hydra ++log=True module=archesweathergen dataloader=era5pred \
     ++limit_val_batches=10 \
     ++max_steps=200000 \
     ++name=archesweathergen-s \
@@ -65,7 +55,7 @@ train module=archesweathergen dataloader=era5pred \
 In the paper, we fine-tune the model on 2019 data to overcome overfitting of the deterministic models. See the paper for more details.
 
 ```sh
-train module=archesweathergen dataloader=era5pred \
+python -m geoarches.main_hydra ++log=True module=archesweathergen dataloader=era5pred \
     ++limit_val_batches=10 ++max_steps=60000 \
     "++name=archesweathergen-s-ft" \
     $M4ARGS \
@@ -85,7 +75,7 @@ Finally, we can evaluate the saved model:
 ```sh
 multistep=10
 
-test ++name=archesweathergen-s-ft \
+python -m geoarches.main_hydra ++mode=test ++name=archesweathergen-s-ft \
     ++limit_test_batches=0.1 \ # optional, for running on fewer members
     ++dataloader.test_args.multistep=$multistep \
     ++module.inference.save_test_outputs=True \ # can be set to False to not save forecasts \

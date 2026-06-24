@@ -49,6 +49,17 @@ ln -s /path/to/wandb/ wandblogs # (4)!
 
 You can also choose to create regular folders instead of symlinks. If none of these directories exist, they will be created automatically in the current working directory when needed.
 
-## Downloading ArchesWeather and ArchesWeatherGen
+## Downloading data
 
-To download pretrained models and statistics, follow the instructions in the [ArchesWeather section](../archesweather/index.md).
+The `download/` folder contains scripts to download data. In particular, to download the full ERA5 dataset from Weather Bench to train and evaluate ML models, run:
+```sh
+python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
+```
+If you only want to run evaluations, you just need to download the years 2019 to 2021:
+```sh
+python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2019 2020 2021
+```
+
+## Working with ArchesWeather and ArchesWeatherGen
+
+If you want to work with ArchesWeather and ArchesWeatherGen, follow the instructions in the [ArchesWeather setup section](../archesweather/setup.md).
