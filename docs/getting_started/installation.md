@@ -55,9 +55,9 @@ The `download/` folder contains scripts to download data. In particular, to down
 ```sh
 python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
 ```
-If you only want to run evaluations, you just need to download the year 2020:
+If you only want to run evaluations, you just need to download the years 2019 to 2021:
 ```sh
-python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2020
+python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2019 2020 2021
 ```
 
 ## Working with ArchesWeather and ArchesWeatherGen
