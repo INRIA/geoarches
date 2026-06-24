@@ -73,19 +73,26 @@ ignore = [
 skip = "*.ipynb"
 ignore-words-list = "hist"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "*"
-ruff = "*"
-codespell = "*"
-pre-commit = "*"
+# Dependency groups follow PEP 735 so they are shared by both Poetry (>=2.2)
+# and uv. The "dev" group is installed by default by both tools; "docs" is
+# opt-in (`poetry install --with docs` / `uv sync --group docs`).
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "codespell",
+    "pre-commit",
+]
+docs = [
+    "mkdocs>=1.6.1,<2.0.0",
+    "mkdocs-material>=9.5.50,<10.0.0",
+    "mkdocs-jupyter>=0.25.1,<0.26.0",
+]
 
-
+# Poetry installs PEP 735 groups by default; this marker keeps "docs" opt-in.
+# (uv already treats only "dev" as a default group, so no uv config is needed.)
 [tool.poetry.group.docs]
 optional = true
-[tool.poetry.group.docs.dependencies]
-mkdocs = "^1.6.1"
-mkdocs-material = "^9.5.50"
-mkdocs-jupyter = "^0.25.1"
 
 [project.scripts]
 geoarches-main = 'geoarches.main_hydra:main'

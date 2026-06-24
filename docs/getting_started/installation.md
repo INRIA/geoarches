@@ -1,12 +1,22 @@
 # Installation
 
-## Install Poetry
+There are two supported ways to install `geoarches`, both reading the same dependencies from `pyproject.toml`. Pick one:
 
-We use [`poetry`](https://python-poetry.org/docs/) for package dependencies. If `poetry` is not installed, you can follow the [official installation instructions](https://python-poetry.org/docs/#installation).
+- **Python env + Poetry** — manage the environment yourself (Conda, virtualenv, …), then install with [`poetry`](https://python-poetry.org/docs/) (this is the original workflow).
+- **uv** — let [`uv`](https://docs.astral.sh/uv/) manage both the environment and the install in one step.
 
-## Set up Python environment
+First, clone the repository:
 
-Use your preferred way to manage environments, e.g. `conda`, `virtualenv`, or `pyenv`.
+```sh
+git clone git@github.com:INRIA/geoarches.git
+cd geoarches
+```
+
+## Option 1: Python environment + Poetry
+
+We support [`poetry`](https://python-poetry.org/docs/) **>=2.2** (for shared [PEP 735](https://peps.python.org/pep-0735/) dependency groups). If `poetry` is not installed, follow the [official installation instructions](https://python-poetry.org/docs/#installation).
+
+Use your preferred way to manage environments, e.g. `conda`, `virtualenv`, or `pyenv`. Poetry manages its own virtual environment, so this step is only about providing a compatible Python (`>=3.11,<3.13`) — Poetry selects an existing interpreter but does not install one (while `uv` can download a matching Python itself).
 
 !!! example "Using Conda"
 
@@ -17,19 +27,29 @@ Use your preferred way to manage environments, e.g. `conda`, `virtualenv`, or `p
     conda activate geoarches
     ```
 
-## Install the package
-
-Once your environment is activated, clone the repository and install the package with Poetry:
+Once your environment is activated, install the package with Poetry:
 
 ```sh
-git clone git@github.com:INRIA/geoarches.git
-cd geoarches
 poetry install
 ```
 
+## Option 2: uv
+
+Install [`uv`](https://docs.astral.sh/uv/) by following the [official installation instructions](https://docs.astral.sh/uv/getting-started/installation/), then run:
+
+```sh
+uv sync
+```
+
+`uv` creates a `.venv` for you (with a Python version matching `requires-python`) and installs the package into it. Run project commands via `uv run` (e.g. `uv run geoarches-main ...`), or activate the environment with `source .venv/bin/activate`.
+
 !!! note
-    
-    By default, Poetry will install `geoarches` in **editable mode**. This allows you to make changes to the package locally, meaning any local changes will **automatically be reflected** to the code in your environment.
+
+    Both options install `geoarches` in **editable mode**. This allows you to make changes to the package locally, meaning any local changes will **automatically be reflected** to the code in your environment. Both also install the `dev` dependency group by default.
+
+!!! tip "Building the documentation locally"
+
+    The documentation dependencies live in the optional `docs` group, which is not installed by default. Install it with `poetry install --with docs` (Poetry) or `uv sync --group docs` (uv).
 
 ## Useful directories
 
