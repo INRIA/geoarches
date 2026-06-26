@@ -31,7 +31,7 @@ def get_random_code():
     # generate random code that alternates letters and numbers
     chars = random.choices(string.ascii_lowercase, k=3)
     nums = random.choices(string.digits, k=3)
-    return "".join([f"{chars}{num}" for char, num in zip(chars, nums)])
+    return "".join([f"{char}{num}" for char, num in zip(chars, nums)])
 
 
 def collate_fn(lst):
@@ -196,7 +196,6 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
         )  # to viz shuffle samples
-
         train_loader = torch.utils.data.DataLoader(
             trainset,
             batch_size=cfg.batch_size,
@@ -204,6 +203,8 @@ def main(cfg: DictConfig):
             shuffle=True,
             collate_fn=collate_fn,
         )
+        print(f"Train loader: {len(train_loader)} batches")
+        print(f"Val loader: {len(val_loader)} batches")
     elif cfg.mode == "test":
         test_args = getattr(cfg.dataloader, "test_args", {})
         testset = instantiate(cfg.dataloader.dataset, **test_args)
