@@ -1,24 +1,21 @@
-name: Unit tests
+name: Functional tests
 
-# Trigger on push or pull request to main and dev branches.
 on:
   push:
     branches:
-      - main
-      - dev
+      - master
   pull_request:
-    branches:
-      - main
-      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
 jobs:
   test:
-    name: Run unit tests on ${{ matrix.os }} with Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.11', '3.12']
+    name: Run functional tests
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
     steps:
       #----------------------------------------------
       #       check-out repo and set-up python
@@ -29,7 +26,7 @@ jobs:
         id: setup-python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
       #----------------------------------------------
       #  -----  install & configure poetry  -----
       #----------------------------------------------
@@ -68,7 +65,8 @@ jobs:
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
-      - name: Run unit tests
+      - name: Run functional tests
         run: |
           source .venv/bin/activate
-          python -m pytest -v tests/ --ignore=tests/functional/
+          python -m pytest -v tests/functional/ -s
+        timeout-minutes: 15
