@@ -62,6 +62,16 @@ jobs:
         run: |
           src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
           wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+      - name: Download models
+        run: |
+          src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
+          MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
+
+          for MOD in "${MODELS[@]}"; do
+              mkdir -p "modelstore/$MOD/checkpoints"
+              wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
+              wget -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
+          done
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
