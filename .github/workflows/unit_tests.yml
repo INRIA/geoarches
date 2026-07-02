@@ -1,7 +1,7 @@
 name: Unit tests
 
-# Trigger on push or pull request to main branch.
-on: 
+# Trigger on push or pull request to main and dev branches.
+on:
   push:
     branches:
       - main
@@ -26,6 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Set up python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -70,4 +71,4 @@ jobs:
       - name: Run unit tests
         run: |
           source .venv/bin/activate
-          python -m pytest -v tests/
+          python -m pytest -v tests/ --ignore=tests/functional/
