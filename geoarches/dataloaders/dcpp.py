@@ -2,6 +2,7 @@ import importlib.resources
 
 import pandas as pd
 import torch
+from tensordict._reductions import _make_td
 from tensordict.tensordict import TensorDict
 
 from .. import stats as geoarches_stats
@@ -87,7 +88,8 @@ class DCPPForecast(XarrayDataset):
 
         geoarches_stats_path = importlib.resources.files(geoarches_stats)
         norm_file_path = geoarches_stats_path / "dcpp_spatial_norm_stats.pt"
-        spatial_norm_stats = torch.load(norm_file_path)
+        with torch.serialization.safe_globals([TensorDict, _make_td]):
+            spatial_norm_stats = torch.load(norm_file_path, weights_only=True)
 
         # normalization,
         if self.norm_scheme is None:
@@ -127,8 +129,12 @@ class DCPPForecast(XarrayDataset):
             for a in ["hur_", "hus_", "o3_", "ta_", "ua_", "va_", "wap_", "zg_"]
             for p in pressure_levels
         ]
-        self.atmos_forcings = torch.load(f"{forcings_path}/full_atmos_normal.pt")
-        self.solar_forcings = torch.load(f"{forcings_path}/full_solar_normal.pt")
+        self.atmos_forcings = torch.load(
+            f"{forcings_path}/full_atmos_normal.pt", weights_only=True
+        )
+        self.solar_forcings = torch.load(
+            f"{forcings_path}/full_solar_normal.pt", weights_only=True
+        )
 
     def convert_to_tensordict(self, xr_dataset):
         """
