@@ -31,7 +31,7 @@ def load_module(
         path = Path(path)
     cfg = OmegaConf.load(path / "config.yaml")
     cfg.merge_with_dotlist(dotlist)
-    module = instantiate(cfg.module.module, cfg.module, **kwargs)
+    module = instantiate(cfg.module.module, cfg.module, cfg.stats, **kwargs)
     module.init_from_ckpt(path, ckpt_fname=ckpt_fname, missing_warning=False)
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"

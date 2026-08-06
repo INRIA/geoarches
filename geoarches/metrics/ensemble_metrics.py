@@ -172,9 +172,9 @@ class Era5EnsembleMetrics(TensorDictMetricBase):
 
     def __init__(
         self,
-        surface_variables=era5.surface_variables,
-        level_variables=era5.level_variables,
-        pressure_levels=era5.pressure_levels,
+        surface_variables=era5.arches_default_surface_variables,
+        level_variables=era5.arches_default_level_variables,
+        pressure_levels=era5.arches_default_pressure_levels,
         save_memory: bool = False,
         lead_time_hours: None | int = None,
         rollout_iterations: None | int = None,
