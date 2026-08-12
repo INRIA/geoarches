@@ -15,10 +15,6 @@ This command:
 - Automatically loads the latest checkpoint from `modelstore/$MODEL/checkpoints/`
 - Runs the appropriate metrics (deterministic or generative depending on the model)
 
-!!! warning
-
-    No error will be raised if the model does not exist, so make sure to check the `modelstore/` directory for the correct model name.
-
 ### Useful options for testing
 
 ```sh
