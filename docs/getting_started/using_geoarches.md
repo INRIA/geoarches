@@ -35,6 +35,12 @@ You can import the library modules directly in your scripts or notebooks:
 If you do need to modify the library (e.g. to experiment with architectural changes), we recommend working on a **development branch**.
 This makes it easier to rebase or merge when upstream updates are available. See the [Contributing Guide](../contributing/index.md) for details.
 
+```
+cd geoarches
+git checkout main
+git pull origin main
+git checkout -b dev/name
+```
 ---
 
 For more information on how to use the library, explore the [User Guide](../user_guide/index.md). For information specific to ArchesWeather, explore the [ArchesWeather section](../archesweather/index.md).
