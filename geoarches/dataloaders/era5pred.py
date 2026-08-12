@@ -72,7 +72,7 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
             self.pred_ds = era5.Era5Dataset(
                 path=pred_path,
                 domain="all",
-                dimension_indexers=dimension_indexers | pred_dimension_indexers,
+                dimension_indexers=dimension_indexers | (pred_dimension_indexers or {}),
                 filename_filter=self.filename_filter,
                 variables=self.variables,
                 interpolate_nans=interpolate_input,
