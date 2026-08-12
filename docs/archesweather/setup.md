@@ -25,11 +25,23 @@ done
 
 You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. For training, refer to the [train section](./train.md).
 
-### 3. Download ERA5 quantile statistics
+### 3. Quantile statistics
 
-ERA5 quantiles are required to compute Brier scores and are used during both inference and training. Download them with:
+ERA5 and HRES quantiles are required only when computing their corresponding Brier skill
+scores. Geoarches downloads the requested file from a pinned revision of
+[ArchesWeather on Hugging Face](https://huggingface.co/gcouairon/ArchesWeather) on first use
+and reuses the Hugging Face cache afterward.
+
+On compute nodes without network access, populate the cache before submitting a job:
 
 ```sh
-src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+python - <<'PY'
+from geoarches.stats import QUANTILE_FILENAMES, resolve_quantiles_file
+
+for filename in QUANTILE_FILENAMES:
+    print(resolve_quantiles_file(filename))
+PY
 ```
+
+You can also pass an existing local file through the `quantiles_filepath` argument of
+`Era5BrierSkillScore`.

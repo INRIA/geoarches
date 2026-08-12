@@ -1,5 +1,4 @@
 from functools import partial
-from importlib import resources
 from typing import Callable
 
 import torch
@@ -9,8 +8,8 @@ from torchmetrics import Metric
 
 from geoarches.dataloaders import era5
 from geoarches.metrics.label_wrapper import LabelDictWrapper, add_timedelta_index
+from geoarches.stats import resolve_quantiles_file
 
-from .. import stats as geoarches_stats
 from . import metric_base
 from .metric_base import MetricBase, TensorDictMetricBase
 
@@ -187,7 +186,8 @@ class Era5BrierSkillScore(TensorDictMetricBase):
     ):
         """
         Args:
-            quantiles_filepath: File to load quantile values from.
+            quantiles_filepath: Existing local path or standard ERA5/HRES filename.
+                Standard files are downloaded and cached on first use.
             high_quantiles: Quantiles to check for events where data > high_quantile.
             low_quantiles: Quantiles to check for events where data < low_quantile.
             surface_variables: Names of surface variables (to select quantiles).
@@ -203,32 +203,39 @@ class Era5BrierSkillScore(TensorDictMetricBase):
                 See param `lead_time_hours`.
         """
         # Quantiles for each var across gridpoints and times.
-        with resources.as_file(resources.files(geoarches_stats).joinpath(quantiles_filepath)) as f:
-            q = xr.open_dataset(f).transpose(..., "latitude", "longitude")
-        self.surface_high_quantiles = torch.from_numpy(
-            q[era5.surface_variables]
-            .sel({"quantile": high_quantile_levels}, method="nearest")
-            .to_array()
-            .to_numpy()
-        ).unsqueeze(-3)  # Add level dimension.
-        self.surface_low_quantiles = torch.from_numpy(
-            q[era5.surface_variables]
-            .sel({"quantile": low_quantiles_levels}, method="nearest")
-            .to_array()
-            .to_numpy()
-        ).unsqueeze(-3)  # Add level dimension.
-        self.level_high_quantiles = torch.from_numpy(
-            q[level_variables]
-            .sel({"quantile": high_quantile_levels, "level": pressure_levels}, method="nearest")
-            .to_array()
-            .to_numpy()
-        )
-        self.level_low_quantiles = torch.from_numpy(
-            q[level_variables]
-            .sel({"quantile": low_quantiles_levels, "level": pressure_levels}, method="nearest")
-            .to_array()
-            .to_numpy()
-        )
+        quantiles_path = resolve_quantiles_file(quantiles_filepath)
+        with xr.open_dataset(quantiles_path) as quantiles:
+            q = quantiles.transpose(..., "latitude", "longitude")
+            self.surface_high_quantiles = torch.from_numpy(
+                q[era5.surface_variables]
+                .sel({"quantile": high_quantile_levels}, method="nearest")
+                .to_array()
+                .to_numpy()
+            ).unsqueeze(-3)  # Add level dimension.
+            self.surface_low_quantiles = torch.from_numpy(
+                q[era5.surface_variables]
+                .sel({"quantile": low_quantiles_levels}, method="nearest")
+                .to_array()
+                .to_numpy()
+            ).unsqueeze(-3)  # Add level dimension.
+            self.level_high_quantiles = torch.from_numpy(
+                q[level_variables]
+                .sel(
+                    {"quantile": high_quantile_levels, "level": pressure_levels},
+                    method="nearest",
+                )
+                .to_array()
+                .to_numpy()
+            )
+            self.level_low_quantiles = torch.from_numpy(
+                q[level_variables]
+                .sel(
+                    {"quantile": low_quantiles_levels, "level": pressure_levels},
+                    method="nearest",
+                )
+                .to_array()
+                .to_numpy()
+            )
 
         # Variable indices include quantile (var, lev) --> (quantile, var, lev).
         # Enable LabelDictWrapper to extract metrics properly from BrierSkillScore output.

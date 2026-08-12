@@ -49,12 +49,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
       #----------------------------------------------
-      #        download data files for tests
+      #          cache data files for tests
       #----------------------------------------------
-      - name: Download stats data
+      - name: Cache stats data
         run: |
-          src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-          wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+          uv run python - <<'PY'
+          from geoarches.stats import resolve_quantiles_file
+
+          print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
+          PY
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
