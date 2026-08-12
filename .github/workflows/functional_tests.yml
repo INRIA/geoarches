@@ -73,7 +73,7 @@ jobs:
           for MOD in "${MODELS[@]}"; do
               mkdir -p "modelstore/$MOD/checkpoints"
               wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
-              wget -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
+              cp paper/configs/$MOD.yaml modelstore/$MOD/config.yaml
           done
       #----------------------------------------------
       #              run test suite
