@@ -43,6 +43,7 @@ module:
       rollout_iterations: 1
   inference:
     rollout_iterations: 2
+    save_test_outputs: false
     metrics:
       era5_deterministic_metrics:
         _target_: geoarches.metrics.deterministic_metrics.Era5DeterministicMetrics
