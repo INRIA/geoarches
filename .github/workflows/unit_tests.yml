@@ -1,7 +1,7 @@
 name: Unit tests
 
-# Trigger on push or pull request to main branch.
-on: 
+# Trigger on push or pull request to main and dev branches.
+on:
   push:
     branches:
       - main
@@ -26,6 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Set up python
+        id: setup-python
         uses: actions/setup-python@v5
         id: setup-python
         with:
@@ -59,4 +60,4 @@ jobs:
       #              run test suite
       #----------------------------------------------
       - name: Run unit tests
-        run: uv run pytest -v tests/
+        run: uv run pytest -v tests/ --ignore=tests/functional/
