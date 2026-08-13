@@ -21,10 +21,10 @@ jobs:
       #       check-out repo and set-up python
       #----------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up python
         id: setup-python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       #----------------------------------------------
@@ -40,7 +40,7 @@ jobs:
       #----------------------------------------------
       - name: Load cached venv
         id: cached-poetry-dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
@@ -56,12 +56,15 @@ jobs:
       - name: Install project
         run: poetry install --no-interaction
       #----------------------------------------------
-      #        download data files for tests
+      #          cache data files for tests
       #----------------------------------------------
-      - name: Download stats data
+      - name: Cache stats data
         run: |
-          src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
-          wget -O geoarches/stats/era5-quantiles-2016_2022.nc $src/era5-quantiles-2016_2022.nc
+          poetry run python - <<'PY'
+          from geoarches.stats import resolve_quantiles_file
+
+          print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
+          PY
       - name: Download models
         run: |
           src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
@@ -70,7 +73,7 @@ jobs:
           for MOD in "${MODELS[@]}"; do
               mkdir -p "modelstore/$MOD/checkpoints"
               wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
-              wget -O "modelstore/$MOD/config.yaml" "$src/${MOD}_config.yaml"
+              cp paper/configs/$MOD.yaml modelstore/$MOD/config.yaml
           done
       #----------------------------------------------
       #              run test suite

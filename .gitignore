@@ -32,6 +32,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Quantile statistics are downloaded and cached from Hugging Face on demand.
+/geoarches/stats/*-quantiles-2016_2022.nc
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

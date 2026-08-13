@@ -36,7 +36,6 @@ class ForecastModule(BaseLightningModule):
         use_graphcast_coeffs=True,
         increase_multistep_period=2,
         add_input_state=False,
-        save_test_outputs=False,
         use_weatherbench_lat_coeffs=True,
         lead_time_hours=24,
         rollout_iterations=1,
@@ -47,6 +46,7 @@ class ForecastModule(BaseLightningModule):
         super().__init__()
         # self.save_hyperparameters()
         self.__dict__.update(locals())
+        self.cfg = cfg
         self.backbone = instantiate(cfg.backbone)  # necessary to put it on device
         self.embedder = instantiate(cfg.embedder)
 
@@ -261,29 +261,26 @@ class ForecastModule(BaseLightningModule):
         self.test_filename = (
             Path("evalstore") / self.name / f"{dataset.domain}{self.test_filename_suffix}"
         )
-        if self.save_test_outputs:
-            self.zarr_writer = zarr.ZarrIterativeWriter(
-                self.test_filename.parent / f"{dataset.domain}.zarr"
-            )
+        if self.cfg.inference.save_test_outputs:
+            print("saving test outputs to", self.test_filename.with_suffix(".zarr"))
+            self.zarr_writer = zarr.ZarrIterativeWriter(self.test_filename.with_suffix(".zarr"))
 
     def test_step(self, batch, batch_nb):
         # are we doing multistep ?
         dataset = self.trainer.test_dataloaders.dataset
-        step_iterations = dataset.multistep
-        preds_future = self.forward_multistep(batch, iters=step_iterations)
+        preds_future = self.forward_multistep(batch, iters=self.cfg.inference.rollout_iterations)
 
         # compute metrics
-        if "future_states" in batch:
-            ref_state = batch["future_states"]
-        else:
-            ref_state = batch["next_state"][:, None]
+        rollout_iterations = min(
+            dataset.multistep, self.cfg.inference.metrics_kwargs.rollout_iterations
+        )
         for metric in self.test_metrics.values():
             metric.update(
-                dataset.denormalize(ref_state),
-                dataset.denormalize(preds_future),
+                dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
+                dataset.denormalize(preds_future[:, :rollout_iterations]),
             )
 
-        if self.save_test_outputs:
+        if self.cfg.inference.save_test_outputs:
             xr_dataset = dataset.convert_trajectory_to_xarray(
                 preds_future,
                 timestamp=batch["timestamp"],
@@ -302,7 +299,7 @@ class ForecastModule(BaseLightningModule):
             torch.save(output, f"{self.test_filename}_{metric_name}.pt")
             outputs.update(output)
 
-        if self.save_test_outputs:
+        if self.cfg.inference.save_test_outputs and self.zarr_writer.path.exists():
             self.zarr_writer.to_netcdf(dump_id="final")
 
         for metric in self.test_metrics.values():

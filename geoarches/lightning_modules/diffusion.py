@@ -425,7 +425,7 @@ class DiffusionModule(BaseLightningModule):
             self.sample_rollout(
                 batch,
                 batch_nb=batch_nb,
-                iterations=self.cfg.inference.metrics_kwargs.rollout_iterations,
+                iterations=self.cfg.inference.rollout_iterations,
                 member=j,
                 disable_tqdm=True,
             )
@@ -454,12 +454,14 @@ class DiffusionModule(BaseLightningModule):
 
         # compute metrics
         if self.cfg.inference.save_test_outputs != "without_metrics":
+            rollout_iterations = min(
+                dataset.multistep, self.cfg.inference.metrics_kwargs.rollout_iterations
+            )
+
             for metric in self.test_metrics.values():
                 metric.update(
-                    dataset.denormalize(
-                        batch["future_states"]
-                    ),  # TODO: do eval with future states
-                    [dataset.denormalize(sample) for sample in samples],
+                    dataset.denormalize(batch["future_states"][:, :rollout_iterations]),
+                    [dataset.denormalize(sample) for sample in samples[:rollout_iterations]],
                 )
 
         if hasattr(self, "zarr_writer") and not (batch_nb + 1) % 2:
@@ -469,6 +471,9 @@ class DiffusionModule(BaseLightningModule):
 
     def on_test_epoch_end(self):
         # save results
+        if self.cfg.inference.save_test_outputs and self.zarr_writer.path.exists():
+            self.zarr_writer.to_netcdf(dump_id="final")
+
         if self.cfg.inference.save_test_outputs == "without_metrics":
             return
 
@@ -483,9 +488,6 @@ class DiffusionModule(BaseLightningModule):
 
         fname = self.test_filename.replace(".zarr", "_metrics.pt")
         torch.save(all_metrics, Path("evalstore") / self.name / fname)
-
-        if hasattr(self, "zarr_writer"):
-            self.zarr_writer.to_netcdf(dump_id="final")
 
     def configure_optimizers(self):
         print("configure optimizers")

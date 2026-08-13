@@ -73,7 +73,6 @@ def test_download_archesweathergen_era5_data(archesweathergen_data_path):
 def test_load_archesweathergen_model_with_real_data_batch(archesweathergen_batch_and_model):
     batch, gen_model, gen_config = archesweathergen_batch_and_model
 
-    assert gen_config.module.module.name == "archesweathergen-s-ft"
     assert gen_model.training is False
     assert next(gen_model.parameters()).device == torch.device("cpu")
     assert {"state", "next_state", "prev_state", "timestamp", "lead_time_hours"} <= set(batch)

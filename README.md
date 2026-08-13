@@ -1,6 +1,6 @@
 <h1 align="center">
   <a href="http://www.geoarches.readthedocs.io">
-    <img src="./docs/assets/logo.png" alt="geoarches logo" width="120" height="120">
+    <img src="https://raw.githubusercontent.com/INRIA/geoarches/main/docs/assets/logo.png" alt="geoarches logo" width="120" height="120">
   </a>
   <br/>
   geoarches
@@ -48,16 +48,29 @@ geoarches is meant to jumpstart your ML pipeline with building blocks for data h
 
 ## Installation
 
-Clone the repository and install the package with Poetry:
+Install the latest release from PyPI:
+
+```sh
+pip install geoarches
+```
+
+To contribute or work from the latest source, clone the repository and install the package
+with either [Poetry](https://python-poetry.org/docs/) (>=2.2) or
+[uv](https://docs.astral.sh/uv/):
 
 ```sh
 git clone git@github.com:INRIA/geoarches.git
 cd geoarches
+
+# With Poetry
 poetry install
+
+# Or with uv
+uv sync
 ```
 
 > [!NOTE]
-> By default, Poetry will install `geoarches` in editable mode. This allows you to make changes to the package locally, meaning any local changes will automatically be reflected to the code in your environment.
+> Both tools install `geoarches` in editable mode. This allows you to make changes to the package locally, meaning any local changes will automatically be reflected to the code in your environment.
 
 For full installation instructions, see the [documentation](https://geoarches.readthedocs.io/en/latest/getting_started/installation/).
 
@@ -74,4 +87,5 @@ Many thanks to the authors of WeatherLearn for adapting the Pangu-Weather pseudo
 
 ## License
 
-geoarches is available under the [BSD 3-Clause License](LICENSE).
+geoarches is available under the
+[BSD 3-Clause License](https://github.com/INRIA/geoarches/blob/main/LICENSE).

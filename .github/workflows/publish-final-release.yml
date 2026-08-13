@@ -1,0 +1,177 @@
+name: Publish final release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "!v*rc*"
+
+concurrency:
+  group: pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Validate release tag and commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          test "${GITHUB_SHA}" = "$(git rev-parse origin/main)" || {
+            echo "Release tags must point to the current tip of main."
+            exit 1
+          }
+          python - <<'PY'
+          import os
+          import re
+
+          tag = os.environ["RELEASE_TAG"]
+          if re.fullmatch(r"v\d+\.\d+\.\d+", tag) is None:
+              raise SystemExit(f"Final release tag has invalid format: {tag}")
+          PY
+
+      - name: Check lock file
+        run: uv lock --check
+
+      - name: Build wheel and source distribution
+        run: uv build --no-sources
+
+      - name: Verify built version matches tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import email.parser
+          import glob
+          import os
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          if len(wheel) != 1:
+              raise SystemExit(f"Expected one wheel, found: {wheel}")
+          with zipfile.ZipFile(wheel[0]) as wheel_file:
+              metadata_path = next(
+                  name for name in wheel_file.namelist() if name.endswith(".dist-info/METADATA")
+              )
+              metadata = email.parser.Parser().parsestr(
+                  wheel_file.read(metadata_path).decode()
+              )
+
+          expected_version = os.environ["RELEASE_TAG"].removeprefix("v")
+          built_version = metadata["Version"]
+          if built_version != expected_version:
+              raise SystemExit(
+                  f"Built version {built_version} does not match tag {expected_version}"
+              )
+          PY
+
+      - name: Validate distribution metadata
+        run: uvx --from twine==6.2.0 twine check --strict dist/*
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Cache test data
+        run: |
+          uv run python - <<'PY'
+          from geoarches.stats import resolve_quantiles_file
+
+          print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
+          PY
+
+      - name: Run unit tests
+        run: uv run pytest -v tests/ --ignore=tests/functional/
+
+      - name: Store distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-to-pypi:
+    name: Publish distribution to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/geoarches/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish distribution
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  smoke-test:
+    name: Smoke test PyPI installation
+    needs: publish-to-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install and import the published package
+        run: |
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          for attempt in 1 2 3 4 5 6; do
+            if python -m pip install --no-deps "geoarches==${RELEASE_VERSION}"; then
+              break
+            fi
+            if [ "${attempt}" -eq 6 ]; then
+              echo "geoarches==${RELEASE_VERSION} was not available from PyPI."
+              exit 1
+            fi
+            sleep 20
+          done
+          python -c "import geoarches; assert geoarches.__version__ == '${RELEASE_VERSION}'"
+
+  github-release:
+    name: Create GitHub release
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create release and attach distributions
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
