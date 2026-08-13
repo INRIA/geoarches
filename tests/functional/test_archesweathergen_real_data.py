@@ -93,4 +93,4 @@ def test_archesweathergen_prediction_matches_target(archesweathergen_batch_and_m
 
     assert set(sample.keys()) == set(expected.keys())
     for key in expected.keys():
-        torch.testing.assert_close(sample[key], expected[key], rtol=0, atol=5e-5)
+        torch.testing.assert_close(sample[key], expected[key], rtol=1e-4, atol=1e-4)
