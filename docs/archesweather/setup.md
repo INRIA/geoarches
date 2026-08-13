@@ -32,7 +32,7 @@ scores. Geoarches downloads the requested file from a pinned revision of
 [ArchesWeather on Hugging Face](https://huggingface.co/gcouairon/ArchesWeather) on first use
 and reuses the Hugging Face cache afterward.
 
-On compute nodes without network access, populate the cache before submitting a job:
+To prepare for offline use, download the files in the cache while internet access is available:
 
 ```sh
 python - <<'PY'
@@ -43,5 +43,23 @@ for filename in QUANTILE_FILENAMES:
 PY
 ```
 
-You can also pass an existing local file through the `quantiles_filepath` argument of
-`Era5BrierSkillScore`.
+Alternatively, download only the file you need to a custom location:
+
+```sh
+curl --fail --location \
+  --output /shared/path/era5-quantiles-2016_2022.nc \
+  https://huggingface.co/gcouairon/ArchesWeather/resolve/main/era5-quantiles-2016_2022.nc
+```
+
+Replace `era5` with `hres` in both filenames for HRES quantiles. Then pass the downloaded
+path to the metric:
+
+```python
+from geoarches.metrics.brier_skill_score import Era5BrierSkillScore
+
+metric = Era5BrierSkillScore(
+    quantiles_filepath="/shared/path/era5-quantiles-2016_2022.nc"
+)
+```
+
+An existing custom path is used directly and does not require internet access.
