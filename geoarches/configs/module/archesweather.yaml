@@ -30,6 +30,7 @@ val:
 
 inference:
   rollout_iterations: 2  # number of rollouts to run inference on.
+  save_test_outputs: false
   metrics: ${module.metrics}
   metrics_kwargs:
     rollout_iterations: ${..rollout_iterations}
