@@ -17,7 +17,7 @@ module:
   project: atmo-diffusion
   module:
     _target_: geoarches.lightning_modules.diffusion.DiffusionModule
-    name: archesweathergen
+    name: archesweathergen-s-ft
     cond_dim: 256
     scheduler: flow
     prediction_type: sample
@@ -109,8 +109,8 @@ module:
 log: true
 entity: phaz
 project: atmo-diffusion
-name: archesweathergen
-exp_dir: modelstore/archesweathergen
+name: archesweathergen-s-ft
+exp_dir: modelstore/archesweathergen-s-ft
 seed: 0
 max_steps: 60000
 batch_size: 2
