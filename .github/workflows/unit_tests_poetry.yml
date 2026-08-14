@@ -1,0 +1,76 @@
+name: Unit tests (Poetry lock)
+
+# Keep one copy of the unit-test workflow on Poetry to verify that poetry.lock
+# remains a valid, working alternative to the primary uv.lock environment.
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    name: Run unit tests with Poetry on ${{ matrix.os }} and Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+    steps:
+      #----------------------------------------------
+      #       check-out repo and set-up python
+      #----------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up python
+        id: setup-python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      #----------------------------------------------
+      #  -----  install & configure poetry  -----
+      #----------------------------------------------
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 2.4.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      #----------------------------------------------
+      #       load cached venv if cache exists
+      #----------------------------------------------
+      - name: Load cached venv
+        uses: actions/cache@v6
+        with:
+          path: .venv
+          key: poetry-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}
+      #----------------------------------------------
+      #       check dependency lock file
+      #----------------------------------------------
+      - name: Check lock file
+        run: poetry check --lock
+      #----------------------------------------------
+      #         install dependencies
+      #----------------------------------------------
+      - name: Install dependencies
+        run: poetry install --no-interaction
+      #----------------------------------------------
+      #          cache data files for tests
+      #----------------------------------------------
+      - name: Cache stats data
+        run: |
+          poetry run python - <<'PY'
+          from geoarches.stats import resolve_quantiles_file
+
+          print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
+          PY
+      #----------------------------------------------
+      #              run test suite
+      #----------------------------------------------
+      - name: Run unit tests
+        run: poetry run pytest -v tests/ --ignore=tests/functional/
