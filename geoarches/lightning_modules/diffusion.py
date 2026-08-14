@@ -134,9 +134,16 @@ class DiffusionModule(BaseLightningModule):
 
         # Generate conditional embedding by combining embeddings from different time features.
         if self.cond_times_backward_compatible:
-            cond_emb = dit.get_combined_time_embedding(
-                {"month": self.month_embedder, "hour_of_day": self.hour_embedder}, batch
-            )
+            # For old pretrained checkpoint, reproduce timestamp overflow error when using int32.
+            device = batch["state"].device
+            times = pd.to_datetime(
+                batch["timestamp"].cpu().to(torch.int32).numpy() * 10**9
+            ).tz_localize(None)
+            month = torch.tensor(times.month).to(device)
+            month_emb = self.month_embedder(month)
+            hour = torch.tensor(times.hour).to(device)
+            hour_emb = self.hour_embedder(hour)
+            cond_emb = month_emb + hour_emb
         else:
             cond_emb = dit.get_combined_time_embedding(self.time_embedders, batch)
 

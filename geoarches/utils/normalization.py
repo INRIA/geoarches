@@ -215,7 +215,7 @@ class NormalizationStatistics:
         if downweight_vertical_velocity:
             # Downweight vertical velocity (assumed to be the last level variable)
             vv_index = self.variables["level"].index("vertical_velocity")
-            state_scaler["level"][vv_index] *= 0.3  # Downweight by a factor of 3
+            state_scaler["level"][vv_index] /= 3.0  # Downweight by a factor of 3
 
         self.state_scaler = state_scaler
 
