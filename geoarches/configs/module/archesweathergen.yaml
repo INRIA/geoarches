@@ -34,6 +34,11 @@ module:
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
 
+compute_state_scaler_args:
+  state_normalization: pred
+  downweight_vertical_velocity: true
+  residual_stats_path: deltapred24_aws_denorm.nc
+
 defaults:
   - metrics:  # Read from module/metrics/ folder.
     - era5_ensemble

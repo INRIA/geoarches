@@ -21,12 +21,8 @@ module:
   # update img_size in embedder in configs/module/.
   levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
 
-  # if diffusion model (state_normalization=pred), path to the precomputed 
-  # delta stats of predictions is needed, else 
-  # null to use diff_std to normalize for deltas 
-  # between next_state and state 
-  # (state_normalization=delta)
-  residual_stats_path: null   
+  # Dynamically configured from module.state_scaler
+  residual_stats_path: ${module.compute_state_scaler_args.residual_stats_path}
 
 compute_loss_coeffs_args:
   loss_weight_per_variable:
@@ -36,5 +32,5 @@ compute_loss_coeffs_args:
   use_weatherbench_lat_coeffs: true
 
 compute_state_scaler_args:
-  state_normalization: delta
-  downweight_vertical_velocity: false
+  state_normalization: ${module.compute_state_scaler_args.state_normalization}
+  downweight_vertical_velocity: ${module.compute_state_scaler_args.downweight_vertical_velocity}
