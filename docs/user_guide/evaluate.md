@@ -28,10 +28,12 @@ This command:
 
 ```sh
 python -m geoarches.main_hydra ++mode=test ++name=$MODEL \
-    ++ckpt_filename_match=100000 \ # (1)!                  # Load checkpoint containing this substring
-    ++limit_test_batches=0.1 \ # (2)!                      # Run on a fraction of the test set (for debugging)
-    ++module.inference.rollout_iterations=10 \ # (3)!      # Number of autoregressive steps
-    ++dataloader.test_args.multistep=10 # (4)!             # Match rollout length on dataloader side
+    ++module.inference.save_test_outputs=True \ # (1)!     # Saves model outputs (otherwise just saves final metrics)
+    ++ckpt_filename_match=100000 \ # (2)!                  # Load checkpoint containing this substring
+    ++limit_test_batches=0.1 \ # (3)!                      # Run on a fraction of the test set (for debugging)
+    ++module.inference.rollout_iterations=10 \ # (4)!      # Number of autoregressive steps
+    ++dataloader.test_args.multistep=10 \ # (5)!           # Match rollout length on dataloader side
+    ++module.inference.metrics_kwargs.rollout_iterations=10 \ # (6)!      # Number of autoregressive steps to compute metrics on.
 ```
 
 1. Loads the model checkpoint containing `100000` in its filename.
