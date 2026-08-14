@@ -39,7 +39,7 @@ Clone the repository only if you want to contribute to `geoarches` or use unrele
 changes:
 
 ```sh
-git clone git@github.com:INRIA/geoarches.git
+git clone https://github.com/INRIA/geoarches.git
 cd geoarches
 ```
 
