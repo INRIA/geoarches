@@ -2,28 +2,27 @@
 
 ## Install from PyPI
 
-`geoarches`\\/ supports Python 3.11 through 3.14.0. We recommend installing it in a
+`geoarches` supports Python 3.11 through 3.14.0. We recommend installing it in a
 virtual environment.
 
-=== "pip"
+### pip
 
-    ```sh
-    python -m venv .venv
-    source .venv/bin/activate
-    python -m pip install geoarches
-    ```
+```sh
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install geoarches
+```
 
-=== "uv"
+### uv
 
-    Install [`uv`](https://docs.astral.sh/uv/) by following its
-    [installation instructions](https://docs.astral.sh/uv/getting-started/installation/),
-    then run:
+Install [`uv`](https://docs.astral.sh/uv/) by following its
+[installation instructions](https://docs.astral.sh/uv/getting-started/installation/), then run:
 
-    ```sh
-    uv venv --python 3.12
-    source .venv/bin/activate
-    uv pip install geoarches
-    ```
+```sh
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install geoarches
+```
 
 You can also activate an existing Conda environment and run `python -m pip install
 geoarches` in it.

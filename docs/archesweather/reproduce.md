@@ -14,7 +14,7 @@ done
 
 !!! success
 
-    Each model will save its configuration to `modelstore/archesweather-m-seed{i}/config.yam`l and checkpoints under `modelstore/archesweather-m-seed$i/checkpoints/`.
+    Each model will save its configuration to `modelstore/archesweather-m-seed{i}/config.yaml` and checkpoints under `modelstore/archesweather-m-seed$i/checkpoints/`.
 
 !!! info
 
