@@ -10,13 +10,18 @@ To get started, if not already done, follow the [installation guide](../getting_
 
 ### 2. Download pretrained models
 
-The following script downloads four deterministic models (`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face:
+From your project directory, the following command downloads four deterministic models
+(`archesweather-m-seed*`) and one generative model (`archesweathergen`) from Hugging Face into
+`./modelstore/`:
+
 ```sh
-conda activate geoarches
-./geoarches/download/dl_aw_models.sh
+python -m geoarches.download.dl_aw_models --output-directory ./modelstore
 ```
 
-For each model, we download the pytorch checkpoint as well as the hydra config needed to evaluate the model.
+This works with both PyPI and source installations. For each model, it downloads the PyTorch
+checkpoint, adds the metadata required by PyTorch Lightning when needed, and installs the
+version-matched Hydra config used for evaluation. Existing files are reused. The five
+checkpoints require approximately 3.3 GB of disk space.
 
 You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference. To train the models from scratch, refer to the [reproduce section](./reproduce.md).
 
