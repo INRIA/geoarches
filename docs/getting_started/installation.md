@@ -1,59 +1,75 @@
 # Installation
 
-There are two supported ways to install `geoarches`, both reading the same dependencies from `pyproject.toml`. Pick one:
+## Install from PyPI
 
-- **uv** — let [`uv`](https://docs.astral.sh/uv/) manage both the environment and the install in one step.
-- **Python env + Poetry** — manage the environment yourself (Conda, virtualenv, …), then install with [`poetry`](https://python-poetry.org/docs/).
+`geoarches`\\/ supports Python 3.11 through 3.14.0. We recommend installing it in a
+virtual environment.
 
-First, clone the repository:
+=== "pip"
+
+    ```sh
+    python -m venv .venv
+    source .venv/bin/activate
+    python -m pip install geoarches
+    ```
+
+=== "uv"
+
+    Install [`uv`](https://docs.astral.sh/uv/) by following its
+    [installation instructions](https://docs.astral.sh/uv/getting-started/installation/),
+    then run:
+
+    ```sh
+    uv venv --python 3.12
+    source .venv/bin/activate
+    uv pip install geoarches
+    ```
+
+You can also activate an existing Conda environment and run `python -m pip install
+geoarches` in it.
+
+Verify the installation with:
+
+```sh
+python -c "import geoarches; print(geoarches.__version__)"
+```
+
+## Install from source
+
+Clone the repository only if you want to contribute to `geoarches` or use unreleased
+changes:
 
 ```sh
 git clone git@github.com:INRIA/geoarches.git
 cd geoarches
 ```
 
-## Option 1: uv
-
-Install [`uv`](https://docs.astral.sh/uv/) by following the [official installation instructions](https://docs.astral.sh/uv/getting-started/installation/), then run:
+Install [`uv`](https://docs.astral.sh/uv/) and run:
 
 ```sh
 uv sync
 ```
 
-`uv` creates a `.venv` for you (with a Python version matching `requires-python`) and installs the package into it. Run project commands via `uv run` (e.g. `uv run geoarches-main ...`), or activate the environment with `source .venv/bin/activate`.
-
-## Option 2: Python environment + Poetry
-
-We support [`poetry`](https://python-poetry.org/docs/) **>=2.2** (for shared [PEP 735](https://peps.python.org/pep-0735/) dependency groups). If `poetry` is not installed, follow the [official installation instructions](https://python-poetry.org/docs/#installation).
-
-Use your preferred way to manage environments, e.g. `conda`, `virtualenv`, or `pyenv`. Poetry manages its own virtual environment, so this step is only about providing a compatible Python (`>=3.11,<=3.14.0`) — Poetry selects an existing interpreter but does not install one (while `uv` can download a matching Python itself).
-
-!!! example "Using Conda"
-
-    The following code snippet will create a new conda environment named `geoarches` with Python 3.12:
-
-    ```sh
-    conda create --name geoarches python=3.12
-    conda activate geoarches
-    ```
-
-Once your environment is activated, install the package with Poetry:
+Alternatively, install [`Poetry`](https://python-poetry.org/docs/) 2.2 or later and run
+in a virtual environment:
 
 ```sh
 poetry install
 ```
 
-!!! note
-
-    Both options install `geoarches` in **editable mode**. This allows you to make changes to the package locally, meaning any local changes will **automatically be reflected** to the code in your environment. Both also install the `dev` dependency group by default.
+Both source-installation methods install `geoarches` in editable mode and include the
+development dependencies. See the [Contributing Guide](../contributing/index.md) for the
+complete development workflow.
 
 !!! tip "Building the documentation locally"
 
-    The documentation dependencies live in the optional `docs` group, which is not installed by default. Install it with `uv sync --group docs` (uv) or `poetry install --with docs` (Poetry).
+    Documentation dependencies are opt-in. Install them with `uv sync --group docs` or
+    `poetry install --with docs` from a source checkout.
 
 ## Useful directories
 
-We recommend creating symlinks in the root the codebase:
+In the working directory for your project, we recommend creating these directories or
+symlinks:
 
 ```sh
 ln -s /path/to/data/ data # (1)!
@@ -67,19 +83,25 @@ ln -s /path/to/wandb/ wandblogs # (4)!
 3. `evalstore/`: stores intermediate model outputs used for evaluation metrics.
 4. `wandblogs/`: stores Weights & Biases logs.
 
-You can also choose to create regular folders instead of symlinks. If none of these directories exist, they will be created automatically in the current working directory when needed.
+You can create regular directories instead. Missing directories are created in the current
+working directory when needed.
 
 ## Downloading data
 
-The `download/` folder contains scripts to download data. In particular, to download the full ERA5 dataset from Weather Bench to train and evaluate ML models, run:
+The `download/` folder contains scripts to download data.
+To download the full ERA5 dataset from WeatherBench for training and evaluation, run:
+
 ```sh
 python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
 ```
-If you only want to run evaluations, you just need to download the years 2019 to 2021:
+
+If you only want to run evaluations, download the years 2019 to 2021:
+
 ```sh
 python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2019 2020 2021
 ```
 
 ## Working with ArchesWeather and ArchesWeatherGen
 
-If you want to work with ArchesWeather and ArchesWeatherGen, follow the instructions in the [ArchesWeather setup section](../archesweather/setup.md).
+To use ArchesWeather or ArchesWeatherGen, follow the
+[ArchesWeather setup instructions](../archesweather/setup.md).
