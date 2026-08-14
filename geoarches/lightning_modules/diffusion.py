@@ -447,6 +447,25 @@ class DiffusionModule(BaseLightningModule):
                 Path("evalstore") / self.name / self.test_filename
             )
 
+        if self.cfg.inference.save_test_outputs == "without_metrics":
+            return
+        # If computing metrics, check if rollout_iterations set correctly.
+        if (
+            not dataset.multistep >= self.cfg.inference.rollout_iterations
+        ):  # Need groundtruth for all steps.
+            raise ValueError(
+                f"Dataset multistep ({dataset.multistep}) is smaller than "
+                f"module.inference.rollout_iterations ({self.cfg.inference.rollout_iterations}). "
+                f"Please ensure ++dataloader.test_args.multistep is at least {self.cfg.inference.rollout_iterations}."
+            )
+        if (
+            self.cfg.inference.rollout_iterations
+            != self.cfg.inference.metrics_kwargs.rollout_iterations
+        ):
+            raise ValueError(
+                "module.inference.rollout_iterations must match module.inference.metrics_kwargs.rollout_iterations due to how metrics are instantiated."
+            )
+
     def test_step(self, batch, batch_nb):
         dataset = self.trainer.test_dataloaders.dataset
 
