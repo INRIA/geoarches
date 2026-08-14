@@ -29,7 +29,10 @@ def download_archesweathergen_era5_data(data_dir: Path) -> Path:
     if output_path.exists():
         return output_path
 
-    variables = era5_constants.arches_default_surface_variables + era5_constants.arches_default_level_variables
+    variables = (
+        era5_constants.arches_default_surface_variables
+        + era5_constants.arches_default_level_variables
+    )
     ds = xr.open_zarr(WEATHERBENCH_ERA5_PATH)
     ds = ds[variables].sel(time=slice(DATA_START, FORECAST_TARGET))
     ds = ds.sel(level=era5_constants.arches_default_pressure_levels)
@@ -64,7 +67,10 @@ def test_download_archesweathergen_era5_data(archesweathergen_data_path):
         assert ds.time.to_numpy()[0].astype("datetime64[s]") == DATA_START
         assert ds.time.to_numpy()[-1].astype("datetime64[s]") == FORECAST_TARGET
         assert len(ds.time) == 9
-        variables = era5_constants.arches_default_surface_variables + era5_constants.arches_default_level_variables
+        variables = (
+            era5_constants.arches_default_surface_variables
+            + era5_constants.arches_default_level_variables
+        )
         assert set(variables).issubset(ds.data_vars)
         assert ds.sizes["latitude"] == 121
         assert ds.sizes["longitude"] == 240
