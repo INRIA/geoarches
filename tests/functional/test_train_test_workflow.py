@@ -21,7 +21,7 @@ from omegaconf import OmegaConf
 from geoarches.main_hydra import main as hydra_main
 
 
-def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6):
+def create_dummy_era5_data(data_dir: Path, num_days_per_year: int = 6):
     """Create minimal dummy ERA5 data for integration tests."""
     # Use full ERA5 grid dimensions
     # The dataloader expects these exact coordinate values
@@ -64,53 +64,49 @@ def create_dummy_era5_data(data_dir: Path, num_timestamps: int = 6):
     data_dir.mkdir(parents=True, exist_ok=True)
 
     # Create dummy files with expected filename patterns for train/val/test
-    for i in range(num_timestamps // 2):  # 2 timestamps per file
-        # Use years that match the filename filters: train (2018), val (2019), test (2020)
-        year = 2018 + (i % 3)  # Cycle through 2018, 2019, 2020
-        # Add time suffix for test_z0012 filter compatibility
-        time_suffix = "0h" if i % 2 == 0 else "12h"
-        file_path = data_dir / f"era5_{year}_0{i:02d}_{time_suffix}.nc"
+    # Use years that match the filename filters: train (2018), val (2019), test (2020)
+    for year in range(2017, 2021):
+        for hour in range(0, 24, 6):
+            file_path = data_dir / f"era5_{year}_{hour:02d}h.nc"
 
-        # Create timestamps that match the year in the filename
-        start_date = f"{year}-01-01"
-        times = pd.date_range(start_date, periods=2, freq="6h")
-        time = times
+            # Create timestamps that match the year in the filename
+            start_date = pd.Timestamp(year=year, month=1, day=1, hour=hour)
+            times = pd.date_range(start_date, periods=num_days_per_year, freq="24h")
+            time = times
 
-        # Create dummy data with full ERA5 grid dimensions
-        # This ensures compatibility with the dataloader's coordinate selection
-        rng = np.random.default_rng(42)
-        level_var_data = rng.standard_normal((len(time), len(LEVELS), LAT_COORDS, LON_COORDS))
-        surface_var_data = rng.standard_normal((len(time), LAT_COORDS, LON_COORDS))
+            # Create dummy data with full ERA5 grid dimensions
+            # This ensures compatibility with the dataloader's coordinate selection
+            rng = np.random.default_rng(42)
+            level_var_data = rng.standard_normal((len(time), len(LEVELS), LAT_COORDS, LON_COORDS))
+            surface_var_data = rng.standard_normal((len(time), LAT_COORDS, LON_COORDS))
 
-        data_vars = {}
-        # Add level variables
-        for var in level_vars:
-            data_vars[var] = (["time", "level", "latitude", "longitude"], level_var_data)
+            data_vars = {}
+            # Add level variables
+            for var in level_vars:
+                data_vars[var] = (["time", "level", "latitude", "longitude"], level_var_data)
+            # Add surface variables
+            for var in surface_vars:
+                data_vars[var] = (["time", "latitude", "longitude"], surface_var_data)
 
-        # Add surface variables
-        for var in surface_vars:
-            data_vars[var] = (["time", "latitude", "longitude"], surface_var_data)
-
-        # Generate coordinates that match exactly what Era5Forecast expects
-        # Era5Forecast will try to select these specific values with method="nearest"
-        expected_lats = np.arange(90, -90 - 1e-6, -180 / 120)  # Full ERA5 latitudes (121 points)
-        expected_lons = np.arange(0, 360, 360 / 240)  # Full ERA5 longitudes (240 points)
-
-        # Use the full expected coordinate arrays
-        latitude = expected_lats[:LAT_COORDS]
-        longitude = expected_lons[:LON_COORDS]
-
-        ds = xr.Dataset(
-            data_vars=data_vars,
-            coords={
-                "time": time,
-                "latitude": latitude,
-                "longitude": longitude,
-                "level": LEVELS,
-            },
-        )
-
-        ds.to_netcdf(file_path)
+            # Generate coordinates that match exactly what Era5Forecast expects
+            # Era5Forecast will try to select these specific values with method="nearest"
+            expected_lats = np.arange(
+                90, -90 - 1e-6, -180 / 120
+            )  # Full ERA5 latitudes (121 points)
+            expected_lons = np.arange(0, 360, 360 / 240)  # Full ERA5 longitudes (240 points)
+            # Use the full expected coordinate arrays
+            latitude = expected_lats[:LAT_COORDS]
+            longitude = expected_lons[:LON_COORDS]
+            ds = xr.Dataset(
+                data_vars=data_vars,
+                coords={
+                    "time": time,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "level": LEVELS,
+                },
+            )
+            ds.to_netcdf(file_path)
 
     return data_dir
 
@@ -135,7 +131,7 @@ def test_real_dataloader_instantiation(tmp_path):
     """Test that Era5Forecast dataloader can be instantiated with test data."""
 
     data_dir = tmp_path / "data"
-    create_dummy_era5_data(data_dir, num_timestamps=10)
+    create_dummy_era5_data(data_dir, num_days_per_year=2)
 
     GlobalHydra.instance().clear()
 
@@ -155,7 +151,9 @@ def test_real_dataloader_instantiation(tmp_path):
         # Test dataloader instantiation (as done in main_hydra.py)
         from hydra.utils import instantiate
 
-        dataset = instantiate(cfg.dataloader.dataset)
+        OmegaConf.resolve(cfg)
+
+        dataset = instantiate(cfg.dataloader.dataset, cfg.stats)
         assert dataset is not None
         assert hasattr(dataset, "__len__")
         assert hasattr(dataset, "__getitem__")
@@ -176,7 +174,8 @@ def test_workflow_with_real_dataloader(tmp_path):
     GlobalHydra.instance().clear()
 
     data_dir = tmp_path / "data"
-    create_dummy_era5_data(data_dir, num_timestamps=8)
+
+    create_dummy_era5_data(data_dir, num_days_per_year=1)
 
     with initialize(version_base=None, config_path="../../geoarches/configs"):
         # First, run training to create a checkpoint
@@ -210,6 +209,7 @@ def test_workflow_with_real_dataloader(tmp_path):
                 "seed=42",
             ],
         )
+        OmegaConf.resolve(train_cfg)
 
         # Run training
         hydra_main(train_cfg)
