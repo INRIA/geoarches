@@ -98,6 +98,9 @@ def main(cfg: DictConfig):
     except:  # noqa E722
         pass
 
+    # Resolve interpolations in the entire config before passing `cfg.module`
+    OmegaConf.resolve(cfg)
+
     warnings.simplefilter(action="ignore", category=FutureWarning)
     print("Working dir", os.getcwd())
 
@@ -220,8 +223,6 @@ def main(cfg: DictConfig):
             collate_fn=collate_fn,
         )
 
-    # Resolve interpolations in the entire config before passing `cfg.module`
-    OmegaConf.resolve(cfg.module)
     pl_module = instantiate(cfg.module.module, cfg.module, cfg.stats)
 
     if hasattr(cfg, "load_ckpt"):

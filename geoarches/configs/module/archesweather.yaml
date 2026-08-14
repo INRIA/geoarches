@@ -9,6 +9,11 @@ module:
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
 
+compute_state_scaler_args:
+  state_normalization: delta
+  downweight_vertical_velocity: false
+  residual_stats_path: null
+
 defaults:
   - metrics:  # Read from module/metrics/ folder.
     - era5_deterministic
