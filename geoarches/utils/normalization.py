@@ -111,10 +111,10 @@ class NormalizationStatistics:
                     indexers = {"level": self.levels}
                 mean[var_type] = torch.from_numpy(
                     stats_ds[var_names].sel(statistic="mean", **indexers).to_array().to_numpy()
-                )[..., None, None]
+                )[..., None, None].float()
                 std[var_type] = torch.from_numpy(
                     stats_ds[var_names].sel(statistic="std", **indexers).to_array().to_numpy()
-                )[..., None, None]
+                )[..., None, None].float()
                 # Add level dimension if not present.
                 if not has_lev:
                     mean[var_type] = mean[var_type][..., None]
@@ -139,14 +139,14 @@ class NormalizationStatistics:
         with xr.open_dataset(path) as stats_ds:
             surface_stds = torch.from_numpy(
                 stats_ds[self.variables["surface"]].sel(statistic="diff_std").to_array().to_numpy()
-            )[..., None, None, None]
+            )[..., None, None, None].float()
             level_stds = torch.from_numpy(
                 stats_ds[self.variables["level"]]
                 .sel(statistic="diff_std")
                 .sel(level=self.levels)
                 .to_array()
                 .to_numpy()
-            )[..., None, None]
+            )[..., None, None].float()
 
             return surface_stds, level_stds
 

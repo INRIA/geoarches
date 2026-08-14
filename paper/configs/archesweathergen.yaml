@@ -16,6 +16,7 @@ stats:
   module:
     _target_: geoarches.utils.normalization.NormalizationStatistics
     norm_file: pangu_norm_stats.nc
+    residual_stats_path: deltapred24_aws_denorm.nc
     variables:
       surface:
           - 10m_u_component_of_wind
@@ -39,7 +40,6 @@ stats:
   compute_state_scaler_args:
     state_normalization: pred
     downweight_vertical_velocity: true
-  residual_stats_path: deltapred24_aws_denorm.pt
 module:
   project: atmo-diffusion
   module:
