@@ -1,47 +1,47 @@
 # Using geoarches in your project
 
-After completing the [installation](./installation.md), your working directory should look like this:
+After [installing `geoarches` from PyPI](./installation.md), create a working directory for
+your scripts, data, models, and outputs. A source checkout is not required:
 
-```
-├── geoarches/       # Cloned repo
-│   ├── geoarches/
-│   ├── ...
-└── my_project/      # Your own scripts, notebooks, experiments...
-    ├── ...
+```text
+my_project/
+├── data/
+├── modelstore/
+├── evalstore/
+├── wandblogs/
+└── my_experiment.py
 ```
 
 ## Recommended usage
 
-We recommend using `geoarches` as a Python package from your own working directory or scripts, **without modifying the library code directly**. This allows you to cleanly separate your own work from the library itself, and makes it easier to update `geoarches` when new features or bug fixes are released.
+Use `geoarches` as an installed Python package from your own project, scripts, or notebooks.
+Keeping your work separate from the library makes upgrading to new releases straightforward:
 
-You can import the library modules directly in your scripts or notebooks:
+```sh
+python -m pip install --upgrade geoarches
+```
 
-!!! example
+Import library modules directly in your code. For example, this creates the dataset for the
+ERA5 weather forecasting task:
 
-    Thiw will import the dataset for the ERA5 weather forecast task:
+```python
+from geoarches.dataloaders.era5 import Era5Forecast
 
-    ```python
-    from geoarches.dataloaders.era5 import Era5Forecast
+ds = Era5Forecast(
+    path="path/to/era5",
+    load_prev=True,
+    norm_scheme="pangu",
+)
+```
 
-    ds = Era5Forecast(
-        path='path/to/era5',
-        load_prev=True,
-        norm_scheme='pangu',
-    )
-    ```
+Commands such as training and evaluation use paths relative to the current working directory
+by default, so run them from `my_project/`.
+
+For more information on how to use the library, explore the [User Guide](../user_guide/index.md).
+For ArchesWeather-specific instructions, see the [ArchesWeather section](../archesweather/index.md).
 
 ## Editing the library
 
-If you do need to modify the library (e.g. to experiment with architectural changes), we recommend working on a **development branch**.
-This makes it easier to rebase or merge when upstream updates are available. See the [Contributing Guide](../contributing/index.md) for details.
-
-```
-cd geoarches
-git checkout main
-git pull origin main
-git checkout -b dev/name
-```
----
-
-For more information on how to use the library, explore the [User Guide](../user_guide/index.md). For information specific to ArchesWeather, explore the [ArchesWeather section](../archesweather/index.md).
-
+If you need to modify `geoarches`, install it from source and work on a development branch as
+described in the [Contributing Guide](../contributing/index.md). Source installation is not
+needed for normal use.
