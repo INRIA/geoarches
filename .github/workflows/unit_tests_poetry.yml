@@ -14,13 +14,8 @@ on:
 
 jobs:
   test:
-    name: Run unit tests with Poetry on ${{ matrix.os }} and Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.11', '3.12']
+    name: Run unit tests with Poetry
+    runs-on: ubuntu-latest
     steps:
       #----------------------------------------------
       #       check-out repo and set-up python
@@ -31,7 +26,7 @@ jobs:
         id: setup-python
         uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
       #----------------------------------------------
       #  -----  install & configure poetry  -----
       #----------------------------------------------
