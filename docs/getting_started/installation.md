@@ -1,6 +1,10 @@
 # Installation
 
-## Install from PyPI
+There are 2 options to install geoarches:
+1. [Recommended for first time users] Install as a package from PyPI if you don't intend to make any modifications to the code.
+2. Install from source if you intend to make modifications to the code.
+
+## Option 1: Install from PyPI
 
 `geoarches` supports Python 3.11 through 3.14.0. We recommend installing it in a
 virtual environment.
@@ -33,7 +37,7 @@ Verify the installation with:
 python -c "import geoarches; print(geoarches.__version__)"
 ```
 
-## Install from source
+## Option 2: Install from source
 
 Clone the repository only if you want to contribute to `geoarches` or use unreleased
 changes:

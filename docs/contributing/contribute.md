@@ -3,6 +3,18 @@
 
 To contribute to `geoarches`, we recommend working from your own fork of the repository.
 
+### 0. First follow [installation](../getting_started/installation.md#install-from-source) instructions to install from source.
+This will install the code in editable mode, so any changes you make will be immediately reflected in your project.
+Your working directory should look like this:
+
+```
+├── geoarches/       # Cloned repo
+│   ├── geoarches/
+│   ├── ...
+└── my_project/      # Your own scripts, notebooks, experiments...
+    ├── ...
+```
+
 ### 1. Fork and clone
 
 First, [fork the official repo](https://github.com/INRIA/geoarches) to your own GitHub account.
