@@ -42,6 +42,7 @@ dependencies = [
     "seaborn (>=0.13.2,<0.14.0)",
     "gcsfs (>=2025.5.1,<2026.0.0)",
     "huggingface-hub (>=0.34.0,<2.0.0)",
+    "bottleneck (>=1.6.0,<2.0.0)",
 ]
 
 [project.urls]
@@ -54,6 +55,9 @@ Issues = "https://github.com/INRIA/geoarches/issues"
 [build-system]
 requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.setuptools]
 include-package-data = true
@@ -68,7 +72,7 @@ tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+(?:rc\\d+|-dev)?)$"
 
 [tool.ruff]
 line-length = 99
-target-version = 'py310'
+target-version = 'py311'
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
@@ -86,6 +90,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "geoarches/backbones/weatherlearn_utils/*" = ["N"]
 "geoarches/lightning_modules/__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["geoarches"]
 
 [tool.codespell]
 skip = "*.ipynb"

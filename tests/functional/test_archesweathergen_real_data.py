@@ -5,7 +5,7 @@ import pytest
 import torch
 import xarray as xr
 
-from geoarches.dataloaders import era5
+from geoarches.dataloaders import era5, era5_constants
 from geoarches.lightning_modules import load_module
 
 WEATHERBENCH_ERA5_PATH = (
@@ -29,10 +29,13 @@ def download_archesweathergen_era5_data(data_dir: Path) -> Path:
     if output_path.exists():
         return output_path
 
-    variables = era5.surface_variables + era5.level_variables
+    variables = (
+        era5_constants.arches_default_surface_variables
+        + era5_constants.arches_default_level_variables
+    )
     ds = xr.open_zarr(WEATHERBENCH_ERA5_PATH)
     ds = ds[variables].sel(time=slice(DATA_START, FORECAST_TARGET))
-    ds = ds.sel(level=era5.pressure_levels)
+    ds = ds.sel(level=era5_constants.arches_default_pressure_levels)
     ds = ds.chunk({"time": -1, "level": -1, "latitude": 121, "longitude": 240})
     ds.to_netcdf(output_path)
 
@@ -47,15 +50,15 @@ def archesweathergen_data_path(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def archesweathergen_batch_and_model(archesweathergen_data_path):
+    gen_model, gen_config = load_module("archesweathergen", device="cpu")
     ds = era5.Era5Forecast(
+        stats_cfg=gen_config.stats,
         path=str(archesweathergen_data_path.parent),
         domain="test",
         lead_time_hours=24,
         load_prev=True,
-        norm_scheme="pangu",
     )
     batch = {k: v[None].to("cpu") for k, v in ds[0].items()}
-    gen_model, gen_config = load_module("archesweathergen", device="cpu")
     return batch, gen_model.to("cpu"), gen_config
 
 
@@ -64,10 +67,14 @@ def test_download_archesweathergen_era5_data(archesweathergen_data_path):
         assert ds.time.to_numpy()[0].astype("datetime64[s]") == DATA_START
         assert ds.time.to_numpy()[-1].astype("datetime64[s]") == FORECAST_TARGET
         assert len(ds.time) == 9
-        assert set(era5.surface_variables + era5.level_variables).issubset(ds.data_vars)
+        variables = (
+            era5_constants.arches_default_surface_variables
+            + era5_constants.arches_default_level_variables
+        )
+        assert set(variables).issubset(ds.data_vars)
         assert ds.sizes["latitude"] == 121
         assert ds.sizes["longitude"] == 240
-        assert list(ds.level.to_numpy()) == era5.pressure_levels
+        assert list(ds.level.to_numpy()) == era5_constants.arches_default_pressure_levels
 
 
 def test_load_archesweathergen_model_with_real_data_batch(archesweathergen_batch_and_model):

@@ -17,9 +17,6 @@ module:
   conditional: prev+det # or prev+det for instance
 
   # scales
-  loss_delta_normalization: False
-  loss_weighting_strategy: debiased
-  state_normalization: pred
   pow: 2.0
 
   use_classifier: False # debug
@@ -32,6 +29,11 @@ module:
   weight_decay: 0.01
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
+
+compute_state_scaler_args:
+  state_normalization: pred
+  downweight_vertical_velocity: true
+  residual_stats_path: deltapred24_aws_denorm.nc
 
 defaults:
   - metrics:  # Read from module/metrics/ folder.

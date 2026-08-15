@@ -1,5 +1,5 @@
 # Base class for metrics.
-from typing import Callable, Dict, List
+from typing import Any, List, Protocol
 
 import torch
 import torch.nn as nn
@@ -8,7 +8,7 @@ from tensordict.tensordict import TensorDict
 from torchmetrics import Metric
 
 
-def compute_lat_weights(latitude_resolution: int) -> torch.tensor:
+def compute_lat_weights(latitude_resolution: int) -> torch.Tensor:
     """Compute latitude coefficients for latititude weighted metrics.
 
     Assumes latitude coordinates are equidistant and ordered from -90 to 90.
@@ -30,7 +30,7 @@ def compute_lat_weights(latitude_resolution: int) -> torch.tensor:
     return lat_coeffs_equi[:, None]
 
 
-def compute_lat_weights_weatherbench(latitude_resolution: int) -> torch.tensor:
+def compute_lat_weights_weatherbench(latitude_resolution: int) -> torch.Tensor:
     """Calculate the area overlap as a function of latitude.
     The weatherbench version gives slightly different coeffs.
     """
@@ -46,12 +46,18 @@ def compute_lat_weights_weatherbench(latitude_resolution: int) -> torch.tensor:
     return weights[:, None]
 
 
+class ComputeLatWeightsFn(Protocol):
+    """Protocol for compute_lat_weights functions."""
+
+    def __call__(self, latitude_resolution: int) -> torch.Tensor: ...
+
+
 class MetricBase:
     """Implement latitude-weighted base functions."""
 
     def __init__(
         self,
-        compute_lat_weights_fn: Callable[[int], torch.tensor] = compute_lat_weights_weatherbench,
+        compute_lat_weights_fn: ComputeLatWeightsFn = compute_lat_weights_weatherbench,
     ):
         """
         Args:
@@ -70,7 +76,7 @@ class MetricBase:
             y: targets with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).pow(2).mul(lat_coeffs).mean((-2, -1))
+        return (x - y).pow(2).mul(lat_coeffs).nanmean((-2, -1))
 
     def wmae(self, x: torch.Tensor, y: torch.Tensor | int = 0):
         """Latitude weighted mae error.
@@ -80,7 +86,7 @@ class MetricBase:
             y: targets with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return (x - y).abs().mul(lat_coeffs).mean((-2, -1))
+        return (x - y).abs().mul(lat_coeffs).nanmean((-2, -1))
 
     def wvar(self, x: torch.Tensor, dim: int = 1):
         """Latitude weighted variance along axis.
@@ -90,7 +96,7 @@ class MetricBase:
             dim: over which dimension to compute variance.
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.var(dim).mul(lat_coeffs).mean((-2, -1))
+        return x.var(dim).mul(lat_coeffs).nanmean((-2, -1))
 
     def weighted_mean(self, x: torch.Tensor):
         """Latitude weighted mean over grid.
@@ -99,7 +105,7 @@ class MetricBase:
             x: preds with shape (..., lat, lon)
         """
         lat_coeffs = self.compute_lat_weights_fn(latitude_resolution=x.shape[-2]).to(x.device)
-        return x.mul(lat_coeffs).mean((-2, -1))
+        return x.mul(lat_coeffs).nanmean((-2, -1))
 
 
 class TensorDictMetricBase(Metric):
@@ -140,7 +146,7 @@ class TensorDictMetricBase(Metric):
         for key, metric in self.metrics.items():
             metric.update(targets=targets[key], preds=preds[key])
 
-    def compute(self) -> Dict[str, torch.Tensor]:
+    def compute(self) -> Any:
         """Return aggregated collections of the computed metrics.
 
         Elements from each metric are aggregated. Handles multiple return values per metric.
@@ -166,7 +172,7 @@ class TensorDictMetricBase(Metric):
                 elif isinstance(output, xr.Dataset):
                     if len(aggregated_outputs) - 1 < i:
                         aggregated_outputs.append([])
-                    aggregated_outputs[i].append(output)
+                    aggregated_outputs[i].append(output)  # pytype: disable=attribute-error
 
         for output in aggregated_outputs:
             if isinstance(output, list):
