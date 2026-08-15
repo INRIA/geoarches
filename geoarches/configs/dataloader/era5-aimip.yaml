@@ -1,0 +1,24 @@
+dataset: 
+  _target_: geoarches.dataloaders.era5.Era5Forecast
+  path: data/era5_1x1/daily_averaged/
+  domain: aimip_train
+  lead_time_hours: 24
+  multistep: ${oc.select:module.train.rollout_iterations,1}
+  load_prev: True
+  variables:
+    surface: ${stats.module.variables.surface}
+    level: ${stats.module.variables.level}
+  dimension_indexers:
+    level: ${stats.module.levels}
+  warning_on_nan: True
+  interpolate_input: zero_after_norm  # Don't remove nans in the model input.
+  interpolate_target: none  # Don't remove nans in the model target.
+  forcings_path: data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2024_regridded_conservative_2025_11_03.nc
+  forcings_stats_path: ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc
+  forcing_vars: ["sea_surface_temperature", "sea_ice_cover"]
+  # Turn off data switching before training completes.
+  switch_recent_data_after_steps: ${max_steps}
+
+validation_args:
+  multistep: ${oc.select:module.val.rollout_iterations,1}
+  domain: aimip_val
