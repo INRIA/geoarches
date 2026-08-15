@@ -1,6 +1,6 @@
 module:
   _target_: geoarches.utils.normalization.NormalizationStatistics
-  norm_file: aimip_norm_stats.nc
+  norm_file: daily_averaged_aimip_norm_stats.nc
   # Note: If you change number of variables,
   # update surface_ch, level_ch in embedder in configs/module/.
   variables: 
@@ -9,6 +9,8 @@ module:
         - 10m_v_component_of_wind
         - 2m_temperature
         - mean_sea_level_pressure
+        - sea_surface_temperature
+        - sea_ice_cover
     level:
         - geopotential
         - u_component_of_wind 
@@ -26,9 +28,9 @@ module:
 
 compute_loss_coeffs_args:
   loss_weight_per_variable:
-    surface: [0.1, 0.1, 1.0, 0.1]
+    surface: [0.1, 0.1, 1.0, 0.1, 0.1, 0.1]
     level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  latitude: 121
+  latitude: 181
   use_weatherbench_lat_coeffs: true
 
 compute_state_scaler_args:
