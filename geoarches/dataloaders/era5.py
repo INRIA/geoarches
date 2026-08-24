@@ -552,9 +552,10 @@ class Era5Forecast(Era5Dataset):
                 norm_file=forcings_stats_path, variables=forcing_vars, levels=None
             )
             self.forcings_mean, self.forcings_std = forcing_stats.load_normalization_stats()
+            # Remove added level dimension.
             self.forcings_mean, self.forcings_std = (
-                self.forcings_mean.squeeze(1),
-                self.forcings_std.squeeze(1),
+                self.forcings_mean["forcings"].squeeze(1),
+                self.forcings_std["forcings"].squeeze(1),
             )
         else:
             warnings.warn(
@@ -708,11 +709,7 @@ class Era5Forecast(Era5Dataset):
 
         if self.forcings_mean is not None:
             out = {
-                k: (
-                    (v - self.forcings_mean["forcings"]) / self.forcings_std["forcings"]
-                    if "forcings" in k
-                    else v
-                )
+                k: ((v - self.forcings_mean) / self.forcings_std if "forcings" in k else v)
                 for k, v in out.items()
             }
 
