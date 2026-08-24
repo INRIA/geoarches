@@ -97,16 +97,35 @@ class ForecastModule(BaseLightningModule):
         batch,
         iters=None,
         return_format="tensordict",
-        use_avg=True,
+        avg_mode=None,
         update_fnc=None,
         return_loop_batch=False,
     ):
+        """
+        Run several autoregressive steps.
+        Args:
+            batch: Batch of data
+            iters: Number of autoregressive steps to run.
+            return_format: Format of the output data.
+            avg_mode: If avg_modules is not empty, how to ensemble outputs.
+                'post_rollout': rollout models individually and then average outputs at the end.
+                'per_step': average per autoregressive step before passing the input to the next step in the rollout.
+            update_fnc: Function to update the loop_batch with using the output of the model.
+            return_loop_batch: Whether to return the loop batch along with the model outputs
+        Returns:
+            Loss for the batch.
+        """
         # multistep forward with gradient checkpointing to save GPU memory
-        """if use_avg and self.avg_modules is not None:
-        out = self.forward_multistep(batch, iters=iters, use_avg=False)
-        for m in self.avg_modules:
-            out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
-        return out / (1 + len(self.avg_modules))"""
+        if self.avg_modules is not None and avg_mode not in ["post_rollout", "per_step"]:
+            raise ValueError(
+                f"Invalid avg_mode: {avg_mode}. Expected 'post_rollout' or 'per_step'."
+            )
+
+        if avg_mode == "post_rollout" and self.avg_modules is not None:
+            out = self.forward_multistep(batch, iters=iters, use_avg=False)
+            for m in self.avg_modules:
+                out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
+            return out / (1 + len(self.avg_modules))
 
         preds_future = []
         loop_batch = {k: v for k, v in batch.items()}
@@ -119,7 +138,7 @@ class ForecastModule(BaseLightningModule):
                 )
             else:
                 pred = self.forward(loop_batch)
-                if use_avg and self.avg_modules is not None:
+                if avg_mode == "per_step" and self.avg_modules is not None:
                     # average predictions of different models
                     for m in self.avg_modules:
                         x = m.forward(loop_batch)
