@@ -42,7 +42,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vars",
         nargs="*",  # Accepts 0 or more arguments as a list.
-        default=era5.surface_variables + era5.level_variables + ["10m_wind_speed", "wind_speed"],
+        default=era5.arches_default_surface_variables
+        + era5.arches_default_level_variables
+        + ["10m_wind_speed", "wind_speed"],
         help="Variables in dataset to compute quantiles over. Set to empty to compute over all variables.",
     )
     args = parser.parse_args()

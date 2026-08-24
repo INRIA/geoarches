@@ -4,6 +4,20 @@ import torch
 import torch.nn as nn
 
 
+def get_combined_time_embedding(
+    time_embedders: torch.nn.ModuleDict, batch: dict
+) -> torch.Tensor | None:
+    """Combines embeddings from diff features to generate conditional embedding."""
+    combined_embedding = None
+    for time_name, embedder in time_embedders.items():
+        embedding = embedder(batch[time_name])
+        if combined_embedding is None:
+            combined_embedding = embedding
+        else:
+            combined_embedding += embedding
+    return combined_embedding
+
+
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.

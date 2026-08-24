@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # Drop zarr input chunk encoding so that we can rechunk when we write.
     ds = ds.drop_encoding()
 
-    vars = era5.level_variables + era5.surface_variables
+    vars = era5.arches_default_level_variables + era5.arches_default_surface_variables
     vars += ["10m_wind_speed", "wind_speed"]
     ds = ds[vars]
     ds = ds.sel(level=[500, 700, 850])

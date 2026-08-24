@@ -1,3 +1,6 @@
 era5_brier_metric:
   _target_: geoarches.metrics.brier_skill_score.Era5BrierSkillScore
+  surface_variables: ${stats.module.variables.surface}
+  level_variables: ${stats.module.variables.level}
+  pressure_levels: ${stats.module.levels}
   lead_time_hours: ${dataloader.dataset.lead_time_hours}

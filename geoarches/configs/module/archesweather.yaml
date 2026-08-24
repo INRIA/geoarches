@@ -8,9 +8,11 @@ module:
   weight_decay: 0.05
   num_warmup_steps: 5000
   num_training_steps: ${max_steps}
-  use_graphcast_coeffs: True
-  use_prev: True
-  loss_delta_normalization: True
+
+compute_state_scaler_args:
+  state_normalization: delta
+  downweight_vertical_velocity: false
+  residual_stats_path: null
 
 defaults:
   - metrics:  # Read from module/metrics/ folder.

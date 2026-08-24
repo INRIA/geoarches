@@ -3,7 +3,6 @@ dataloader:
     _target_: geoarches.dataloaders.era5.Era5Forecast
     path: data/era5_240/full/
     lead_time_hours: 24
-    norm_scheme: pangu
     load_prev: true
   validation_args:
     multistep: 2
@@ -11,6 +10,33 @@ dataloader:
   test_args:
     multistep: 2
     domain: test_z0012
+stats:
+  module:
+    _target_: geoarches.utils.normalization.NormalizationStatistics
+    norm_file: pangu_norm_stats.nc
+    variables:
+      surface:
+          - 10m_u_component_of_wind
+          - 10m_v_component_of_wind
+          - 2m_temperature
+          - mean_sea_level_pressure
+      level:
+          - geopotential
+          - u_component_of_wind
+          - v_component_of_wind
+          - temperature
+          - specific_humidity
+          - vertical_velocity
+    levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+  compute_loss_coeffs_args:
+    latitude: 121
+    use_weatherbench_lat_coeffs: true
+    loss_weight_per_variable:
+      surface: [0.1, 0.1, 1.0, 0.1]
+      level: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  compute_state_scaler_args:
+    state_normalization: delta
+    downweight_vertical_velocity: false
 module:
   project: atmo-comp
   module:
@@ -24,9 +50,7 @@ module:
     weight_decay: 0.05
     num_warmup_steps: 5000
     num_training_steps: 300000
-    use_graphcast_coeffs: true
-    use_prev: true
-    loss_delta_normalization: true
+    cond_times_backward_compatible: true
   train:
     rollout_iterations: 1
     metrics:

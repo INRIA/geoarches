@@ -29,9 +29,9 @@ def load_module(
         path = Path("modelstore").joinpath(path)
     else:
         path = Path(path)
-    cfg = OmegaConf.load(path / "config.yaml")
+    cfg = OmegaConf.load(str(path / "config.yaml"))
     cfg.merge_with_dotlist(dotlist)
-    module = instantiate(cfg.module.module, cfg.module, **kwargs)
+    module = instantiate(cfg.module.module, cfg.module, cfg.stats, **kwargs)
     module.init_from_ckpt(path, ckpt_fname=ckpt_fname, missing_warning=False)
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -132,7 +132,7 @@ class AvgModule(L.LightningModule):
             path = Path("modelstore").joinpath(path)
         else:
             path = Path(path)
-        self.cfg = OmegaConf.load(path / "config.yaml")
+        self.cfg = OmegaConf.load(str(path / "config.yaml"))
         self.core = nn.ModuleList([load_module(p, return_config=False) for p in module_paths])
 
     def forward(self, *args, **kwargs):
