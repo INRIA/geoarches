@@ -149,7 +149,7 @@ class ForecastModule(BaseLightningModule):
 
             # compute next batch
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
-            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
+            next_times = times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")
 
             if update_fnc is not None:
                 loop_batch = update_fnc(
@@ -164,7 +164,8 @@ class ForecastModule(BaseLightningModule):
                     next_state=loop_batch["next_state"],
                     timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
                     hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                    month=torch.tensor(next_month).to(self.device),
+                    month=torch.tensor(next_times.month).to(self.device),
+                    day_of_year=torch.tensor(next_times.dayofyear).to(self.device),
                     forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
                     future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
                 )
