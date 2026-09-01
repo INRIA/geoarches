@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -49,6 +51,11 @@ class Era5ForecastWithPrediction(era5.Era5Forecast):
         self.load_hard_neg = load_hard_neg
         # self.filename_filter is already init
         if pred_path is not None:
+            if not Path(pred_path).exists():
+                raise FileNotFoundError(
+                    f"Prediction path for deterministic model outputs '{pred_path}' does not exist. "
+                    "Run `python -m geoarches.inference.encode_dataset` to store predictions for residual training."
+                )
             self.pred_ds = netcdf.XarrayDataset(
                 path=pred_path,
                 filename_filter=self.filename_filter,

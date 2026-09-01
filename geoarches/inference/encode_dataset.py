@@ -23,14 +23,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--force", action="store_true", help="whether to recompute with model")
 parser.add_argument(
     "--output-path",
-    default="data/outputs/deterministic/archesweather",
+    default="data/outputs/deterministic/archesweather-m4",
     help="where to store outputs",
 )
 parser.add_argument("--debug", action="store_true", help="whether to debug")
 parser.add_argument("--max-lead-time", type=int, default=10, help="max lead time")
 parser.add_argument(
     "--uids",
-    default="",
+    default="archesweather-m-seed0,archesweather-m-seed1,archesweather-m-skip-seed0,archesweather-m-skip-seed1",
     type=str,
     help="Comma separated list of model uids, names of checkpoint folders stored under `modelstore/` dir.",
 )
