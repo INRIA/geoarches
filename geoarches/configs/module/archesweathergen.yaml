@@ -12,7 +12,11 @@ module:
   uncond_proba: 0.0
 
   # what to learn
-  load_deterministic_model: modelstore/jzh-geoaw-m-seed0 # used to load preds if learn_residual="pred" and not loaded by dataloader from storage.
+  load_deterministic_model: # used to load preds on the fly (if learn_residual="pred" and preds not loaded by dataloader directly from storage through dataloader.dataset.pred_path).
+    - modelstore/archesweather-m-seed0
+    - modelstore/archesweather-m-seed1
+    - modelstore/archesweather-m-skip-seed0
+    - modelstore/archesweather-m-skip-seed1
   learn_residual: pred  # "default" to just learn [next_state-state], "pred" to learn residual of deterministic model.
   conditional: prev+det # or prev+det for instance
 
