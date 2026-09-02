@@ -421,10 +421,16 @@ class DiffusionModule(BaseLightningModule):
         denormalize = self.trainer.val_dataloaders.dataset.denormalize
 
         for metric in self.val_metrics:
-            metric.update(
-                denormalize(batch["future_states"][:, :val_rollout_iterations]),
-                [denormalize(sample) for sample in samples],
-            )
+            if "future_states" not in batch:
+                metric.update(
+                    denormalize(batch["next_state"])[:, None],
+                    [denormalize(sample[:, :1]) for sample in samples],
+                )
+            else:
+                metric.update(
+                    denormalize(batch["future_states"][:, :val_rollout_iterations]),
+                    [denormalize(sample) for sample in samples],
+                )
         self.validation_samples[batch_nb] = [samples[0][:, 0], samples[1][:, 0]]
 
     def on_validation_epoch_end(self):
