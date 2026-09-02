@@ -1,0 +1,28 @@
+dataset: 
+  _target_: geoarches.dataloaders.era5pred.Era5ForecastWithPrediction
+  path: data/era5_1x1/daily_averaged/
+  domain: aimip_train
+  pred_path: data/outputs/deterministic/aimip-archesweather-m4
+  lead_time_hours: 24 # mixed
+  load_prev: True
+  variables:
+    surface: ${stats.module.variables.surface}
+    level: ${stats.module.variables.level}
+  dimension_indexers:
+    level: ${stats.module.levels}
+  warning_on_nan: False
+  interpolate_input: zero_after_norm
+  interpolate_target: none  # Don't remove nans in the model target.
+  # Turn off data switching before training completes.
+  forcings_path: data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2024_regridded_conservative_2025_11_03.nc
+  forcings_stats_path: ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc
+  forcing_vars: ["sea_surface_temperature", "sea_ice_cover"]
+  switch_recent_data_after_steps: ${max_steps}
+
+validation_args:
+  multistep: ${oc.select:module.val.rollout_iterations,1}
+  domain: aimip_val
+
+test_args:
+  multistep: ${oc.select:module.inference.rollout_iterations,1}
+  domain: aimip_rollout_z00

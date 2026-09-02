@@ -1,0 +1,10 @@
+# @package _global_
+# To run: python -m geoarches.main_hydra experiment=aimip_archesweather
+defaults:
+  - override /stats: aimip
+  - override /dataloader: era5-aimip
+  - override /module: archesweather-aimip
+  - _self_
+name: aimip-archesweather-m-seed0
+seed: 0
+max_steps: 300000
