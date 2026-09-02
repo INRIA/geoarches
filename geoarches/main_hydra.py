@@ -122,6 +122,7 @@ def main(cfg: DictConfig):
             # we just copy cluster info
             cfg.module = exp_cfg.module
             cfg.dataloader = exp_cfg.dataloader
+            cfg.stats = exp_cfg.stats
             # then we update we cli overrides
             print("hydra config", cfg)
             try:
