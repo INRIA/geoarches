@@ -79,3 +79,6 @@ nav:
       - Run: archesweather/run.ipynb
       - Evaluate: archesweather/evaluate.md
       - Reproduce: archesweather/reproduce.md
+  - AIMIP:
+      - aimip/index.md
+      - Run: aimip/run.ipynb

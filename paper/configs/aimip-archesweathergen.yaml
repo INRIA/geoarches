@@ -1,0 +1,315 @@
+cluster:
+  wandb_mode: online
+  use_custom_requeue: false
+  precision: 16-mixed
+  batch_size: 1
+  gpus: 1
+  cpus: 11
+dataloader:
+  dataset:
+    _target_: geoarches.dataloaders.era5pred.Era5ForecastWithPrediction
+    path: data/era5_1x1/daily_averaged/
+    domain: aimip_train
+    pred_path: null
+    lead_time_hours: 24
+    load_prev: true
+    variables:
+      surface:
+      - 10m_u_component_of_wind
+      - 10m_v_component_of_wind
+      - 2m_temperature
+      - mean_sea_level_pressure
+      - sea_surface_temperature
+      - sea_ice_cover
+      level:
+      - geopotential
+      - u_component_of_wind
+      - v_component_of_wind
+      - temperature
+      - specific_humidity
+      - vertical_velocity
+    dimension_indexers:
+      level:
+      - 50
+      - 100
+      - 150
+      - 200
+      - 250
+      - 300
+      - 400
+      - 500
+      - 600
+      - 700
+      - 850
+      - 925
+      - 1000
+    warning_on_nan: false
+    interpolate_input: zero_after_norm
+    interpolate_target: none
+    forcings_path: data/era5_1x1/ERA5-0.25deg-monthly-mean-forcing-1978-2024_regridded_conservative_2025_11_03.nc
+    forcings_stats_path: ERA5-0.25deg-monthly-mean-forcing-1978-2013_regridded_conservative_norm_stats.nc
+    forcing_vars:
+    - sea_surface_temperature
+    - sea_ice_cover
+    switch_recent_data_after_steps: 300000
+  validation_args:
+    multistep: 1
+    domain: aimip_val
+  test_args:
+    multistep: 10
+    domain: aimip_rollout_z00
+module:
+  metrics:
+    era5_ensemble_metrics:
+      _target_: geoarches.metrics.ensemble_metrics.Era5EnsembleMetrics
+      surface_variables:
+      - 10m_u_component_of_wind
+      - 10m_v_component_of_wind
+      - 2m_temperature
+      - mean_sea_level_pressure
+      - sea_surface_temperature
+      - sea_ice_cover
+      level_variables:
+      - geopotential
+      - u_component_of_wind
+      - v_component_of_wind
+      - temperature
+      - specific_humidity
+      - vertical_velocity
+      pressure_levels:
+      - 50
+      - 100
+      - 150
+      - 200
+      - 250
+      - 300
+      - 400
+      - 500
+      - 600
+      - 700
+      - 850
+      - 925
+      - 1000
+      lead_time_hours: 24
+  project: aimip-awgen
+  module:
+    _target_: geoarches.lightning_modules.diffusion.DiffusionModule
+    name: aimip-archesweathergen
+    cond_dim: 256
+    cond_times:
+    - day_of_year
+    - hour_of_day
+    scheduler: flow
+    prediction_type: sample
+    beta_schedule: squaredcos_cap_v2
+    snr_gamma: 0
+    uncond_proba: 0.0
+    load_deterministic_model:
+    - modelstore/aimip-archesweather-m-seed0
+    - modelstore/aimip-archesweather-m-seed1
+    - modelstore/aimip-archesweather-m-seed2
+    - modelstore/aimip-archesweather-m-seed3
+    learn_residual: pred
+    conditional: prev+det
+    pow: 2.0
+    use_classifier: false
+    add_input_state: false
+    snr_strategy: None
+    lr: 0.0003
+    betas:
+    - 0.9
+    - 0.98
+    weight_decay: 0.01
+    num_warmup_steps: 5000
+    num_training_steps: 300000
+  compute_state_scaler_args:
+    state_normalization: pred
+    downweight_vertical_velocity: true
+    residual_stats_path: residual_std_aimip_213852624.nc
+  val:
+    num_members: 5
+    rollout_iterations: 1
+    metrics:
+    - _target_: geoarches.metrics.ensemble_metrics.Era5EnsembleMetrics
+      surface_variables:
+      - 10m_u_component_of_wind
+      - 10m_v_component_of_wind
+      - 2m_temperature
+      - mean_sea_level_pressure
+      - sea_surface_temperature
+      - sea_ice_cover
+      level_variables:
+      - geopotential
+      - u_component_of_wind
+      - v_component_of_wind
+      - temperature
+      - specific_humidity
+      - vertical_velocity
+      pressure_levels:
+      - 50
+      - 100
+      - 150
+      - 200
+      - 250
+      - 300
+      - 400
+      - 500
+      - 600
+      - 700
+      - 850
+      - 925
+      - 1000
+      lead_time_hours: 24
+    metrics_kwargs:
+      rollout_iterations: 1
+      save_memory: false
+  inference:
+    num_steps: 25
+    num_members: 10
+    rollout_iterations: 10
+    cf_guidance: 1
+    s_churn: 0.0
+    save_test_outputs: false
+    metrics:
+      era5_ensemble_metrics:
+        _target_: geoarches.metrics.ensemble_metrics.Era5EnsembleMetrics
+        surface_variables:
+        - 10m_u_component_of_wind
+        - 10m_v_component_of_wind
+        - 2m_temperature
+        - mean_sea_level_pressure
+        - sea_surface_temperature
+        - sea_ice_cover
+        level_variables:
+        - geopotential
+        - u_component_of_wind
+        - v_component_of_wind
+        - temperature
+        - specific_humidity
+        - vertical_velocity
+        pressure_levels:
+        - 50
+        - 100
+        - 150
+        - 200
+        - 250
+        - 300
+        - 400
+        - 500
+        - 600
+        - 700
+        - 850
+        - 925
+        - 1000
+        lead_time_hours: 24
+    metrics_kwargs:
+      rollout_iterations: 10
+      save_memory: false
+  backbone:
+    _target_: geoarches.backbones.archesweather.ArchesWeatherCondBackbone
+    tensor_size:
+    - 8
+    - 60
+    - 120
+    emb_dim: 192
+    cond_dim: 256
+    window_size:
+    - 1
+    - 6
+    - 10
+    droppath_coeff: 0.2
+    dropout: 0
+    depth_multiplier: 1
+    use_skip: true
+    first_interaction_layer: linear
+    axis_attn: true
+    mlp_layer: swiglu
+    mlp_ratio: 4.0
+  embedder:
+    _target_: geoarches.backbones.archesweather.WeatherEncodeDecodeLayer
+    img_size:
+    - 13
+    - 180
+    - 360
+    emb_dim: 192
+    out_emb_dim: 384
+    patch_size:
+    - 2
+    - 3
+    - 3
+    surface_ch: 6
+    level_ch: 6
+    n_concatenated_states: 3
+    circular_padding: true
+    constant_mask_file: archesweather_constant_masks_1x1
+    forcings_ch: 2
+    forcings_embedding: surface
+stats:
+  module:
+    _target_: geoarches.utils.normalization.NormalizationStatistics
+    norm_file: daily_averaged_aimip_norm_stats.nc
+    variables:
+      surface:
+      - 10m_u_component_of_wind
+      - 10m_v_component_of_wind
+      - 2m_temperature
+      - mean_sea_level_pressure
+      - sea_surface_temperature
+      - sea_ice_cover
+      level:
+      - geopotential
+      - u_component_of_wind
+      - v_component_of_wind
+      - temperature
+      - specific_humidity
+      - vertical_velocity
+    levels:
+    - 50
+    - 100
+    - 150
+    - 200
+    - 250
+    - 300
+    - 400
+    - 500
+    - 600
+    - 700
+    - 850
+    - 925
+    - 1000
+    residual_stats_path: residual_std_aimip_213852624.nc
+  compute_loss_coeffs_args:
+    loss_weight_per_variable:
+      surface:
+      - 0.1
+      - 0.1
+      - 1.0
+      - 0.1
+      - 0.1
+      - 0.1
+      level:
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+    latitude: 181
+    use_weatherbench_lat_coeffs: true
+  compute_state_scaler_args:
+    state_normalization: pred
+    downweight_vertical_velocity: true
+name: aimip-archesweathergen
+seed: 0
+max_steps: 300000
+log: true
+project: aimip-awgen
+exp_dir: modelstore/aimip-archesweathergen
+resume: true
+batch_size: 1
+save_step_frequency: 50000
+log_freq: 100
+limit_val_batches: null
+accumulate_grad_batches: 1
+debug: false
+mode: train
