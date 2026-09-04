@@ -56,16 +56,44 @@ jobs:
 
           print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
           PY
-      - name: Download models
+      - name: Copy model configs
+        run : |
+          MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
+          MODELS+=("aimip-archesweather-m-seed0" "aimip-archesweather-m-seed1" "aimip-archesweather-m-seed2" "aimip-archesweather-m-seed3" "aimip-archesweathergen")
+          for MOD in "${MODELS[@]}"; do
+              mkdir -p "modelstore/$MOD"
+              cp paper/configs/$MOD.yaml modelstore/$MOD/config.yaml
+          done
+
+      - name: Download weather models checkpoints
         run: |
           src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
           MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
-
+          
           for MOD in "${MODELS[@]}"; do
               mkdir -p "modelstore/$MOD/checkpoints"
               wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
-              cp paper/configs/$MOD.yaml modelstore/$MOD/config.yaml
           done
+      - name: Download AIMIP models checkpoints
+        run: |
+          curl -sSL "https://zenodo.org/records/22235637/files/model_checkpoints.zip?download=1" -o modelstore/aimip.zip
+          
+          MODELS=(
+            "aimip-archesweather-m-seed0"
+            "aimip-archesweather-m-seed1"
+            "aimip-archesweather-m-seed2"
+            "aimip-archesweather-m-seed3"
+            "aimip-archesweathergen"
+          )
+          
+          for MOD in "${MODELS[@]}"; do
+            mkdir -p "modelstore/$MOD/checkpoints"
+            # Extract only .ckpt files belonging to the model directory, ignoring zip path structure (-j flattens)
+            unzip -q -j modelstore/aimip.zip "*$MOD*/*.ckpt" -d "modelstore/$MOD/checkpoints/" || true
+          done
+          
+          rm -f modelstore/aimip.zip
+
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
