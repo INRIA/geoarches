@@ -65,9 +65,7 @@ jobs:
         with:
           path: modelstore
           # Changes to your workflow or downloading script invalidate the cache
-          key: modelstore-${{ hashFiles('.github/workflows/functional-tests.yml') }}
-          restore-keys: |
-            modelstore-
+          key: modelstore-${{ hashFiles('.github/workflows/functional-tests.yml', 'geoarches/download/**') }}
       - name: Copy model configs
         run : |
           MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
@@ -123,6 +121,7 @@ jobs:
             for MOD in "${MODELS[@]}"; do
               mkdir -p "modelstore/$MOD/checkpoints"
               # Extract only .ckpt files belonging to the model directory, ignoring zip path structure (-j flattens)
+              echo "Unzipping $MOD..."
               unzip -q -j modelstore/aimip.zip "*$MOD*/*.ckpt" -d "modelstore/$MOD/checkpoints/" || true
             done
             rm -f modelstore/aimip.zip
