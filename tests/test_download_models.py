@@ -36,7 +36,7 @@ def test_download_models_from_source_config(tmp_path, monkeypatch):
     assert (model_directory / "config.yaml").read_text() == (
         dl_aw_models._SOURCE_CONFIG_DIRECTORY / f"{model}.yaml"
     ).read_text()
-    assert calls[0]["revision"] == dl_aw_models.MODEL_REVISION
+    assert calls[0]["revision"] == dl_aw_models.HUGGINGFACE_REVISION
 
     # Verify existing checkpoints are reused without extra downloads
     dl_aw_models.download_models(output_directory)

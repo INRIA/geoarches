@@ -31,9 +31,9 @@ def test_resolve_quantiles_file_downloads_known_file(tmp_path, monkeypatch):
 
     assert result == cached_file
     assert download_arguments == {
-        "repo_id": stats.STATS_REPOSITORY,
+        "repo_id": stats.HUGGINGFACE_REPOSITORY,
         "filename": "era5-quantiles-2016_2022.nc",
-        "revision": stats.STATS_REVISION,
+        "revision": stats.HUGGINGFACE_REVISION,
     }
 
 

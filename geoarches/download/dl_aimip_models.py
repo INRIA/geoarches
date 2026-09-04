@@ -9,7 +9,8 @@ from urllib.request import urlretrieve
 
 import torch
 
-ZENODO_RECORD_ID = "22235637"
+from geoarches.download.constants import ZENODO_RECORD_ID
+
 ZENODO_ZIP_URL = (
     f"https://zenodo.org/records/{ZENODO_RECORD_ID}/files/model_checkpoints.zip?download=1"
 )
