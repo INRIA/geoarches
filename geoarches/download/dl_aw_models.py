@@ -9,8 +9,8 @@ from urllib.request import urlretrieve
 import torch
 from huggingface_hub import hf_hub_download
 
-MODEL_REPOSITORY = "gcouairon/ArchesWeather"
-MODEL_REVISION = "b93acfab1061cbd6792bc02533434c1125065893"
+from geoarches.download.constants import HUGGINGFACE_REPOSITORY, HUGGINGFACE_REVISION
+
 MODEL_NAMES = (
     "archesweather-m-seed0",
     "archesweather-m-seed1",
@@ -72,9 +72,9 @@ def download_models(
 
         if not checkpoint_path.is_file():
             downloaded_checkpoint = hf_hub_download(
-                repo_id=MODEL_REPOSITORY,
+                repo_id=HUGGINGFACE_REPOSITORY,
                 filename=f"{model}_checkpoint.ckpt",
-                revision=MODEL_REVISION,
+                revision=HUGGINGFACE_REVISION,
                 local_dir=model_directory,
             )
             Path(downloaded_checkpoint).replace(checkpoint_path)

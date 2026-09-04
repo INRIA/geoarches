@@ -4,8 +4,8 @@ from pathlib import Path
 
 from huggingface_hub import hf_hub_download
 
-STATS_REPOSITORY = "gcouairon/ArchesWeather"
-STATS_REVISION = "b93acfab1061cbd6792bc02533434c1125065893"
+from geoarches.download.constants import HUGGINGFACE_REPOSITORY, HUGGINGFACE_REVISION
+
 QUANTILE_FILENAMES = frozenset(
     {
         "era5-quantiles-2016_2022.nc",
@@ -38,9 +38,9 @@ def resolve_quantiles_file(quantiles_filepath: str | Path) -> Path:
 
     return Path(
         hf_hub_download(
-            repo_id=STATS_REPOSITORY,
+            repo_id=HUGGINGFACE_REPOSITORY,
             filename=requested_path.name,
-            revision=STATS_REVISION,
+            revision=HUGGINGFACE_REVISION,
         )
     )
 
