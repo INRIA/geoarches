@@ -56,6 +56,18 @@ jobs:
 
           print(resolve_quantiles_file("era5-quantiles-2016_2022.nc"))
           PY
+      #----------------------------------------------
+      # Cache the entire modelstore directory
+      #----------------------------------------------
+      - name: Cache modelstore
+        id: cache-modelstore
+        uses: actions/cache@v4
+        with:
+          path: modelstore
+          # Changes to your workflow or downloading script invalidate the cache
+          key: modelstore-${{ hashFiles('.github/workflows/functional-tests.yml') }}
+          restore-keys: |
+            modelstore-
       - name: Copy model configs
         run : |
           MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
@@ -71,13 +83,17 @@ jobs:
           MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
           
           for MOD in "${MODELS[@]}"; do
-              mkdir -p "modelstore/$MOD/checkpoints"
-              wget -O "modelstore/$MOD/checkpoints/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
+              CKPT_DIR="modelstore/$MOD/checkpoints"
+              mkdir -p "$CKPT_DIR"
+              if [ ! -f "$CKPT_DIR/checkpoint.ckpt" ]; then
+                echo "Downloading $MOD from Hugging Face..."
+                wget -q -O "$CKPT_DIR/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
+              else
+                echo "Cached: $MOD"
+              fi
           done
       - name: Download AIMIP models checkpoints
         run: |
-          curl -sSL "https://zenodo.org/records/22235637/files/model_checkpoints.zip?download=1" -o modelstore/aimip.zip
-          
           MODELS=(
             "aimip-archesweather-m-seed0"
             "aimip-archesweather-m-seed1"
@@ -85,14 +101,34 @@ jobs:
             "aimip-archesweather-m-seed3"
             "aimip-archesweathergen"
           )
-          
+
+          MISSING=0
           for MOD in "${MODELS[@]}"; do
-            mkdir -p "modelstore/$MOD/checkpoints"
-            # Extract only .ckpt files belonging to the model directory, ignoring zip path structure (-j flattens)
-            unzip -q -j modelstore/aimip.zip "*$MOD*/*.ckpt" -d "modelstore/$MOD/checkpoints/" || true
+            if [ ! -f "modelstore/$MOD/checkpoints/checkpoint.ckpt" ]; then
+                MISSING=1
+                break
+            fi
           done
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Missing AIMIP checkpoints detected. Downloading from Zenodo"
+
+            sudo apt-get update && sudo apt-get install -y aria2
+
+            # Fast multi-connection download (16 streams)
+            aria2c -x 16 -s 16 -k 1M -q \
+              "https://zenodo.org/records/22235637/files/model_checkpoints.zip?download=1" \
+              -o modelstore/aimip.zip
           
-          rm -f modelstore/aimip.zip
+            for MOD in "${MODELS[@]}"; do
+              mkdir -p "modelstore/$MOD/checkpoints"
+              # Extract only .ckpt files belonging to the model directory, ignoring zip path structure (-j flattens)
+              unzip -q -j modelstore/aimip.zip "*$MOD*/*.ckpt" -d "modelstore/$MOD/checkpoints/" || true
+            done
+            rm -f modelstore/aimip.zip
+          else
+            echo "All AIMIP checkpoints present in cache."
+          fi
 
       #----------------------------------------------
       #              run test suite
