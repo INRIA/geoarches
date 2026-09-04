@@ -77,6 +77,8 @@ jobs:
 
       - name: Download weather models checkpoints
         run: |
+          sudo apt-get update && sudo apt-get install -y aria2
+
           src="https://huggingface.co/gcouairon/ArchesWeather/resolve/main"
           MODELS=("archesweather-m-seed0" "archesweather-m-seed1" "archesweather-m-skip-seed0" "archesweather-m-skip-seed1" "archesweathergen")
           
@@ -85,7 +87,8 @@ jobs:
               mkdir -p "$CKPT_DIR"
               if [ ! -f "$CKPT_DIR/checkpoint.ckpt" ]; then
                 echo "Downloading $MOD from Hugging Face..."
-                wget -q -O "$CKPT_DIR/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
+                aria2c -x 16 -s 16 -k 1M -c --max-tries=5 -o "$CKPT_DIR/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt" || \
+                wget --tries=5 --timeout=60 --waitretry=10 -O "$CKPT_DIR/checkpoint.ckpt" "$src/${MOD}_checkpoint.ckpt"
               else
                 echo "Cached: $MOD"
               fi
