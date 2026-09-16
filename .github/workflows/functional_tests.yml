@@ -118,7 +118,7 @@ jobs:
 
             # Fast multi-connection download (16 streams)
             aria2c -x 16 -s 16 -k 1M -q \
-              "https://zenodo.org/records/22235637/files/model_checkpoints.zip?download=1" \
+              "https://zenodo.org/records/22795233/files/model_checkpoints.zip?download=1" \
               -o modelstore/aimip.zip
           
             for MOD in "${MODELS[@]}"; do
