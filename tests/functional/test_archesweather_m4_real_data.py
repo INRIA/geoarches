@@ -5,7 +5,7 @@ import pytest
 import torch
 import xarray as xr
 
-from geoarches.dataloaders import era5
+from geoarches.dataloaders import era5, era5_constants
 from geoarches.lightning_modules import load_module
 
 WEATHERBENCH_ERA5_PATH = (
@@ -26,10 +26,13 @@ def download_archesweather_era5_data(data_dir: Path) -> Path:
     if output_path.exists():
         return output_path
 
-    variables = era5.surface_variables + era5.level_variables
+    variables = (
+        era5_constants.arches_default_surface_variables
+        + era5_constants.arches_default_level_variables
+    )
     ds = xr.open_zarr(WEATHERBENCH_ERA5_PATH)
     ds = ds[variables].sel(time=slice(DATA_START, FORECAST_TARGET))
-    ds = ds.sel(level=era5.pressure_levels)
+    ds = ds.sel(level=era5_constants.arches_default_pressure_levels)
     ds = ds.chunk({"time": -1, "level": -1, "latitude": 121, "longitude": 240})
     ds.to_netcdf(output_path)
 
@@ -54,6 +57,7 @@ def archesweather_m4_batch_and_model(archesweather_m4_data_path):
         ],
     )
     ds = era5.Era5Forecast(
+        stats_cfg=config.stats,
         path=str(archesweather_m4_data_path.parent),
         domain="test",
         lead_time_hours=24,
@@ -68,11 +72,14 @@ def test_download_archesweather_m4_era5_data(archesweather_m4_data_path):
     with xr.open_dataset(archesweather_m4_data_path) as ds:
         assert ds.time.to_numpy()[0].astype("datetime64[s]") == DATA_START
         assert ds.time.to_numpy()[-1].astype("datetime64[s]") == FORECAST_TARGET
-        variables = era5.surface_variables + era5.level_variables
+        variables = (
+            era5_constants.arches_default_surface_variables
+            + era5_constants.arches_default_level_variables
+        )
         assert set(variables).issubset(ds.data_vars)
         assert ds.sizes["latitude"] == 121
         assert ds.sizes["longitude"] == 240
-        assert list(ds.level.to_numpy()) == era5.pressure_levels
+        assert list(ds.level.to_numpy()) == era5_constants.arches_default_pressure_levels
 
 
 def test_load_archesweather_m4_model_with_real_data_batch(archesweather_m4_batch_and_model):
