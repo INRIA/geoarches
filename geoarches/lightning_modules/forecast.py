@@ -116,15 +116,21 @@ class ForecastModule(BaseLightningModule):
             Loss for the batch.
         """
         # multistep forward with gradient checkpointing to save GPU memory
-        if self.avg_modules is not None and avg_mode not in ["post_rollout", "per_step"]:
+        if self.avg_modules is not None and avg_mode not in [
+            "post_rollout",
+            "per_step",
+            "base_case_for_recursion",
+        ]:
             raise ValueError(
                 f"Invalid avg_mode: {avg_mode}. Expected 'post_rollout' or 'per_step'."
             )
 
-        if avg_mode == "post_rollout" and self.avg_modules is not None:
-            out = self.forward_multistep(batch, iters=iters, use_avg=False)
+        if avg_mode == "post_rollout":
+            out = self.forward_multistep(batch, iters=iters, avg_mode="base_case_for_recursion")
             for m in self.avg_modules:
-                out = out + m.forward_multistep(batch, iters=iters, use_avg=False)
+                out = out + m.forward_multistep(
+                    batch, iters=iters, avg_mode="base_case_for_recursion"
+                )
             return out / (1 + len(self.avg_modules))
 
         preds_future = []
@@ -395,7 +401,6 @@ class ForecastModuleWithCond(ForecastModule):
         cond_times=["month", "hour_of_day"],
         # Temporary flag to allow backward compatibility with older checkpoints.
         cond_times_backward_compatible=False,
-        use_avg=False,
         avg_with_modules=[],
         **kwargs,
     ):
@@ -409,7 +414,6 @@ class ForecastModuleWithCond(ForecastModule):
             self.time_embedders = nn.ModuleDict(
                 {time: dit.TimestepEmbedder(cond_dim) for time in cond_times}
             )
-        self.use_avg = use_avg
 
         self.avg_modules = None
         if avg_with_modules:
@@ -421,7 +425,7 @@ class ForecastModuleWithCond(ForecastModule):
             )
             self.strict_loading = False
 
-    def forward(self, batch, use_avg=True):
+    def forward(self, batch):
         # Generate conditional embedding by combining embeddings from different time features.
         if self.cond_times_backward_compatible:
             cond_emb = dit.get_combined_time_embedding(
