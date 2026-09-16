@@ -98,7 +98,7 @@ def test_archesweather_m4_multistep_prediction_against_real_outputs(
     expected = torch.load(TARGET_PREDICTION_PATH, map_location="cpu", weights_only=False)
 
     with torch.no_grad():
-        pred = model.forward_multistep(batch, iters=2)
+        pred = model.forward_multistep(batch, iters=2, avg_mode="post_rollout")
 
     assert set(pred.keys()) == set(expected.keys())
     for key in expected.keys():
