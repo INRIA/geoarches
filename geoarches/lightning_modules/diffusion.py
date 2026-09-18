@@ -383,7 +383,7 @@ class DiffusionModule(BaseLightningModule):
             sample = self.sample(loop_batch, seed=seed_i, disable_tqdm=True, **kwargs)
             preds_future.append(sample)
             times = pd.to_datetime(loop_batch["timestamp"].cpu(), unit="s").tz_localize(None)
-            next_month = (times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")).month
+            next_times = times + pd.to_timedelta(batch["lead_time_hours"].cpu(), unit="h")
 
             if update_fnc is not None:
                 loop_batch = update_fnc(loop_batch, sample, iteration=i)
@@ -393,7 +393,8 @@ class DiffusionModule(BaseLightningModule):
                     state=sample,
                     timestamp=loop_batch["timestamp"] + batch["lead_time_hours"] * 3600,
                     hour_of_day=(loop_batch["hour_of_day"] + batch["lead_time_hours"]) % 24,
-                    month=torch.tensor(next_month).to(self.device),
+                    month=torch.tensor(next_times.month).to(self.device),
+                    day_of_year=torch.tensor(next_times.dayofyear).to(self.device),
                     forcings=loop_batch["future_forcings"][:, 0] if add_forcings else None,
                     future_forcings=loop_batch["future_forcings"][:, 1:] if add_forcings else None,
                 )
@@ -420,10 +421,16 @@ class DiffusionModule(BaseLightningModule):
         denormalize = self.trainer.val_dataloaders.dataset.denormalize
 
         for metric in self.val_metrics:
-            metric.update(
-                denormalize(batch["future_states"][:, :val_rollout_iterations]),
-                [denormalize(sample) for sample in samples],
-            )
+            if "future_states" not in batch:
+                metric.update(
+                    denormalize(batch["next_state"])[:, None],
+                    [denormalize(sample[:, :1]) for sample in samples],
+                )
+            else:
+                metric.update(
+                    denormalize(batch["future_states"][:, :val_rollout_iterations]),
+                    [denormalize(sample) for sample in samples],
+                )
         self.validation_samples[batch_nb] = [samples[0][:, 0], samples[1][:, 0]]
 
     def on_validation_epoch_end(self):

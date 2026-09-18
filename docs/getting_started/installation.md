@@ -89,22 +89,9 @@ ln -s /path/to/wandb/ wandblogs # (4)!
 You can create regular directories instead. Missing directories are created in the current
 working directory when needed.
 
-## Downloading data
+## Working with Specific Models & Protocols
 
-The `download/` folder contains scripts to download data.
-To download the full ERA5 dataset from WeatherBench for training and evaluation, run:
+`geoarches` supports multiple specialized research applications and model configurations:
 
-```sh
-python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
-```
-
-If you only want to run evaluations, download the years 2019 to 2021:
-
-```sh
-python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2019 2020 2021
-```
-
-## Working with ArchesWeather and ArchesWeatherGen
-
-To use ArchesWeather or ArchesWeatherGen, follow the
-[ArchesWeather setup instructions](../archesweather/setup.md).
+- **Medium-range weather forecasting**: For deterministic and generative medium-range weather forecasting using ArchesWeather and ArchesWeatherGen, see the [ArchesWeather project page](../archesweather/index.md).
+- **Historical AMIP-style climate projections**: For multi-decadal climate simulations following the AI Model Intercomparison Project (AIMIP) Phase 1 protocol, see the [AIMIP project page](../aimip/index.md).

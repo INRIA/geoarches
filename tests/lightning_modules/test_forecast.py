@@ -58,3 +58,55 @@ class TestForecastModule:
         loss = forecast_module.loss(pred, gt)
 
         assert not torch.isnan(loss)
+
+    def test_forward_multistep_updates_day_of_year(self):
+        forecast_module = ForecastModuleWithCond(
+            cfg=det_cfg.module,
+            stats_cfg=det_cfg.stats,
+            cond_times=["day_of_year", "hour_of_day"],
+            **det_cfg.module.module,
+        )
+        forecast_module.to("cpu")
+        forecast_module.eval()
+
+        surf_ch, level_ch, forc_ch, img_size = self.get_dims()
+
+        # 2020-01-01 00:00:00 UTC = 1577836800 (day_of_year = 1, month = 1, hour = 0)
+        start_ts = 1577836800
+        batch = TensorDict(
+            {
+                "prev_state": {
+                    "level": torch.randn(1, level_ch, *img_size),
+                    "surface": torch.randn(1, surf_ch, *img_size[-2:]),
+                },
+                "state": {
+                    "level": torch.randn(1, level_ch, *img_size),
+                    "surface": torch.randn(1, surf_ch, *img_size[-2:]),
+                },
+                "next_state": {
+                    "level": torch.randn(1, level_ch, *img_size),
+                    "surface": torch.randn(1, surf_ch, *img_size[-2:]),
+                },
+                "forcings": torch.randn(1, forc_ch, *img_size[-2:]),
+                "future_forcings": torch.randn(1, 4, forc_ch, *img_size[-2:]),
+                "timestamp": torch.tensor([start_ts]),
+                "lead_time_hours": torch.tensor([24]),
+                "month": torch.tensor([1]),
+                "day_of_year": torch.tensor([1]),
+                "hour_of_day": torch.tensor([0]),
+            },
+            batch_size=[1],
+        )
+
+        with torch.no_grad():
+            preds_future, loop_batch = forecast_module.forward_multistep(
+                batch, iters=3, return_loop_batch=True
+            )
+
+        assert preds_future["level"].shape[1] == 3
+        assert preds_future["surface"].shape[1] == 3
+        # After 3 iterations of 24h: day_of_year should be 1 + 3 = 4
+        assert loop_batch["day_of_year"].item() == 4
+        assert loop_batch["month"].item() == 1
+        assert loop_batch["hour_of_day"].item() == 0
+        assert loop_batch["timestamp"].item() == start_ts + 3 * 24 * 3600
