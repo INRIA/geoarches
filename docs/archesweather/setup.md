@@ -2,7 +2,7 @@
 
 ### 1. Install the package
 
-To get started, if not already done, follow the [installation guide](../getting_started/installation.md) to install the package with all required dependencies and download the data.
+To get started, if not already done, follow the [installation guide](../getting_started/installation.md) to install the package with all required dependencies.
 
 !!! tip
 
@@ -59,3 +59,19 @@ metric = Era5BrierSkillScore(
 ```
 
 An existing custom path is used directly and does not require internet access.
+
+### 4. Download ERA5 data
+
+The `download/` folder contains scripts to download data.
+To download the full ERA5 dataset from WeatherBench for training and evaluation, run:
+
+```sh
+python -m geoarches.download.dl_era --folder /path/to/data/era5_240/full/
+```
+
+If you only want to run evaluations, download the years 2019 to 2021:
+
+```sh
+python -m geoarches.download.dl_era --folder data/era5_240/full/ --years 2019 2020 2021
+```
+
