@@ -7,7 +7,7 @@
 
 This section provides documentation, pretrained model checkpoints, and code examples for running, evaluating, and training **ArchesWeather** and **ArchesWeatherGen** for efficient machine learning weather forecasting.
 
-Trained on $1.5^\circ \times 1.5^\circ$ ERA5 data, `geoarches` supports both deterministic and generative forecasting models:
+Trained on 1.5° × 1.5° ERA5 data, `geoarches` supports both deterministic and generative forecasting models:
 - **ArchesWeather**: A fast, highly accurate deterministic neural network designed for efficient medium-range weather forecasting.
 - **ArchesWeatherGen**: A probabilistic (generative) forecasting model built on flow matching, designed to capture atmospheric uncertainty and produce reliable weather ensembles.
 
