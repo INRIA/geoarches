@@ -81,4 +81,5 @@ nav:
       - Reproduce: archesweather/reproduce.md
   - AIMIP:
       - aimip/index.md
+      - Setup: aimip/setup.md
       - Run: aimip/run.ipynb

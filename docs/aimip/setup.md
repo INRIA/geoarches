@@ -23,4 +23,12 @@ checkpoint, adds the metadata required by PyTorch Lightning when needed, and ins
 version-matched Hydra config used for evaluation. Existing files are reused. The five
 checkpoints require approximately 2 GB of disk space.
 
+### 3. Download datasets and normalization stats
+
+To download a slice of ERA5 data (initial conditions only), monthly mean forcings, and normalization stats required by the AIMIP notebook into `data/` and `geoarches/stats/`:
+
+```sh
+python -m geoarches.download.dl_aimip_data
+```
+
 You can then follow the [notebook tutorial](./run.ipynb) to load the models and run inference.
