@@ -1,6 +1,7 @@
 # ArchesWeather and ArchesWeatherGen
 
 [![arXiv](https://img.shields.io/badge/arXiv-2412.12971-b31b1b.svg)](https://arxiv.org/abs/2412.12971)
+[![Science Advances](https://img.shields.io/badge/Science%20Advances-adx2372-b31b1b.svg)](https://www.science.org/doi/10.1126/sciadv.adx2372)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/INRIA/geoarches/blob/main/LICENSE)
 
 ## Overview
@@ -18,14 +19,15 @@ Trained on 1.5° × 1.5° ERA5 data, `geoarches` supports both deterministic and
 If you use ArchesWeather or ArchesWeatherGen in your research or project, please cite the following paper:
 
 ```bibtex
-@misc{couairon2024archesweather,
-      title={ArchesWeather & ArchesWeatherGen: a deterministic and generative model for efficient ML weather forecasting}, 
-      author={Guillaume Couairon and Renu Singh and Anastase Charantonis and Christian Lessig and Claire Monteleoni},
-      year={2024},
-      eprint={2412.12971},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2412.12971}, 
+@article{couairon2026archesweathergen,
+  title={ArchesWeatherGen: Skillful and compute-efficient probabilistic weather forecasting with machine learning},
+  author={Couairon, Guillaume and Singh, Renu and Charantonis, Anastase and Lessig, Christian and Monteleoni, Claire},
+  journal={Science Advances},
+  volume={12},
+  number={17},
+  pages={eadx2372},
+  year={2026},
+  publisher={American Association for the Advancement of Science}
 }
 ```
 
